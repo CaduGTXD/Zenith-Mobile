@@ -1,11 +1,13 @@
--- Zenith Mobile - instalador autocontido para OTClient Redemption (Android/Desktop)
--- Publique somente este arquivo como install.lua na raiz do repositorio.
+-- Zenith Mobile - instalador autocontido para OTClient Redemption mobile
+-- Nao usa modules.game_bot.refresh nem a janela lateral nativa.
 
 local BOT_NAME = "Zenith Mobile"
 local BOT_ROOT = "/bot/" .. BOT_NAME
+local RUNTIME_DIR = "/zenith_mobile"
+local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-10-self-contained-v2"
+local VERSION = "2026-07-10-mobile-runtime-v3"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -83,10 +85,18 @@ Ele mantém somente:
 - Editor e runtime de scripts personalizados
 - Scripts da pasta `ingame_scripts`
 - Coleções avulsas, exemplos não carregados, backups e snapshots temporários
+
+## Execucao no mobile
+
+Esta versao nao usa a janela lateral nem o `refresh()` do modulo `game_bot`.
+O instalador cria um runtime proprio, conecta os callbacks do jogo, agenda as macros e abre apenas a janela flutuante do Zenith Mobile.
 ]]
-FILES["_Loader.lua"] = [[-- Import vBot UI styles first.
-local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
-local configFiles = g_resources.listDirectoryFiles("/bot/" .. configName .. "/vBot", true, false)
+FILES["_Loader.lua"] = [[-- Zenith Mobile loader.
+-- Runs inside the lightweight mobile runtime, without the native game_bot window.
+
+local configName = "Zenith Mobile"
+local botRoot = "/bot/" .. configName
+local configFiles = g_resources.listDirectoryFiles(botRoot .. "/vBot", true, false)
 
 for _, file in ipairs(configFiles) do
   local parts = file:split(".")
@@ -97,7 +107,18 @@ for _, file in ipairs(configFiles) do
 end
 
 local function loadScript(name)
-  return dofile("/" .. name .. ".lua")
+  local path = botRoot .. "/" .. name .. ".lua"
+  if not g_resources.fileExists(path) then
+    error("Zenith Mobile: arquivo nao encontrado: " .. path)
+  end
+
+  local source = g_resources.readFileContents(path)
+  local chunk, loadError = loadstring(source)
+  if not chunk then
+    error("Zenith Mobile: erro ao carregar " .. path .. ": " .. tostring(loadError))
+  end
+
+  return chunk()
 end
 
 -- Libraries first, then core bot modules and retained support modules.
@@ -2196,7 +2217,7 @@ CaveBot.getNextLabel = function()
   end
 end
 
-local botConfigName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+local botConfigName = "Zenith Mobile"
 CaveBot.setCurrentProfile = function(name)
   if not g_resources.fileExists("/bot/"..botConfigName.."/cavebot_configs/"..name..".cfg") then
     return warn("there is no cavebot profile with that name!")
@@ -7036,7 +7057,7 @@ end
 
 local next = false
 schedule(5, function() -- delay because cavebot.lua is loaded after this file
-    modules.game_bot.connect(CaveBotList(), {
+    connect(CaveBotList(), {
         onChildFocusChange = function(widget, newChild, oldChild)
 
         if oldChild and oldChild.action == "rushlure" then
@@ -8217,7 +8238,8 @@ FILES["storage/profile_1.json"] = [[{
   }
 }
 ]]
-FILES["targetbot/creature.lua"] = "\n" .. [[TargetBot.Creature = {}
+FILES["targetbot/creature.lua"] = [[
+TargetBot.Creature = {}
 TargetBot.Creature.configsCache = {}
 TargetBot.Creature.cached = 0
 
@@ -14340,7 +14362,7 @@ TargetBot.getCurrentProfile = function()
   return storage._configs.targetbot_configs.selected
 end
 
-local botConfigName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+local botConfigName = "Zenith Mobile"
 TargetBot.setCurrentProfile = function(name)
   if not g_resources.fileExists("/bot/"..botConfigName.."/targetbot_configs/"..name..".json") then
     return warn("there is no targetbot profile with that name!")
@@ -20076,7 +20098,7 @@ local function alarm(file, windowText)
     lastCall = now + 4000 -- alarm.ogg length is 6s
   end
   
-  if modules.game_bot.g_app.getOs() == "windows" and config.flashClient.enabled then
+  if g_app.getOs() == "windows" and config.flashClient.enabled then
     g_window.flash()
   end
   g_window.setTitle(player:getName() .. " - " .. windowText)
@@ -20521,7 +20543,7 @@ if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
   dofile("/cavebot/minimap.lua")
 end
 -- in this section you can add extensions, check extension_template.lua
-local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+local configName = "Zenith Mobile"
 
 local path = "/bot/" .. configName .. "/cavebot/extensions"
 if not g_resources.directoryExists(path) then
@@ -20646,7 +20668,7 @@ FILES["vBot/configs.lua"] = [=[--[[
     Configs for modules
     Based on Kondrah storage method  
 --]]
-local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+local configName = "Zenith Mobile"
 
 -- make vBot config dir
 if not g_resources.directoryExists("/bot/".. configName .."/vBot_configs/") then
@@ -27735,18 +27757,7 @@ window:setPosition({
   y = math.max(0, math.floor((rootHeight - windowHeight) / 2))
 })
 
--- The original sidebar stays alive internally because it owns the bot executor,
--- but it is hidden so the floating interface is the only visible bot UI.
-if modules.game_bot then
-  if modules.game_bot.botWindow then
-    modules.game_bot.botWindow:hide()
-  end
-  -- Keep the native top button available as a recovery/configuration entry.
-  -- The actual bot modules no longer render there.
-  if modules.game_bot.botButton then
-    modules.game_bot.botButton:setOn(false)
-  end
-end
+-- Zenith Mobile is hosted entirely by its own floating runtime.
 
 if uiStorage.open then
   showWindow()
@@ -28315,7 +28326,505 @@ end)
 -- onMousePress(function(mousePos, mouseButton)
 --   warn("MousePress: ".. mouseButton)
 -- end)]]
-FILES["zenith_version.txt"] = [[2026-07-10-self-contained-v2
+local RUNTIME_CODE = [[-- Zenith Mobile standalone runtime for OTClient Redemption mobile.
+-- Bypasses the native game_bot window/config UI and drives the bot executor directly.
+
+local existing = rawget(_G, "ZenithMobileRuntime")
+if existing and existing.stop then
+  pcall(function() existing.stop(true) end)
+end
+
+local Runtime = existing or {}
+_G.ZenithMobileRuntime = Runtime
+
+Runtime.name = "Zenith Mobile"
+Runtime.root = "/bot/Zenith Mobile"
+Runtime.running = false
+Runtime.executor = nil
+Runtime.host = nil
+Runtime.tabs = nil
+Runtime.content = nil
+Runtime.tickEvent = nil
+Runtime.saveEvent = nil
+Runtime.connections = {}
+Runtime.websockets = Runtime.websockets or {}
+Runtime.storage = Runtime.storage or {}
+
+local function log(message)
+  print("[Zenith Mobile] " .. tostring(message))
+end
+
+local function ensureDirectory(path)
+  if g_resources.directoryExists(path) then return true end
+  g_resources.makeDir(path)
+  return g_resources.directoryExists(path)
+end
+
+local function profileNumber()
+  local profile = 1
+  if g_settings and g_settings.getNumber then
+    profile = tonumber(g_settings.getNumber("profile")) or 1
+  end
+  if profile < 1 then profile = 1 end
+  return profile
+end
+
+local function storagePath()
+  return Runtime.root .. "/storage/profile_" .. profileNumber() .. ".json"
+end
+
+local function loadStorage()
+  Runtime.storage = {}
+  ensureDirectory(Runtime.root .. "/storage")
+
+  local path = storagePath()
+  if not g_resources.fileExists(path) then return end
+
+  local ok, result = pcall(function()
+    return json.decode(g_resources.readFileContents(path))
+  end)
+
+  if ok and type(result) == "table" then
+    Runtime.storage = result
+  else
+    log("Nao foi possivel ler o storage; iniciando vazio: " .. tostring(result))
+  end
+end
+
+function Runtime.save()
+  if type(Runtime.storage) ~= "table" then return false end
+  ensureDirectory(Runtime.root .. "/storage")
+
+  local ok, encoded = pcall(function()
+    return json.encode(Runtime.storage, 2)
+  end)
+  if not ok then
+    log("Erro ao salvar configuracoes: " .. tostring(encoded))
+    return false
+  end
+
+  g_resources.writeFileContents(storagePath(), encoded)
+  return true
+end
+
+local function removeEventSafe(event)
+  if not event then return end
+  pcall(function() removeEvent(event) end)
+end
+
+local function destroyWidgetSafe(widget)
+  if not widget then return end
+  pcall(function() widget:destroy() end)
+end
+
+local function removeBotWidgetsFrom(parent)
+  if not parent or not parent.getChildren then return end
+  local children = parent:getChildren() or {}
+  for _, child in pairs(children) do
+    if child.botWidget then
+      destroyWidgetSafe(child)
+    end
+  end
+end
+
+local function cleanBotWidgets()
+  removeBotWidgetsFrom(g_ui.getRootWidget())
+
+  if modules.game_interface then
+    if modules.game_interface.gameMapPanel then
+      removeBotWidgetsFrom(modules.game_interface.gameMapPanel)
+    end
+    if modules.game_interface.getMapPanel then
+      local ok, mapPanel = pcall(modules.game_interface.getMapPanel)
+      if ok and mapPanel then removeBotWidgetsFrom(mapPanel) end
+    end
+    if modules.game_interface.getLeftPanel then
+      local ok, panel = pcall(modules.game_interface.getLeftPanel)
+      if ok and panel then removeBotWidgetsFrom(panel) end
+    end
+    if modules.game_interface.getRightPanel then
+      local ok, panel = pcall(modules.game_interface.getRightPanel)
+      if ok and panel then removeBotWidgetsFrom(panel) end
+    end
+  end
+end
+
+local function safeCallback(name, ...)
+  local executor = Runtime.executor
+  if not executor or not executor.callbacks then return end
+  local callback = executor.callbacks[name]
+  if not callback then return end
+
+  local args = {...}
+  local ok, err = pcall(function()
+    callback(unpack(args))
+  end)
+  if not ok then
+    log("Erro no callback " .. tostring(name) .. ": " .. tostring(err))
+  end
+end
+
+local function addConnection(object, signals)
+  if not object then return end
+  local ok, err = pcall(function()
+    connect(object, signals)
+  end)
+  if ok then
+    Runtime.connections[#Runtime.connections + 1] = { object = object, signals = signals }
+  else
+    log("Callback indisponivel neste client: " .. tostring(err))
+  end
+end
+
+local function disconnectCallbacks()
+  for i = #Runtime.connections, 1, -1 do
+    local entry = Runtime.connections[i]
+    pcall(function()
+      disconnect(entry.object, entry.signals)
+    end)
+  end
+  Runtime.connections = {}
+end
+
+local function connectCallbacks()
+  local root = rawget(_G, "rootWidget") or g_ui.getRootWidget()
+
+  addConnection(root, {
+    onKeyDown = function(widget, keyCode, keyboardModifiers)
+      if keyCode == KeyUnknown then return end
+      safeCallback("onKeyDown", keyCode, keyboardModifiers)
+    end,
+    onKeyUp = function(widget, keyCode, keyboardModifiers)
+      if keyCode == KeyUnknown then return end
+      safeCallback("onKeyUp", keyCode, keyboardModifiers)
+    end,
+    onKeyPress = function(widget, keyCode, keyboardModifiers, autoRepeatTicks)
+      if keyCode == KeyUnknown then return end
+      safeCallback("onKeyPress", keyCode, keyboardModifiers, autoRepeatTicks)
+    end,
+  })
+
+  addConnection(g_game, {
+    onTalk = function(name, level, mode, text, channelId, pos)
+      safeCallback("onTalk", name, level, mode, text, channelId, pos)
+    end,
+    onTextMessage = function(mode, text)
+      safeCallback("onTextMessage", mode, text)
+    end,
+    onLoginAdvice = function(message)
+      safeCallback("onLoginAdvice", message)
+    end,
+    onUse = function(pos, itemId, stackPos, subType)
+      safeCallback("onUse", pos, itemId, stackPos, subType)
+    end,
+    onUseWith = function(pos, itemId, target, subType)
+      safeCallback("onUseWith", pos, itemId, target, subType)
+    end,
+    onChannelList = function(channels)
+      safeCallback("onChannelList", channels)
+    end,
+    onOpenChannel = function(channelId, channelName)
+      safeCallback("onOpenChannel", channelId, channelName)
+    end,
+    onCloseChannel = function(channelId)
+      safeCallback("onCloseChannel", channelId)
+    end,
+    onChannelEvent = function(channelId, name, event)
+      safeCallback("onChannelEvent", channelId, name, event)
+    end,
+    onImbuementWindow = function(itemId, slots, activeSlots, imbuements, needItems)
+      safeCallback("onImbuementWindow", itemId, slots, activeSlots, imbuements, needItems)
+    end,
+    onModalDialog = function(id, title, message, buttons, enterButton, escapeButton, choices, priority)
+      safeCallback("onModalDialog", id, title, message, buttons, enterButton, escapeButton, choices, priority)
+    end,
+    onAttackingCreatureChange = function(creature, oldCreature)
+      safeCallback("onAttackingCreatureChange", creature, oldCreature)
+    end,
+    onAddItem = function(container, slot, item, oldItem)
+      safeCallback("onAddItem", container, slot, item, oldItem)
+    end,
+    onRemoveItem = function(container, slot, item)
+      safeCallback("onRemoveItem", container, slot, item)
+    end,
+    onGameEditText = function(id, itemId, maxLength, text, writer, time)
+      safeCallback("onGameEditText", id, itemId, maxLength, text, writer, time)
+    end,
+    onSpellCooldown = function(iconId, duration)
+      safeCallback("onSpellCooldown", iconId, duration)
+    end,
+    onSpellGroupCooldown = function(iconId, duration)
+      safeCallback("onGroupSpellCooldown", iconId, duration)
+    end,
+  })
+
+  addConnection(Tile, {
+    onAddThing = function(tile, thing)
+      safeCallback("onAddThing", tile, thing)
+    end,
+    onRemoveThing = function(tile, thing)
+      safeCallback("onRemoveThing", tile, thing)
+    end,
+  })
+
+  addConnection(Creature, {
+    onAppear = function(creature)
+      safeCallback("onCreatureAppear", creature)
+    end,
+    onDisappear = function(creature)
+      safeCallback("onCreatureDisappear", creature)
+    end,
+    onPositionChange = function(creature, newPos, oldPos)
+      safeCallback("onCreaturePositionChange", creature, newPos, oldPos)
+    end,
+    onHealthPercentChange = function(creature, healthPercent)
+      safeCallback("onCreatureHealthPercentChange", creature, healthPercent)
+    end,
+    onTurn = function(creature, direction)
+      safeCallback("onTurn", creature, direction)
+    end,
+    onWalk = function(creature, oldPos, newPos)
+      safeCallback("onWalk", creature, oldPos, newPos)
+    end,
+  })
+
+  addConnection(LocalPlayer, {
+    onPositionChange = function(creature, newPos, oldPos)
+      safeCallback("onCreaturePositionChange", creature, newPos, oldPos)
+    end,
+    onHealthPercentChange = function(creature, healthPercent)
+      safeCallback("onCreatureHealthPercentChange", creature, healthPercent)
+    end,
+    onTurn = function(creature, direction)
+      safeCallback("onTurn", creature, direction)
+    end,
+    onWalk = function(creature, oldPos, newPos)
+      safeCallback("onWalk", creature, oldPos, newPos)
+    end,
+    onManaChange = function(player, mana, maxMana, oldMana, oldMaxMana)
+      safeCallback("onManaChange", player, mana, maxMana, oldMana, oldMaxMana)
+    end,
+    onStatesChange = function(player, states, oldStates)
+      safeCallback("onStatesChange", player, states, oldStates)
+    end,
+    onInventoryChange = function(player, slot, item, oldItem)
+      safeCallback("onInventoryChange", player, slot, item, oldItem)
+    end,
+  })
+
+  addConnection(Container, {
+    onOpen = function(container, previousContainer)
+      safeCallback("onContainerOpen", container, previousContainer)
+    end,
+    onClose = function(container)
+      safeCallback("onContainerClose", container)
+    end,
+    onUpdateItem = function(container, slot, item, oldItem)
+      safeCallback("onContainerUpdateItem", container, slot, item, oldItem)
+    end,
+    onAddItem = function(container, slot, item, oldItem)
+      safeCallback("onAddItem", container, slot, item, oldItem)
+    end,
+    onRemoveItem = function(container, slot, item)
+      safeCallback("onRemoveItem", container, slot, item)
+    end,
+  })
+
+  addConnection(g_map, {
+    onMissle = function(missle)
+      safeCallback("onMissle", missle)
+    end,
+    onAnimatedText = function(thing, text)
+      safeCallback("onAnimatedText", thing, text)
+    end,
+    onStaticText = function(thing, text)
+      safeCallback("onStaticText", thing, text)
+    end,
+  })
+
+  pcall(function() g_game.enableTileThingLuaCallback(true) end)
+end
+
+local function findExecutor()
+  if modules.game_bot and type(modules.game_bot.executeBot) == "function" then
+    return modules.game_bot.executeBot
+  end
+  if type(rawget(_G, "executeBot")) == "function" then
+    return rawget(_G, "executeBot")
+  end
+  return nil
+end
+
+local function prepareCompatibility()
+  modules.game_bot = modules.game_bot or {}
+  modules.game_bot.g_app = modules.game_bot.g_app or g_app
+  modules.game_bot.connect = modules.game_bot.connect or connect
+
+  -- Some old retained scripts inspect the selected config. Keep a tiny fake selector.
+  modules.game_bot.contentsPanel = modules.game_bot.contentsPanel or {}
+  modules.game_bot.contentsPanel.config = modules.game_bot.contentsPanel.config or {
+    getCurrentOption = function()
+      return { text = Runtime.name }
+    end,
+  }
+end
+
+local function importExecutorStyles()
+  local styles = {
+    "/game_bot/ui/basic.otui",
+    "/game_bot/ui/panels.otui",
+    "/game_bot/ui/config.otui",
+    "/game_bot/ui/icons.otui",
+    "/game_bot/ui/container.otui",
+    "/modules/game_bot/ui/basic.otui",
+    "/modules/game_bot/ui/panels.otui",
+    "/modules/game_bot/ui/config.otui",
+    "/modules/game_bot/ui/icons.otui",
+    "/modules/game_bot/ui/container.otui",
+  }
+
+  for _, path in ipairs(styles) do
+    if g_resources.fileExists(path) then
+      pcall(function() g_ui.importStyle(path) end)
+    end
+  end
+end
+
+local function createHiddenHost()
+  local root = g_ui.getRootWidget()
+  Runtime.host = g_ui.createWidget("Panel", root)
+  Runtime.host:setId("zenithMobileRuntimeHost")
+  Runtime.host:setSize({ width = 2, height = 2 })
+  Runtime.host:setVisible(false)
+  Runtime.host.botWidget = true
+
+  Runtime.tabs = g_ui.createWidget("TabBar", Runtime.host)
+  Runtime.tabs:setId("zenithRuntimeTabs")
+  Runtime.tabs:setSize({ width = 2, height = 2 })
+
+  Runtime.content = g_ui.createWidget("Panel", Runtime.host)
+  Runtime.content:setId("zenithRuntimeContent")
+  Runtime.content:setSize({ width = 2, height = 2 })
+  Runtime.tabs:setContentWidget(Runtime.content)
+end
+
+local function message(category, text)
+  local prefix = ""
+  if category == "error" then prefix = "ERRO: " end
+  if category == "warn" then prefix = "AVISO: " end
+  log(prefix .. tostring(text))
+end
+
+local function scheduleTick()
+  removeEventSafe(Runtime.tickEvent)
+  Runtime.tickEvent = scheduleEvent(function()
+    if not Runtime.running or not Runtime.executor then return end
+
+    local ok, err = pcall(function()
+      Runtime.executor.script()
+    end)
+    if not ok then
+      log("Runtime interrompido: " .. tostring(err))
+      Runtime.stop(true)
+      return
+    end
+
+    scheduleTick()
+  end, 10)
+end
+
+local function scheduleSave()
+  removeEventSafe(Runtime.saveEvent)
+  Runtime.saveEvent = scheduleEvent(function()
+    if not Runtime.running then return end
+    Runtime.save()
+    scheduleSave()
+  end, 5000)
+end
+
+function Runtime.stop(saveFirst)
+  if saveFirst ~= false then
+    pcall(Runtime.save)
+  end
+
+  Runtime.running = false
+  removeEventSafe(Runtime.tickEvent)
+  removeEventSafe(Runtime.saveEvent)
+  Runtime.tickEvent = nil
+  Runtime.saveEvent = nil
+
+  disconnectCallbacks()
+  pcall(function() g_game.enableTileThingLuaCallback(false) end)
+
+  Runtime.executor = nil
+  cleanBotWidgets()
+  Runtime.host = nil
+  Runtime.tabs = nil
+  Runtime.content = nil
+end
+
+function Runtime.restart()
+  Runtime.stop(true)
+  scheduleEvent(function()
+    Runtime.start()
+  end, 50)
+end
+
+function Runtime.start()
+  if not g_game or not g_game.isOnline or not g_game.isOnline() then
+    log("Entre no personagem antes de iniciar.")
+    return false
+  end
+
+  Runtime.stop(false)
+  prepareCompatibility()
+  importExecutorStyles()
+
+  local execute = findExecutor()
+  if not execute then
+    log("O executor interno do bot nao foi encontrado neste APK.")
+    log("O client possui a tela mobile, mas precisa manter os arquivos internos de game_bot/functions e game_bot/panels.")
+    return false
+  end
+
+  cleanBotWidgets()
+  loadStorage()
+  createHiddenHost()
+
+  local ok, result = pcall(function()
+    return execute(
+      Runtime.name,
+      Runtime.storage,
+      Runtime.tabs,
+      message,
+      Runtime.save,
+      Runtime.restart,
+      Runtime.websockets
+    )
+  end)
+
+  if not ok then
+    Runtime.executor = nil
+    cleanBotWidgets()
+    log("Falha ao carregar o Zenith Mobile: " .. tostring(result))
+    return false
+  end
+
+  Runtime.executor = result
+  Runtime.running = true
+  connectCallbacks()
+  scheduleTick()
+  scheduleSave()
+
+  -- Reload calls made by bot scripts now restart only this standalone runtime.
+  modules.game_bot.refresh = Runtime.restart
+  modules.game_bot.save = Runtime.save
+
+  log("Iniciado sem usar a janela lateral do game_bot.")
+  return true
+end
+
+return Runtime
 ]]
 
 
@@ -28363,7 +28872,6 @@ local function readManagedFiles()
     return managed
   end
 
-  -- Compatibilidade com a primeira versao do instalador.
   if g_resources.fileExists(OLD_MANIFEST_FILE) and json and json.decode then
     local ok, decoded = pcall(function()
       return json.decode(g_resources.readFileContents(OLD_MANIFEST_FILE))
@@ -28387,6 +28895,13 @@ local function removeOldManagedFiles()
   end
 end
 
+local function stopOldRuntime()
+  local runtime = rawget(_G, "ZenithMobileRuntime")
+  if runtime and runtime.stop then
+    pcall(function() runtime.stop(true) end)
+  end
+end
+
 local function installFiles()
   if not g_resources then
     error("Este cliente nao possui g_resources.")
@@ -28395,6 +28910,7 @@ local function installFiles()
     error("O pacote interno nao possui _Loader.lua.")
   end
 
+  stopOldRuntime()
   ensureDirectory(BOT_ROOT)
   removeOldManagedFiles()
 
@@ -28432,6 +28948,12 @@ local function installFiles()
     end
   end
 
+  ensureDirectory(RUNTIME_DIR)
+  g_resources.writeFileContents(RUNTIME_FILE, RUNTIME_CODE)
+  if not g_resources.fileExists(RUNTIME_FILE) then
+    error("Falha ao gravar o runtime mobile.")
+  end
+
   g_resources.writeFileContents(MANIFEST_FILE, table.concat(managed, "\n") .. "\n")
   if g_resources.fileExists(OLD_MANIFEST_FILE) then
     g_resources.deleteFile(OLD_MANIFEST_FILE)
@@ -28440,33 +28962,38 @@ local function installFiles()
   return written, preserved
 end
 
-local function activateBot()
+local function startRuntime()
   if not g_game or not g_game.isOnline or not g_game.isOnline() then
-    log("Instalado com sucesso. Entre no personagem e ative Zenith Mobile no bot.")
+    log("Instalado. Entre no personagem e execute o comando novamente para iniciar.")
     return
   end
 
-  local settings = g_settings.getNode("bot") or {}
-  local index = g_game.getCharacterName() .. "_" .. g_game.getClientVersion()
-  settings[index] = settings[index] or {}
-  settings[index].config = BOT_NAME
-  settings[index].enabled = true
-  g_settings.setNode("bot", settings)
-  g_settings.save()
+  local chunk, loadError = loadstring(RUNTIME_CODE)
+  if not chunk then
+    log("Erro ao abrir o runtime: " .. tostring(loadError))
+    return
+  end
 
-  scheduleEvent(function()
-    if modules.game_bot and modules.game_bot.refresh then
-      local ok, err = pcall(modules.game_bot.refresh)
-      if ok then
-        log("Instalado, atualizado e iniciado com sucesso. Versao: " .. VERSION)
-      else
-        log("Instalado, mas falhou ao recarregar o bot: " .. tostring(err))
-        log("Feche e abra o client para iniciar.")
-      end
-    else
-      log("Instalado com sucesso. Feche e abra o client para iniciar.")
-    end
-  end, 100)
+  local ok, runtimeOrError = pcall(chunk)
+  if not ok then
+    log("Erro ao preparar o runtime: " .. tostring(runtimeOrError))
+    return
+  end
+
+  local runtime = runtimeOrError or rawget(_G, "ZenithMobileRuntime")
+  if not runtime or not runtime.start then
+    log("Runtime invalido.")
+    return
+  end
+
+  local started, result = pcall(function()
+    return runtime.start()
+  end)
+  if not started then
+    log("Falha ao iniciar: " .. tostring(result))
+  elseif result then
+    log("Instalado, atualizado e iniciado. Versao: " .. VERSION)
+  end
 end
 
 log("Instalando arquivos...")
@@ -28477,4 +29004,4 @@ if not ok then
 end
 
 log(tostring(written) .. " arquivos gravados; " .. tostring(preserved) .. " configuracoes preservadas.")
-activateBot()
+startRuntime()
