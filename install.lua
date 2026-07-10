@@ -1,10 +1,12 @@
--- Zenith Mobile installer/updater for OTClient Redemption (Android/Desktop).
--- Loaded by the one-line console bootstrap from a public Git repository.
+-- Zenith Mobile - instalador autocontido para OTClient Redemption (Android/Desktop)
+-- Publique somente este arquivo como install.lua na raiz do repositorio.
 
 local BOT_NAME = "Zenith Mobile"
 local BOT_ROOT = "/bot/" .. BOT_NAME
-local PACKAGE_NAME = "ZenithMobile.zip"
-local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
+local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
+local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
+local VERSION = "2026-07-10-self-contained-v2"
+
 local PROTECTED_PREFIXES = {
   "storage/",
   "cavebot_configs/",
@@ -12,7 +14,28310 @@ local PROTECTED_PREFIXES = {
   "vBot_configs/",
 }
 
-local baseUrl = "https://raw.githubusercontent.com/CaduGTXD/Zenith-Mobile/main/"
+local DIRECTORIES = {
+  "cavebot",
+  "cavebot/extensions",
+  "cavebot_configs",
+  "storage",
+  "targetbot",
+  "targetbot_configs",
+  "vBot",
+  "vBot_configs",
+  "vBot_configs/profile_1",
+  "zFreeScripts",
+  "zFreeScripts/Spells",
+}
+
+local FILES = {}
+FILES["README.md"] = [[# Zenith Mobile — versão enxuta
+
+Esta versão mantém somente o núcleo e os módulos ainda utilizados.
+
+## Mantido
+
+- CaveBot e TargetBot, sem rotas ou perfis prontos
+- AttackBot, sem perfis salvos
+- HealBot, Friend Healer e Conditions, sem perfis salvos
+- Simple Equipper
+- Quiver Manager, Supplies e Dropper, sem perfis de Supplies salvos
+- Auto Buff
+- Alarmes
+- Core Bot Settings
+
+## Core Bot Settings
+
+As configurações compartilhadas pelo CaveBot e TargetBot ficam em `vBot/core_settings.lua`.
+
+Ele mantém somente:
+
+- Pathfinding do CaveBot
+- Delay global de NPC
+- Distância e delay de loot
+- Limite de rounds
+- Percentual para finalizar monstros
+- Distância máxima de GoTo
+- Ordem de loot
+- União das abas CaveBot/TargetBot
+- Filtro de criaturas alcançáveis
+- Lista de criaturas ignoradas
+- Exibição da prioridade do target
+- Item usado para cortar obstáculos
+
+## Removido nesta etapa
+
+- Exeta automático por HP baixo ou jogador próximo
+- Equipment Manager e suas regras avançadas
+- Container Manager e automações de abertura/organização
+- Depot Withdraw automático e waypoint `dpwithdraw`
+- Auto Party, Auto Share e convite por mensagem
+- Todas as rotas salvas do CaveBot
+- Perfil salvo do TargetBot
+- Perfis salvos do AttackBot, HealBot e Supplies
+- Referências salvas aos módulos e perfis removidos
+
+## Removido anteriormente
+
+- Extras básicos
+- Extras PVP
+- Analyzers e ferramentas auxiliares
+- Editor e runtime de scripts personalizados
+- Scripts da pasta `ingame_scripts`
+- Coleções avulsas, exemplos não carregados, backups e snapshots temporários
+]]
+FILES["_Loader.lua"] = [[-- Import vBot UI styles first.
+local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+local configFiles = g_resources.listDirectoryFiles("/bot/" .. configName .. "/vBot", true, false)
+
+for _, file in ipairs(configFiles) do
+  local parts = file:split(".")
+  local extension = parts[#parts]:lower()
+  if extension == "ui" or extension == "otui" then
+    g_ui.importStyle(file)
+  end
+end
+
+local function loadScript(name)
+  return dofile("/" .. name .. ".lua")
+end
+
+-- Libraries first, then core bot modules and retained support modules.
+local luaFiles = {
+  "vBot/zenith_mobile_ui",
+  "vBot/main",
+  "vBot/items",
+  "vBot/vlib",
+  "vBot/new_cavebot_lib",
+  "vBot/configs",
+  "vBot/core_settings",
+  "vBot/cavebot",
+  "vBot/playerlist",
+  "vBot/alarms",
+  "vBot/AttackBot",
+  "vBot/Conditions",
+  "vBot/friend_healer",
+  "zFreeScripts/Spells/zAutoBuff",
+  "vBot/HealBot",
+  "vBot/mana_train",
+  "vBot/Dropper",
+  "vBot/quiver_manager",
+  "vBot/eat_food",
+  "vBot/equip",
+  "vBot/supplies",
+  "vBot/depositer_config",
+  "vBot/cavebot_control_panel",
+}
+
+for _, file in ipairs(luaFiles) do
+  loadScript(file)
+end
+
+if modules.game_interface and modules.game_interface.registerMobileBotControls then
+  modules.game_interface.registerMobileBotControls({
+    toggleCaster = function()
+      if not AttackBot or not AttackBot.isOn then return false end
+      if AttackBot.isOn() then AttackBot.setOff() else AttackBot.setOn() end
+      return AttackBot.isOn()
+    end,
+    toggleTargeting = function()
+      if not TargetBot or not TargetBot.isOn then return false end
+      if TargetBot.isOn() then TargetBot.setOff() else TargetBot.setOn() end
+      return TargetBot.isOn()
+    end,
+    isCasterEnabled = function()
+      return AttackBot and AttackBot.isOn and AttackBot.isOn() or false
+    end,
+    isTargetingEnabled = function()
+      return TargetBot and TargetBot.isOn and TargetBot.isOn() or false
+    end,
+  })
+end
+]]
+FILES["cavebot/actions.lua"] = [=[CaveBot.Actions = {}
+vBot.lastLabel = ""
+local oldTibia = g_game.getClientVersion() < 960
+local nextTile = nil
+
+local noPath = 0
+
+local function tileHasCreature(tile)
+  if not tile then return false end
+  if tile.hasCreature then
+    return tile:hasCreature()
+  end
+  if tile.getCreatures then
+    local creatures = tile:getCreatures()
+    return creatures and #creatures > 0 or false
+  end
+  return false
+end
+
+-- antistuck f()
+local nextPos = nil -- creature
+local nextPosF = nil -- furniture
+local function modPos(dir)
+    local y = 0
+    local x = 0
+
+    if dir == 0 then
+        y = -1
+    elseif dir == 1 then
+        x = 1
+    elseif dir == 2 then
+        y = 1
+    elseif dir == 3 then
+        x = -1
+    elseif dir == 4 then
+        y = -1
+        x = 1
+    elseif dir == 5 then
+        y = 1
+        x = 1
+    elseif dir == 6 then
+        y = 1
+        x = -1
+    elseif dir == 7 then
+        y = -1
+        x = -1
+    end
+
+    return {x, y}
+end
+
+-- stack-covered antystuck, in & out pz
+local lastMoved = now - 200
+onTextMessage(function(mode, text)
+  if text ~= 'There is not enough room.' then return end
+  if CaveBot.isOff() then return end
+
+  local tiles = getNearTiles(pos())
+
+  for i, tile in ipairs(tiles) do
+    if not tileHasCreature(tile) and tile:isWalkable() and #tile:getItems() > 9 then
+      local topThing = tile:getTopThing()
+      if not isInPz() then
+        return useWith(3197, tile:getTopThing()) -- disintegrate
+      else
+        if now < lastMoved + 200 then return end -- delay to prevent clogging
+        local nearTiles = getNearTiles(tile:getPosition())
+        for i, tile in ipairs(nearTiles) do
+          local tpos = tile:getPosition()
+          if pos() ~= tpos then
+            if tile:isWalkable() then
+              lastMoved = now
+              return g_game.move(topThing, tpos) -- move item
+            end
+          end
+        end
+      end
+    end
+  end
+end)
+
+local furnitureIgnore = { 2986 }
+local function breakFurniture(destPos)
+  if isInPz() then return false end
+  local candidate = {thing=nil, dist=100}
+  for i, tile in ipairs(g_map.getTiles(posz())) do
+    local walkable = tile:isWalkable()
+    local topThing = tile:getTopThing()
+    local isWg = topThing and topThing:getId() == 2130
+    if topThing and (isWg or not table.find(furnitureIgnore, topThing:getId()) and topThing:isItem()) then
+      local moveable = not topThing:isNotMoveable()
+      local tpos = tile:getPosition()
+      local path = findPath(player:getPosition(), tpos, 7, { ignoreNonPathable = true, precision = 1 })
+
+      if path then
+        if isWg or (not walkable and moveable) then
+          local distance = getDistanceBetween(destPos, tpos)
+
+          if distance < candidate.dist then
+            candidate = {thing=topThing, dist=distance}
+          end
+        end
+      end
+    end
+  end
+
+  local thing = candidate.thing
+  if thing then
+    useWith(3197, thing)
+    return true
+  end
+  
+  return false
+end
+
+local function pushPlayer(creature)
+  local cpos = creature:getPosition()
+  local tiles = getNearTiles(cpos)
+
+  for i, tile in ipairs(tiles) do
+    local pos = tile:getPosition()
+    local minimapColor = g_map.getMinimapColor(pos)
+    local stairs = (minimapColor >= 210 and minimapColor <= 213)
+
+    if not stairs and tile:isWalkable() then
+      g_game.move(creature, pos)
+    end
+  end
+
+end
+
+local function pathfinder()
+  if not storage.coreSettings.pathfinding then return end
+  if noPath < 10 then return end
+
+  if not CaveBot.gotoNextWaypointInRange() then
+    if getConfigFromName and getConfigFromName() then
+      local profile = CaveBot.getCurrentProfile()
+      local config = getConfigFromName()
+      local newProfile = profile == '#Unibase' and config or '#Unibase'
+      
+      CaveBot.setCurrentProfile(newProfile)
+    end
+  end
+  noPath = 0
+  return true
+end
+
+-- it adds an action widget to list
+CaveBot.getActionDisplayText = function(index, action, value)
+  return "#" .. index .. " - " .. action .. ":" .. value:split("\n")[1]
+end
+
+CaveBot.refreshActionListNumbers = function()
+  if not CaveBot.actionList then return end
+  for index, child in ipairs(CaveBot.actionList:getChildren()) do
+    if child.action and child.value then
+      child:setText(CaveBot.getActionDisplayText(index, child.action, child.value))
+    end
+  end
+end
+
+CaveBot.addAction = function(action, value, focus)
+  action = action:lower()
+  local raction = CaveBot.Actions[action]
+  if not raction then
+    return warn("Invalid cavebot action: " .. action)
+  end
+  if type(value) == 'number' then
+    value = tostring(value)
+  end
+  local widget = UI.createWidget("CaveBotAction", CaveBot.actionList)
+  widget.action = action
+  widget.value = value
+  widget:setText(CaveBot.getActionDisplayText(CaveBot.actionList:getChildCount(), action, value))
+  if raction.color then
+    widget:setColor(raction.color)
+  end
+  widget.onDoubleClick = function(cwidget) -- edit on double click
+    if CaveBot.Editor then
+      schedule(20, function() -- schedule to have correct focus
+        CaveBot.Editor.edit(cwidget.action, cwidget.value, function(action, value)
+          CaveBot.editAction(cwidget, action, value)
+          CaveBot.save()
+        end)
+      end)
+    end
+  end
+  CaveBot.refreshActionListNumbers()
+  if focus then
+    widget:focus()
+    CaveBot.actionList:ensureChildVisible(widget)
+  end
+  return widget
+end
+
+-- it updates existing widget, you should call CaveBot.save() later
+CaveBot.editAction = function(widget, action, value)
+  action = action:lower()
+  local raction = CaveBot.Actions[action]
+  if not raction then
+    return warn("Invalid cavebot action: " .. action)
+  end
+  
+  if not widget.action or not widget.value then
+    return warn("Invalid cavebot action widget, has missing action or value")  
+  end
+  
+  widget.action = action
+  widget.value = value
+  widget:setText(CaveBot.getActionDisplayText(CaveBot.actionList:getChildIndex(widget), action, value))
+  if raction.color then
+    widget:setColor(raction.color)
+  end
+  CaveBot.refreshActionListNumbers()
+  return widget
+end
+
+--[[
+registerAction:
+action - string, color - string, callback = function(value, retries, prev)
+value is a string value of action, retries is number which will grow by 1 if return is "retry"
+prev is a true when previuos action was executed succesfully, false otherwise
+it must return true if executed correctly, false otherwise
+it can also return string "retry", then the function will be called again in 20 ms
+]]--
+CaveBot.registerAction = function(action, color, callback) 
+  action = action:lower()
+  if CaveBot.Actions[action] then
+    return warn("Duplicated acction: " .. action)
+  end
+  CaveBot.Actions[action] = {
+    color=color,
+    callback=callback
+  }
+end
+
+CaveBot.registerAction("label", "yellow", function(value, retries, prev)
+  vBot.lastLabel = value
+  return true
+end)
+
+CaveBot.registerAction("gotolabel", "#FFFF55", function(value, retries, prev)
+  return CaveBot.gotoLabel(value) 
+end)
+
+CaveBot.registerAction("delay", "#AAAAAA", function(value, retries, prev)
+  if retries == 0 then
+    local data = string.split(value, ",")
+    local val = tonumber(data[1]:trim())
+    local random
+    local final
+
+
+    if #data == 2 then
+      random = tonumber(data[2]:trim())
+    end
+
+    if random then
+      local diff = (val/100) * random
+      local min = val - diff
+      local max = val + diff
+      final = math.random(min, max)
+    end
+    final = final or val
+
+    CaveBot.delay(final) 
+    return "retry"
+  end
+  return true
+end)
+
+CaveBot.registerAction("follow", "#FF8400", function(value, retries, prev)
+  local c = getCreatureByName(value)
+  if not c then
+    print("CaveBot[follow]: can't find creature to follow")
+    return false
+  end
+  local cpos = c:getPosition()
+  local pos = pos()
+  if getDistanceBetween(cpos, pos) < 2 then
+    g_game.cancelFollow()
+    return true
+  else
+    follow(c)
+    delay(200)
+    return "retry"
+  end
+end)
+
+CaveBot.registerAction("function", "red", function(value, retries, prev)
+  local prefix = "local retries = " .. retries .. "\nlocal prev = " .. tostring(prev) .. "\nlocal delay = CaveBot.delay\nlocal gotoLabel = CaveBot.gotoLabel\n"
+  prefix = prefix .. "local macro = function() warn('Macros inside cavebot functions are not allowed') end\n"
+  for extension, callbacks in pairs(CaveBot.Extensions) do
+    prefix = prefix .. "local " .. extension .. " = CaveBot.Extensions." .. extension .. "\n"
+  end
+  local status, result = pcall(function() 
+    return assert(load(prefix .. value, "cavebot_function"))()
+  end)
+  if not status then
+    warn("warn in cavebot function:\n" .. result)
+    return false
+  end  
+  return result
+end)
+
+local walkDirectionAliases = {
+  n = North,
+  north = North,
+  e = East,
+  east = East,
+  s = South,
+  south = South,
+  w = West,
+  west = West,
+  ne = NorthEast,
+  northeast = NorthEast,
+  se = SouthEast,
+  southeast = SouthEast,
+  sw = SouthWest,
+  southwest = SouthWest,
+  nw = NorthWest,
+  northwest = NorthWest
+}
+
+CaveBot.registerAction("walk", "#55DD88", function(value, retries, prev)
+  local direction = tostring(value or ""):lower():trim()
+  direction = direction:gsub("%s+", "")
+
+  if direction == "c" or direction == "center" or direction == "stay" then
+    CaveBot.delay(math.max(CaveBot.Config.get("ping"), 100))
+    return true
+  end
+
+  local dir = walkDirectionAliases[direction]
+  if dir == nil then
+    local numericDir = tonumber(direction)
+    if numericDir and numericDir >= 0 and numericDir <= 7 then
+      dir = numericDir
+    end
+  end
+
+  if dir == nil then
+    warn("Invalid cavebot walk action value. Expected one of: n, e, s, w, ne, se, sw, nw, c. Got: " .. tostring(value))
+    return false
+  end
+
+  g_game.walk(dir)
+  CaveBot.delay(math.max(CaveBot.Config.get("ping"), player:getStepDuration(false, dir)) + 50)
+  return true
+end)
+
+CaveBot.registerAction("goto", "green", function(value, retries, prev)
+  local pos = regexMatch(value, "\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+),?\\s*([0-9]?)")
+  if not pos[1] then
+    warn("Invalid cavebot goto action value. It should be position (x,y,z), is: " .. value)
+    return false
+  end
+
+  -- reset pathfinder
+  nextPosF = nil
+  nextPos = nil
+  
+  if CaveBot.Config.get("mapClick") then
+    if retries >= 5 then
+      noPath = noPath + 1
+      pathfinder()
+      return false -- tried 5 times, can't get there
+    end
+  else
+    if retries >= 100 then
+      noPath = noPath + 1
+      pathfinder()
+      return false -- tried 100 times, can't get there
+    end  
+  end
+
+  local precision = tonumber(pos[1][5])
+  pos = {x=tonumber(pos[1][2]), y=tonumber(pos[1][3]), z=tonumber(pos[1][4])}  
+  local playerPos = player:getPosition()
+  local maxDist = storage.coreSettings.gotoMaxDistance or 40
+
+  if pos.z ~= playerPos.z then 
+    noPath = noPath + 1
+    pathfinder()
+    return false -- different floor
+  end
+  
+  if math.abs(pos.x-playerPos.x) + math.abs(pos.y-playerPos.y) > maxDist then
+    noPath = noPath + 1
+    pathfinder()
+    return false -- too far way
+  end
+
+  local minimapColor = g_map.getMinimapColor(pos)
+  local stairs = (minimapColor >= 210 and minimapColor <= 213)
+  
+  if stairs then
+    if math.abs(pos.x-playerPos.x) == 0 and math.abs(pos.y-playerPos.y) <= 0 then
+      noPath = 0
+      return true -- already at position
+    end
+  elseif math.abs(pos.x-playerPos.x) == 0 and math.abs(pos.y-playerPos.y) <= (precision or 1) then
+      noPath = 0
+      return true -- already at position
+  end
+  -- check if there's a path to that place, ignore creatures and fields
+  local path = findPath(playerPos, pos, maxDist, { ignoreNonPathable = true, precision = 1, ignoreCreatures = true, allowUnseen = true, allowOnlyVisibleTiles = false  })
+  if not path then
+    if breakFurniture(pos, storage.coreSettings.machete) then
+      CaveBot.delay(1000)
+      retries = 0
+      return "retry"
+    end
+    noPath = noPath + 1
+    pathfinder()
+    return false -- there's no way
+  end
+
+  -- check if there's a path to destination but consider Creatures (attack only if trapped)
+  local path2 = findPath(playerPos, pos, maxDist, { ignoreNonPathable = true, precision = 1 })
+  if not path2 then
+    local foundMonster = false
+    for i, dir in ipairs(path) do
+      local dirs = modPos(dir)
+      nextPos = nextPos or playerPos
+      nextPos.x = nextPos.x + dirs[1]
+      nextPos.y = nextPos.y + dirs[2]
+  
+      local tile = g_map.getTile(nextPos)
+      if tile then
+          if tileHasCreature(tile) then
+              local creature = tile:getCreatures()[1]
+              local hppc = creature:getHealthPercent()
+              if creature:isMonster() and (hppc and hppc > 0) and (oldTibia or creature:getType() < 3) then
+                  -- real blocking creature can not meet those conditions - ie. it could be player, so just in case check if the next creature is reachable
+                  local path = findPath(playerPos, creature:getPosition(), 7, { ignoreNonPathable = true, precision = 1 }) 
+                  if path then
+                      foundMonster = true
+                      if g_game.getAttackingCreature() ~= creature then
+                        if distanceFromPlayer(creature:getPosition()) > 3 then
+                          CaveBot.walkTo(creature:getPosition(), 7, { ignoreNonPathable = true, precision = 1 })
+                        else
+                          attack(creature)
+                        end
+                      end
+                      g_game.setChaseMode(1)
+                      CaveBot.delay(100)
+                      retries = 0 -- reset retries, we are trying to unclog the cavebot
+                      break
+                  end
+              end
+          end
+      end
+    end
+
+    if not foundMonster then
+      foundMonster = false
+      return false -- no other way
+    end
+  end
+  
+  -- try to find path, don't ignore creatures, don't ignore fields
+  if not CaveBot.Config.get("ignoreFields") and CaveBot.walkTo(pos, 40) then
+    return "retry"
+  end
+  
+  -- try to find path, don't ignore creatures, ignore fields
+  if CaveBot.walkTo(pos, maxDist, { ignoreNonPathable = true, allowUnseen = true, allowOnlyVisibleTiles = false }) then
+    return "retry"
+  end
+  
+  if retries >= 3 then
+    -- try to lower precision, find something close to final position
+    local precison = retries - 1
+    if stairs then
+      precison = 0
+    end
+    if CaveBot.walkTo(pos, 50, { ignoreNonPathable = true, precision = precison, allowUnseen = true, allowOnlyVisibleTiles = false }) then
+      return "retry"
+    end    
+  end
+  
+  if not CaveBot.Config.get("mapClick") and retries >= 5 then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+  
+  if CaveBot.Config.get("skipBlocked") then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+
+  -- everything else failed, try to walk ignoring creatures, maybe will work
+  CaveBot.walkTo(pos, maxDist, { ignoreNonPathable = true, precision = 1, ignoreCreatures = true, allowUnseen = true, allowOnlyVisibleTiles = false })
+  return "retry"
+end)
+
+CaveBot.registerAction("stand", "#00CC66", function(value, retries, prev)
+  local match = regexMatch(value, "\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)")
+  if not match[1] then
+    warn("Invalid cavebot stand action value. It should be position (x,y,z), is: " .. value)
+    return false
+  end
+
+  if CaveBot.Config.get("mapClick") then
+    if retries >= 5 then
+      noPath = noPath + 1
+      pathfinder()
+      return false
+    end
+  else
+    if retries >= 100 then
+      noPath = noPath + 1
+      pathfinder()
+      return false
+    end
+  end
+
+  local dest = {x=tonumber(match[1][2]), y=tonumber(match[1][3]), z=tonumber(match[1][4])}
+  local playerPos = player:getPosition()
+
+  if dest.z ~= playerPos.z then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+
+  if dest.x == playerPos.x and dest.y == playerPos.y then
+    noPath = 0
+    return true
+  end
+
+  local maxDist = storage.coreSettings.gotoMaxDistance or 40
+  if math.abs(dest.x-playerPos.x) + math.abs(dest.y-playerPos.y) > maxDist then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+
+  local path = findPath(playerPos, dest, maxDist, { ignoreNonPathable = true, precision = 0, ignoreCreatures = true, allowUnseen = true, allowOnlyVisibleTiles = false })
+  if not path then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+
+  if not CaveBot.Config.get("ignoreFields") and CaveBot.walkTo(dest, maxDist, { precision = 0 }) then
+    return "retry"
+  end
+
+  if CaveBot.walkTo(dest, maxDist, { ignoreNonPathable = true, precision = 0, allowUnseen = true, allowOnlyVisibleTiles = false }) then
+    return "retry"
+  end
+
+  if CaveBot.Config.get("skipBlocked") then
+    noPath = noPath + 1
+    pathfinder()
+    return false
+  end
+
+  CaveBot.walkTo(dest, maxDist, { ignoreNonPathable = true, precision = 0, ignoreCreatures = true, allowUnseen = true, allowOnlyVisibleTiles = false })
+  return "retry"
+end)
+
+local checkContainersOpened = {}
+
+CaveBot.registerAction("checkcontainers", "#66CCFF", function(value, retries, prev)
+  local label = value:trim()
+  if label:len() == 0 then
+    warn("Invalid cavebot check containers action value. It should be a label name.")
+    return false
+  end
+
+  if retries == 0 then
+    checkContainersOpened = {}
+  end
+
+  local containers = getContainers()
+  local checked = 0
+
+  local function isOpenById(itemId)
+    for _, container in pairs(containers) do
+      if container:getContainerItem() and container:getContainerItem():getId() == itemId then
+        return true
+      end
+    end
+    return false
+  end
+
+  local slots = {getBack(), getLeft(), getRight(), getAmmo(), getPurse()}
+  for slot, item in ipairs(slots) do
+    if item and item:isContainer() and not isOpenById(item:getId()) then
+      local key = "slot:" .. slot .. ":" .. item:getId()
+      if not checkContainersOpened[key] then
+        checkContainersOpened[key] = true
+        g_game.use(item)
+        CaveBot.delay(500)
+        return "retry"
+      end
+    end
+  end
+
+  for _, container in pairs(containers) do
+    checked = checked + 1
+    if container:getItemsCount() < container:getCapacity() then
+      return true
+    end
+
+    for slot, item in ipairs(container:getItems()) do
+      if item:isContainer() then
+        local key = "container:" .. container:getId() .. ":" .. slot .. ":" .. item:getId()
+        if not checkContainersOpened[key] then
+          checkContainersOpened[key] = true
+          g_game.open(item, container)
+          CaveBot.delay(500)
+          return "retry"
+        end
+      end
+    end
+  end
+
+  if checked == 0 then
+    print("CaveBot[CheckContainers]: no containers found to check.")
+    return true
+  end
+
+  print("CaveBot[CheckContainers]: all carried containers are full, going to label " .. label)
+  return CaveBot.gotoLabel(label)
+end)
+
+CaveBot.registerAction("use", "#FFB272", function(value, retries, prev)
+  local pos = regexMatch(value, "\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)")
+  if not pos[1] then
+    local itemid = tonumber(value)
+    if not itemid then
+      warn("Invalid cavebot use action value. It should be (x,y,z) or item id, is: " .. value)
+      return false
+    end
+    use(itemid)
+    return true
+  end
+
+  pos = {x=tonumber(pos[1][2]), y=tonumber(pos[1][3]), z=tonumber(pos[1][4])}  
+  local playerPos = player:getPosition()
+  if pos.z ~= playerPos.z then 
+    return false -- different floor
+  end
+
+  if math.max(math.abs(pos.x-playerPos.x), math.abs(pos.y-playerPos.y)) > 7 then
+    return false -- too far way
+  end
+
+  local tile = g_map.getTile(pos)
+  if not tile then
+    return false
+  end
+
+  local topThing = tile:getTopUseThing()
+  if not topThing then
+    return false
+  end
+
+  use(topThing)
+  CaveBot.delay(CaveBot.Config.get("useDelay") + CaveBot.Config.get("ping"))
+  return true
+end)
+
+CaveBot.registerAction("usewith", "#EEB292", function(value, retries, prev)
+  local pos = regexMatch(value, "\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)")
+  if not pos[1] then
+    if not itemid then
+      warn("Invalid cavebot usewith action value. It should be (itemid,x,y,z) or item id, is: " .. value)
+      return false
+    end
+    use(itemid)
+    return true
+  end
+
+  local itemid = tonumber(pos[1][2])
+  pos = {x=tonumber(pos[1][3]), y=tonumber(pos[1][4]), z=tonumber(pos[1][5])}  
+  local playerPos = player:getPosition()
+  if pos.z ~= playerPos.z then 
+    return false -- different floor
+  end
+
+  if math.max(math.abs(pos.x-playerPos.x), math.abs(pos.y-playerPos.y)) > 7 then
+    return false -- too far way
+  end
+
+  local tile = g_map.getTile(pos)
+  if not tile then
+    return false
+  end
+
+  local topThing = tile:getTopUseThing()
+  if not topThing then
+    return false
+  end
+
+  usewith(itemid, topThing)
+  CaveBot.delay(CaveBot.Config.get("useDelay") + CaveBot.Config.get("ping"))
+  return true
+end)
+
+local exaniHurDirections = {
+  n = North,
+  north = North,
+  e = East,
+  east = East,
+  s = South,
+  south = South,
+  w = West,
+  west = West
+}
+
+local exaniHurRuntime = {
+  signature = nil,
+  startPos = nil,
+  lastCastAt = 0,
+  attempts = 0
+}
+
+local function resetExaniHurRuntime()
+  exaniHurRuntime.signature = nil
+  exaniHurRuntime.startPos = nil
+  exaniHurRuntime.lastCastAt = 0
+  exaniHurRuntime.attempts = 0
+end
+
+local function parseExaniHurValue(value)
+  local parts = string.split(tostring(value or ""), ",")
+  local mode = parts[1] and parts[1]:lower():trim() or ""
+  local directionName = parts[2] and parts[2]:lower():trim() or ""
+
+  if mode ~= "up" and mode ~= "down" then
+    return nil
+  end
+
+  local direction = exaniHurDirections[directionName]
+  if direction == nil then
+    return nil
+  end
+
+  local shortDirection = directionName
+  if directionName == "north" then shortDirection = "n" end
+  if directionName == "east" then shortDirection = "e" end
+  if directionName == "south" then shortDirection = "s" end
+  if directionName == "west" then shortDirection = "w" end
+
+  return mode, shortDirection, direction
+end
+
+CaveBot.registerAction("exani hur", "#62D8FF", function(value, retries, prev)
+  local mode, directionName, direction = parseExaniHurValue(value)
+  if not mode then
+    warn('Invalid Exani Hur value. Expected: up,n | up,e | up,s | up,w | down,n | down,e | down,s | down,w. Got: ' .. tostring(value))
+    resetExaniHurRuntime()
+    return false
+  end
+
+  local currentPos = player and player:getPosition()
+  if not currentPos then
+    CaveBot.delay(100)
+    return "retry"
+  end
+
+  local signature = mode .. "," .. directionName
+  if retries == 0 or exaniHurRuntime.signature ~= signature or not exaniHurRuntime.startPos then
+    exaniHurRuntime.signature = signature
+    exaniHurRuntime.startPos = {x=currentPos.x, y=currentPos.y, z=currentPos.z}
+    exaniHurRuntime.lastCastAt = 0
+    exaniHurRuntime.attempts = 0
+
+    CaveBot.resetWalking()
+    if g_game and g_game.stop then
+      g_game.stop()
+    end
+  end
+
+  -- A floor change is the definitive confirmation that Levitate worked.
+  -- The waypoint never advances merely because the spell text was sent.
+  if currentPos.z ~= exaniHurRuntime.startPos.z then
+    resetExaniHurRuntime()
+    return true
+  end
+
+  if player:getDirection() ~= direction then
+    turn(direction)
+    CaveBot.delay(math.max(CaveBot.Config.get("ping"), 120))
+    return "retry"
+  end
+
+  local retryDelay = 700
+  local elapsed = now - exaniHurRuntime.lastCastAt
+  if exaniHurRuntime.lastCastAt > 0 and elapsed < retryDelay then
+    CaveBot.delay(retryDelay - elapsed)
+    return "retry"
+  end
+
+  CaveBot.resetWalking()
+  if g_game and g_game.stop then
+    g_game.stop()
+  end
+
+  local spell = 'exani hur "' .. mode .. '"'
+  say(spell)
+  exaniHurRuntime.lastCastAt = now
+  exaniHurRuntime.attempts = exaniHurRuntime.attempts + 1
+
+  if exaniHurRuntime.attempts % 10 == 0 then
+    print('CaveBot[Exani Hur]: still waiting for floor change (' .. mode .. ', ' .. directionName .. '). Retrying until the spell succeeds.')
+  end
+
+  -- Wait for the server position update. If the spell was exhausted or could
+  -- not be used, the same persistent waypoint tries again after retryDelay.
+  CaveBot.delay(math.max(CaveBot.Config.get("ping") + 250, 400))
+  return "retry"
+end)
+
+CaveBot.registerAction("say", "#FF55FF", function(value, retries, prev)
+  say(value)
+  return true
+end)
+CaveBot.registerAction("npcsay", "#FF55FF", function(value, retries, prev)
+  NPC.say(value)
+  return true
+end)
+]=]
+FILES["cavebot/bank.lua"] = [[CaveBot.Extensions.Bank = {}
+
+local balance = 0
+
+CaveBot.Extensions.Bank.setup = function()
+  CaveBot.registerAction("bank", "#db5a5a", function(value, retries)
+   local data = string.split(value, ",")
+   local waitVal = 300
+   local amount = 0
+   local actionType
+   local npcName
+   local transferName
+   local balanceLeft
+    if #data ~= 3 and #data ~= 2 and #data ~= 4 then
+     warn("CaveBot[Bank]: incorrect value!")
+     return false
+    else
+      actionType = data[1]:trim():lower()
+      npcName = data[2]:trim()
+      if #data == 3 then
+        amount = tonumber(data[3]:trim())
+      end
+      if #data == 4 then
+        transferName = data[3]:trim()
+        balanceLeft = tonumber(data[4]:trim())
+      end
+    end
+
+    if actionType ~= "withdraw" and actionType ~= "deposit" and actionType ~= "transfer" then
+      warn("CaveBot[Bank]: incorrect action type! should be withdraw/deposit/transfer, is: " .. actionType)
+      return false
+    elseif actionType == "withdraw" then
+      local value = tonumber(amount)
+      if not value then
+        warn("CaveBot[Bank]: incorrect amount value! should be number, is: " .. amount)
+        return false
+      end
+    end
+
+    if retries > 5 then
+      print("CaveBot[Bank]: too many tries, skipping")
+     return false
+    end
+
+    local npc = getCreatureByName(npcName)
+    if not npc then 
+      print("CaveBot[Bank]: NPC not found, skipping")
+     return false 
+    end
+
+    if not CaveBot.ReachNPC(npcName) then
+      return "retry"
+    end
+
+    if actionType == "deposit" then
+      CaveBot.Conversation("hi", "deposit all", "yes")
+      CaveBot.delay(storage.coreSettings.talkDelay*3)
+      return true
+    elseif actionType == "withdraw" then
+      CaveBot.Conversation("hi", "withdraw", value, "yes")
+      CaveBot.delay(storage.coreSettings.talkDelay*4)
+      return true
+    else
+      -- first check balance
+      CaveBot.Conversation("hi", "balance")
+      schedule(5000, function()
+        local amountToTransfer = balance - balanceLeft
+        if amountToTransfer <= 0 then
+          warn("CaveBot[Bank] Not enough gold to transfer! proceeding")
+          return false
+        end
+        CaveBot.Conversation("hi", "transfer", amountToTransfer, transferName, "yes")
+        warn("CaveBot[Bank] transferred "..amountToTransfer.." gold to: "..transferName)
+      end)
+      CaveBot.delay(storage.coreSettings.talkDelay*11)
+      return true
+    end
+  end)
+
+ CaveBot.Editor.registerAction("bank", "bank", {
+  value="action, NPC name",
+  title="Banker",
+  description="action type(withdraw/deposit/transfer), NPC name, (if withdraw: amount|if transfer: name, balance left)",
+ })
+end
+
+
+onTalk(function(name, level, mode, text, channelId, pos)
+  if mode == 51 and text:find("Your account balance is") then
+    balance = getFirstNumberInText(text)
+  end
+end)]]
+FILES["cavebot/buy_supplies.lua"] = [[CaveBot.Extensions.BuySupplies = {}
+
+local BUY = 1
+
+local MAX_RETRIES = 180
+local MAX_TRADE_ATTEMPTS = 8
+local MAX_NO_PROGRESS = 6
+local TRADE_RETRY_INTERVAL = 300
+
+local state = {
+  key = nil,
+  lastTalkAt = 0,
+  tradeAttempts = 0,
+  waitTradeDataTries = 0,
+  noProgress = {},
+  lastCount = {},
+  skipped = {}
+}
+
+local function resetState(key)
+  state.key = key
+  state.lastTalkAt = 0
+  state.tradeAttempts = 0
+  state.waitTradeDataTries = 0
+  state.noProgress = {}
+  state.lastCount = {}
+  state.skipped = {}
+end
+
+local function trim(str)
+  return tostring(str or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function nowMs()
+  if type(now) == "number" then
+    return now
+  end
+
+  if g_clock and g_clock.millis then
+    local ok, result = pcall(function()
+      return g_clock.millis()
+    end)
+
+    if ok and result then
+      return result
+    end
+  end
+
+  return os.time() * 1000
+end
+
+local function hasAnyEntry(tbl)
+  if type(tbl) ~= "table" then
+    return false
+  end
+
+  for _, _ in pairs(tbl) do
+    return true
+  end
+
+  return false
+end
+
+local function getTalkDelay(default)
+  default = default or 1000
+  local delay = default
+
+  if storage and storage.coreSettings and storage.coreSettings.talkDelay then
+    delay = tonumber(storage.coreSettings.talkDelay) or default
+  end
+
+  return math.max(delay, 300)
+end
+
+local function getItemCount(id)
+  id = tonumber(id)
+  if not id then
+    return 0
+  end
+
+  if type(itemAmount) == "function" then
+    local ok, result = pcall(function()
+      return itemAmount(id)
+    end)
+
+    if ok and result then
+      return result
+    end
+  end
+
+  if player and player.getItemsCount then
+    local ok, result = pcall(function()
+      return player:getItemsCount(id)
+    end)
+
+    if ok and result then
+      return result
+    end
+  end
+
+  return 0
+end
+
+local function stopMoving()
+  pcall(function()
+    player:stopAutoWalk()
+  end)
+
+  pcall(function()
+    g_game.stop()
+  end)
+end
+
+local function sayNpc(text)
+  if NPC and NPC.say then
+    local ok = pcall(function()
+      NPC.say(text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  if g_game and g_game.talkChannel then
+    local ok = pcall(function()
+      g_game.talkChannel(11, 0, text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  if type(say) == "function" then
+    local ok = pcall(function()
+      say(text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function widgetVisible(widget)
+  if not widget or not widget.isVisible then
+    return false
+  end
+
+  local ok, visible = pcall(function()
+    return widget:isVisible()
+  end)
+
+  return ok and visible
+end
+
+local function findNpcTradeWindow()
+  local tradeModule = modules and modules.game_npctrade
+
+  if tradeModule and tradeModule.npcWindow then
+    return tradeModule.npcWindow
+  end
+
+  local roots = {}
+
+  if rootWidget then
+    table.insert(roots, rootWidget)
+  end
+
+  if g_ui and g_ui.getRootWidget then
+    local ok, root = pcall(function()
+      return g_ui.getRootWidget()
+    end)
+
+    if ok and root then
+      table.insert(roots, root)
+    end
+  end
+
+  if modules and modules.game_interface then
+    if modules.game_interface.getRootPanel then
+      local ok, root = pcall(function()
+        return modules.game_interface.getRootPanel()
+      end)
+
+      if ok and root then
+        table.insert(roots, root)
+      end
+    end
+
+    if modules.game_interface.getMapPanel then
+      local ok, root = pcall(function()
+        return modules.game_interface.getMapPanel()
+      end)
+
+      if ok and root then
+        table.insert(roots, root)
+      end
+    end
+  end
+
+  for _, root in ipairs(roots) do
+    if root and root.recursiveGetChildById then
+      local ok, widget = pcall(function()
+        return root:recursiveGetChildById("npcWindow")
+      end)
+
+      if ok and widget then
+        return widget
+      end
+    end
+  end
+
+  return nil
+end
+
+local function getBuyTradeList()
+  local tradeModule = modules and modules.game_npctrade
+  if not tradeModule or type(tradeModule.tradeItems) ~= "table" then
+    return nil
+  end
+
+  local buyIndex = tradeModule.BUY or BUY
+  local list = tradeModule.tradeItems[buyIndex]
+
+  if type(list) == "table" then
+    return list
+  end
+
+  return nil
+end
+
+local function getBuyTradeItem(id)
+  id = tonumber(id)
+  if not id then
+    return nil
+  end
+
+  local list = getBuyTradeList()
+  if type(list) ~= "table" then
+    return nil
+  end
+
+  for _, item in pairs(list) do
+    if item and item.ptr and item.ptr.getId then
+      local ok, itemId = pcall(function()
+        return item.ptr:getId()
+      end)
+
+      if ok and itemId == id then
+        return item
+      end
+    end
+  end
+
+  return nil
+end
+
+local function hasBuyTradeData()
+  local list = getBuyTradeList()
+  return hasAnyEntry(list)
+end
+
+local function isTradeOpen()
+  if NPC and NPC.isTrading then
+    local ok, result = pcall(function()
+      return NPC.isTrading()
+    end)
+
+    if ok and result then
+      return true
+    end
+  end
+
+  local window = findNpcTradeWindow()
+  if widgetVisible(window) then
+    return true
+  end
+
+  return false
+end
+
+local function closeTrade()
+  if NPC and NPC.closeTrade then
+    pcall(function()
+      NPC.closeTrade()
+    end)
+    return
+  end
+
+  if modules and modules.game_npctrade and modules.game_npctrade.closeNpcTrade then
+    pcall(function()
+      modules.game_npctrade.closeNpcTrade()
+    end)
+    return
+  end
+
+  if g_game and g_game.closeNpcTrade then
+    pcall(function()
+      g_game.closeNpcTrade()
+    end)
+  end
+end
+
+local function buyItem(id, count)
+  id = tonumber(id)
+  count = tonumber(count)
+
+  if not id or not count or count <= 0 then
+    return false
+  end
+
+  local tradeItem = getBuyTradeItem(id)
+  local item = tradeItem and tradeItem.ptr or nil
+
+  if not item and Item and Item.create then
+    local ok, createdItem = pcall(function()
+      return Item.create(id)
+    end)
+
+    if ok and createdItem then
+      item = createdItem
+    end
+  end
+
+  if item and g_game and g_game.buyItem then
+    local ok = pcall(function()
+      -- args: item, count, ignoreCapacity, buyWithBackpack
+      g_game.buyItem(item, count, false, false)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  if NPC and NPC.buy then
+    local ok = pcall(function()
+      NPC.buy(id, count, false, false)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function getSuppliesData()
+  if not Supplies or not Supplies.getItemsData then
+    return {}
+  end
+
+  local ok, data = pcall(function()
+    return Supplies.getItemsData()
+  end)
+
+  if ok and type(data) == "table" then
+    return data
+  end
+
+  return {}
+end
+
+CaveBot.Extensions.BuySupplies.setup = function()
+  CaveBot.registerAction("BuySupplies", "#C300FF", function(value, retries)
+    local rawValue = tostring(value or "")
+    local val = string.split(rawValue, ",")
+
+    if not val or #val == 0 or #val > 2 then
+      warn("CaveBot[BuySupplies]: incorrect BuySupplies value")
+      return false
+    end
+
+    local npcName = trim(val[1])
+    if npcName == "" then
+      warn("CaveBot[BuySupplies]: NPC name is empty")
+      return false
+    end
+
+    local waitVal = nil
+    if #val == 2 then
+      waitVal = tonumber(trim(val[2]))
+      if not waitVal then
+        warn("CaveBot[BuySupplies]: incorrect delay value")
+      end
+    end
+
+    local key = npcName .. "|" .. rawValue
+    if state.key ~= key then
+      resetState(key)
+    end
+
+    if retries > MAX_RETRIES then
+      print("CaveBot[BuySupplies]: too many tries, stopping")
+      resetState(nil)
+      return false
+    end
+
+    local itemsData = getSuppliesData()
+    if not hasAnyEntry(itemsData) then
+      print("CaveBot[BuySupplies]: no supplies configured for current profile, proceeding")
+      resetState(nil)
+      return true
+    end
+
+    local npc = getCreatureByName(npcName)
+    if not npc then
+      if retries < 15 then
+        CaveBot.delay(400)
+        return "retry"
+      end
+
+      print("CaveBot[BuySupplies]: NPC not found: " .. npcName)
+      resetState(nil)
+      return false
+    end
+
+    local npcPos = npc:getPosition()
+    if getDistanceBetween(pos(), npcPos) > 3 then
+      CaveBot.GoTo(npcPos, 3)
+      CaveBot.delay(300)
+      return "retry"
+    end
+
+    if not isTradeOpen() then
+      local talkDelay = getTalkDelay(1000)
+      local currentTime = nowMs()
+      local canTalkAgain = state.lastTalkAt == 0 or currentTime - state.lastTalkAt >= math.max(talkDelay * 3, 2500)
+
+      if canTalkAgain then
+        state.tradeAttempts = state.tradeAttempts + 1
+        state.lastTalkAt = currentTime
+
+        if state.tradeAttempts > MAX_TRADE_ATTEMPTS then
+          print("CaveBot[BuySupplies]: trade window did not open after " .. MAX_TRADE_ATTEMPTS .. " attempts")
+          resetState(nil)
+          return false
+        end
+
+        stopMoving()
+        print("CaveBot[BuySupplies]: opening trade with " .. npcName .. " attempt " .. state.tradeAttempts)
+
+        sayNpc("hi")
+
+        schedule(talkDelay, function()
+          sayNpc("trade")
+        end)
+      end
+
+      CaveBot.delay(TRADE_RETRY_INTERVAL)
+      return "retry"
+    end
+
+    state.tradeAttempts = 0
+
+    if waitVal and state.waitTradeDataTries == 0 then
+      CaveBot.delay(waitVal)
+      state.waitTradeDataTries = state.waitTradeDataTries + 1
+      return "retry"
+    end
+
+    if not hasBuyTradeData() then
+      state.waitTradeDataTries = state.waitTradeDataTries + 1
+
+      if state.waitTradeDataTries <= 10 then
+        CaveBot.delay(300)
+        return "retry"
+      end
+
+      print("CaveBot[BuySupplies]: trade is open, but buy list is empty/unavailable; trying direct buy mode")
+    end
+
+    for id, values in pairs(itemsData) do
+      id = tonumber(id)
+
+      if id and not state.skipped[id] then
+        local max = 0
+
+        if type(values) == "table" then
+          max = tonumber(values.max) or 0
+        else
+          max = tonumber(values) or 0
+        end
+
+        if max > 0 then
+          local current = getItemCount(id)
+          local toBuy = max - current
+
+          if toBuy > 0 then
+            local list = getBuyTradeList()
+            local tradeHasList = hasAnyEntry(list)
+            local tradeItem = getBuyTradeItem(id)
+
+            if tradeHasList and not tradeItem then
+              print("CaveBot[BuySupplies]: NPC does not sell item " .. id .. ", skipping")
+              state.skipped[id] = true
+              CaveBot.delay(100)
+              return "retry"
+            end
+
+            if state.lastCount[id] == nil or current > state.lastCount[id] then
+              state.noProgress[id] = 0
+            else
+              state.noProgress[id] = (state.noProgress[id] or 0) + 1
+            end
+
+            state.lastCount[id] = current
+
+            if state.noProgress[id] > MAX_NO_PROGRESS then
+              print("CaveBot[BuySupplies]: item " .. id .. " is not increasing after several tries, skipping")
+              state.skipped[id] = true
+              CaveBot.delay(100)
+              return "retry"
+            end
+
+            toBuy = math.min(100, toBuy)
+
+            print(
+              "CaveBot[BuySupplies]: buying item " ..
+              id ..
+              " | have " ..
+              current ..
+              " | target " ..
+              max ..
+              " | amount " ..
+              toBuy
+            )
+
+            local sent = buyItem(id, toBuy)
+
+            if not sent then
+              print("CaveBot[BuySupplies]: failed to send buy packet for item " .. id)
+              state.noProgress[id] = (state.noProgress[id] or 0) + 1
+            end
+
+            CaveBot.delay(getTalkDelay(300))
+            return "retry"
+          end
+        end
+      end
+    end
+
+    closeTrade()
+
+    if hasAnyEntry(state.skipped) then
+      print("CaveBot[BuySupplies]: finished with some skipped items, proceeding")
+    else
+      print("CaveBot[BuySupplies]: bought everything, proceeding")
+    end
+
+    resetState(nil)
+    return true
+  end)
+
+  CaveBot.Editor.registerAction("buysupplies", "buy supplies", {
+    value = "NPC name",
+    title = "Buy Supplies",
+    description = "NPC Name, delay(in ms, optional)",
+  })
+end]]
+FILES["cavebot/cavebot.lua"] = [=[local cavebotMacro = nil
+local config = nil
+
+local cavebotCompat = storage.cavebotCompat or {}
+local ui = nil
+local configWidget = nil
+local panelOnlyBisect = cavebotCompat.stage == "coreOnly"
+  and cavebotCompat.loadMainUi
+  and not cavebotCompat.loadMainRuntime
+  and cavebotCompat.loadTargetBot == false
+  and cavebotCompat.safeMode == true
+local runtimeBisect = panelOnlyBisect
+
+if cavebotCompat.enableSupportModules == nil and runtimeBisect then
+  cavebotCompat.enableSupportModules = true
+end
+
+if cavebotCompat.enableSensitiveModules == nil and runtimeBisect then
+  cavebotCompat.enableSensitiveModules = true
+end
+
+if cavebotCompat.setupEditor == nil then
+  cavebotCompat.setupEditor = true
+end
+
+if cavebotCompat.setupConfigUi == nil then
+  cavebotCompat.setupConfigUi = true
+end
+
+if cavebotCompat.setupExtensions == nil then
+  cavebotCompat.setupExtensions = true
+end
+
+if cavebotCompat.bindMainConfig == nil then
+  cavebotCompat.bindMainConfig = true
+end
+
+if not panelOnlyBisect then
+  cavebotCompat.setupEditor = true
+  cavebotCompat.setupConfigUi = true
+  cavebotCompat.setupExtensions = true
+  cavebotCompat.bindMainConfig = true
+end
+
+if cavebotCompat.loadMainUi then
+  configWidget = UI.Config()
+  ui = UI.createWidget("CaveBotPanel")
+
+  ui.list = ui.listPanel.list -- shortcut
+  CaveBot.actionList = ui.list
+
+  if cavebotCompat.setupEditor and CaveBot.Editor then
+    CaveBot.Editor.setup()
+  end
+  if cavebotCompat.setupConfigUi and CaveBot.Config then
+    CaveBot.Config.setup()
+  end
+  if cavebotCompat.setupExtensions then
+    for extension, callbacks in pairs(CaveBot.Extensions) do
+      if callbacks.setup then
+        callbacks.setup()
+      end
+    end
+  end
+end
+
+-- main loop, controlled by config
+local actionRetries = 0
+local prevActionResult = true
+cavebotMacro = macro(20, function()
+  if not (cavebotCompat.loadMainRuntime or runtimeBisect) or not ui then return end
+  if CaveBot.isFloorTransitionGuardActive and CaveBot.isFloorTransitionGuardActive() then
+    CaveBot.resetWalking()
+    return
+  end
+  if TargetBot and TargetBot.isActive() and not TargetBot.isCaveBotActionAllowed() then
+    CaveBot.resetWalking()
+    return -- target bot or looting is working, wait
+  end
+  
+  if CaveBot.doWalking() then
+    return -- executing walking3
+  end
+  
+  local actions = ui.list:getChildCount()
+  if actions == 0 then return end
+  local currentAction = ui.list:getFocusedChild()
+  if not currentAction then
+    currentAction = ui.list:getFirstChild()
+  end
+  local action = CaveBot.Actions[currentAction.action]  
+  local value = currentAction.value
+  local retry = false
+  if action then
+    local status, result = pcall(function()
+      CaveBot.resetWalking()
+      return action.callback(value, actionRetries, prevActionResult)
+    end)
+    if status then
+      if result == "retry" then
+        actionRetries = actionRetries + 1
+        retry = true
+      elseif type(result) == 'boolean' then
+        actionRetries = 0
+        prevActionResult = result
+      else
+        warn("Invalid return from cavebot action (" .. currentAction.action .. "), should be \"retry\", false or true, is: " .. tostring(result))
+      end
+    else
+      warn("warn while executing cavebot action (" .. currentAction.action .. "):\n" .. result)
+    end    
+  else
+    warn("Invalid cavebot action: " .. currentAction.action)
+  end
+  
+  if retry then
+    return
+  end
+  
+  if currentAction ~= ui.list:getFocusedChild() then
+    -- focused child can change durring action, get it again and reset state
+    currentAction = ui.list:getFocusedChild() or ui.list:getFirstChild()
+    actionRetries = 0
+    prevActionResult = true
+  end
+  local nextAction = ui.list:getChildIndex(currentAction) + 1
+  if nextAction > actions then
+    nextAction = 1
+  end
+  ui.list:focusChild(ui.list:getChildByIndex(nextAction))
+end)
+
+-- config, its callback is called immediately, data can be nil
+local lastConfig = ""
+if configWidget and cavebotCompat.bindMainConfig then
+  config = Config.setup("cavebot_configs", configWidget, "cfg", function(name, enabled, data)
+    if enabled and CaveBot.Recorder.isOn() then
+      CaveBot.Recorder.disable()
+      CaveBot.setOff()
+      return    
+    end
+
+    local currentActionIndex = ui.list:getChildIndex(ui.list:getFocusedChild())
+    ui.list:destroyChildren()
+    if not data then return cavebotMacro.setOff() end
+    
+    local cavebotConfig = nil
+    for k,v in ipairs(data) do
+      if type(v) == "table" and #v == 2 then
+        if v[1] == "config" then
+          local status, result = pcall(function()
+            return json.decode(v[2])
+          end)
+          if not status then
+            warn("warn while parsing CaveBot extensions from config:\n" .. result)
+          else
+            cavebotConfig = result
+          end
+        elseif v[1] == "extensions" then
+          local status, result = pcall(function()
+            return json.decode(v[2])
+          end)
+          if not status then
+            warn("warn while parsing CaveBot extensions from config:\n" .. result)
+          else
+            for extension, callbacks in pairs(CaveBot.Extensions) do
+              if callbacks.onConfigChange then
+                callbacks.onConfigChange(name, enabled, result[extension])
+              end
+            end
+          end
+        else
+          CaveBot.addAction(v[1], v[2])
+        end
+      end
+    end
+
+    CaveBot.Config.onConfigChange(name, enabled, cavebotConfig)
+    
+    actionRetries = 0
+    CaveBot.resetWalking()
+    prevActionResult = true
+    cavebotMacro.setOn(enabled)
+    cavebotMacro.delay = nil
+    if lastConfig == name then 
+      -- restore focused child on the action list
+      ui.list:focusChild(ui.list:getChildByIndex(currentActionIndex))
+    end
+    lastConfig = name  
+  end)
+end
+
+local waypointMarkColor = "#00CCFF"
+local shownMapWaypoints = {}
+
+local function waypointKey(pos)
+  return pos.x .. "," .. pos.y .. "," .. pos.z
+end
+
+local function parseMapWaypoint(action, value)
+  action = action:lower()
+
+  if action == "goto" or action == "stand" or action == "startlure" or action == "endlure" or action == "use" or action == "opendoors" or action == "cleartile" or action == "drop item" then
+    local match = regexMatch(value, [[^\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)]])
+    if match[1] then
+      return {x=tonumber(match[1][2]), y=tonumber(match[1][3]), z=tonumber(match[1][4])}
+    end
+  elseif action == "usewith" then
+    local match = regexMatch(value, [[^\s*[0-9]+\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)]])
+    if match[1] then
+      return {x=tonumber(match[1][2]), y=tonumber(match[1][3]), z=tonumber(match[1][4])}
+    end
+  elseif action == "supplycheck" then
+    local match = regexMatch(value, [[^[^,]+,\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)]])
+    if match[1] then
+      return {x=tonumber(match[1][2]), y=tonumber(match[1][3]), z=tonumber(match[1][4])}
+    end
+  end
+end
+
+CaveBot.clearMapWaypoints = function()
+  for key, data in pairs(shownMapWaypoints) do
+    local tile = g_map.getTile(data.pos)
+    if tile then
+      if tile:getText() == data.text then
+        tile:setText("")
+      end
+
+      local thing = tile:getTopUseThing() or tile:getTopThing()
+      if thing then
+        thing:setMarked("")
+      end
+    end
+  end
+  shownMapWaypoints = {}
+end
+
+CaveBot.refreshMapWaypoints = function()
+  CaveBot.clearMapWaypoints()
+
+  if not storage.caveBotShowMapWaypoints then
+    return
+  end
+
+  local mapWaypoints = {}
+  for index, child in ipairs(ui.list:getChildren()) do
+    local pos = parseMapWaypoint(child.action, child.value)
+    if pos and pos.z == posz() then
+      local key = waypointKey(pos)
+      if not mapWaypoints[key] then
+        mapWaypoints[key] = {pos=pos, labels={}}
+      end
+      table.insert(mapWaypoints[key].labels, "#" .. index .. " " .. child.action)
+    end
+  end
+
+  for key, data in pairs(mapWaypoints) do
+    local tile = g_map.getTile(data.pos)
+    if tile then
+      local text = table.concat(data.labels, "\n")
+      tile:setText(text)
+
+      local thing = tile:getTopUseThing() or tile:getTopThing()
+      if thing then
+        thing:setMarked(waypointMarkColor)
+      end
+
+      shownMapWaypoints[key] = {pos=data.pos, text=text}
+    end
+  end
+end
+
+storage.caveBotShowMapWaypoints = storage.caveBotShowMapWaypoints or false
+if ui then
+  ui.showMapWaypoints:setOn(storage.caveBotShowMapWaypoints)
+  ui.showMapWaypoints.onClick = function(widget)
+    storage.caveBotShowMapWaypoints = not storage.caveBotShowMapWaypoints
+    widget:setOn(storage.caveBotShowMapWaypoints)
+    CaveBot.refreshMapWaypoints()
+  end
+
+  macro(1000, function()
+    if storage.caveBotShowMapWaypoints then
+      CaveBot.refreshMapWaypoints()
+    end
+  end)
+
+  -- ui callbacks
+  ui.showEditor.onClick = function()
+    if not CaveBot.Editor then return end
+    if ui.showEditor:isOn() then
+      CaveBot.Editor.hide()
+      ui.showEditor:setOn(false)
+    else
+      CaveBot.Editor.show()
+      ui.showEditor:setOn(true)
+    end
+  end
+
+  ui.showConfig.onClick = function()
+    if not CaveBot.Config then return end
+    if ui.showConfig:isOn() then
+      CaveBot.Config.hide()
+      ui.showConfig:setOn(false)
+    else
+      CaveBot.Config.show()
+      ui.showConfig:setOn(true)
+    end
+  end
+
+  ui.autoRecording.onClick = function()
+    if ui.autoRecording:isOn() then
+      CaveBot.Recorder.disable()
+      ui.autoRecording:setOn(false)
+    else
+      CaveBot.Recorder.enable()
+      ui.autoRecording:setOn(true)
+    end
+  end
+end
+
+-- public function, you can use them in your scripts
+CaveBot.isOn = function()
+  if not config then return false end
+  return config.isOn()
+end
+
+CaveBot.isOff = function()
+  if not config then return true end
+  return config.isOff()
+end
+
+CaveBot.setOn = function(val)
+  if not config then return end
+  if val == false then  
+    return CaveBot.setOff(true)
+  end
+  config.setOn()
+end
+
+CaveBot.setOff = function(val)
+  if not config then return end
+  if val == false then  
+    return CaveBot.setOn(true)
+  end
+  config.setOff()
+end
+
+CaveBot.getCurrentProfile = function()
+  return storage._configs.cavebot_configs.selected
+end
+
+CaveBot.lastReachedLabel = function()
+  return vBot.lastLabel
+end
+
+local function getWaypointPositionFromAction(action, value)
+  if action ~= "goto" and action ~= "stand" and action ~= "startlure" and action ~= "endlure" then
+    return nil
+  end
+
+  local re = regexMatch(value, [[([^,]+),([^,]+),([^,]+)]])
+  if not re[1] then
+    return nil
+  end
+
+  return {x = tonumber(re[1][2]), y = tonumber(re[1][3]), z = tonumber(re[1][4])}
+end
+
+CaveBot.gotoNextWaypointInRange = function()
+  local currentAction = ui.list:getFocusedChild()
+  local index = ui.list:getChildIndex(currentAction)
+  local actions = ui.list:getChildren()
+
+  -- start searching from current index
+  for i, child in ipairs(actions) do
+    if i > index then
+      local pos = getWaypointPositionFromAction(child.action, child.value)
+      if pos then
+        if posz() == pos.z then
+          local maxDist = storage.coreSettings.gotoMaxDistance
+          if distanceFromPlayer(pos) <= maxDist then
+            if findPath(player:getPosition(), pos, maxDist, { ignoreNonPathable = true }) then
+              ui.list:focusChild(ui.list:getChildByIndex(i-1))
+              return true
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- if not found then damn go from start
+  for i, child in ipairs(actions) do
+    if i <= index then
+      local pos = getWaypointPositionFromAction(child.action, child.value)
+      if pos then
+        if posz() == pos.z then
+          local maxDist = storage.coreSettings.gotoMaxDistance
+          if distanceFromPlayer(pos) <= maxDist then
+            if findPath(player:getPosition(), pos, maxDist, { ignoreNonPathable = true }) then
+              ui.list:focusChild(ui.list:getChildByIndex(i-1))
+              return true
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- not found
+  return false
+end
+
+local function reverseTable(t, max)
+  local reversedTable = {}
+  local itemCount = max or #t
+  for i, v in ipairs(t) do
+      reversedTable[itemCount + 1 - i] = v
+  end
+  return reversedTable
+end
+
+function rpairs(t)
+  test()
+	return function(t, i)
+		i = i - 1
+		if i ~= 0 then
+			return i, t[i]
+		end
+	end, t, #t + 1
+end
+
+CaveBot.gotoFirstPreviousReachableWaypoint = function()
+  local currentAction = ui.list:getFocusedChild()
+  local currentIndex = ui.list:getChildIndex(currentAction)
+  local index = ui.list:getChildIndex(currentAction)
+
+  -- check up to 100 childs
+  for i=0,100 do
+    index = index - i
+    if index <= 0 or index > currentIndex or math.abs(index-currentIndex) > 100 then
+      break
+    end
+
+    local child = ui.list:getChildByIndex(index)
+
+    if child then
+      local pos = getWaypointPositionFromAction(child.action, child.value)
+      if pos then
+        if posz() == pos.z then
+          if distanceFromPlayer(pos) <= storage.coreSettings.gotoMaxDistance/2 then
+            print("found pos, going back "..currentIndex-index.. " waypoints.")
+            return ui.list:focusChild(child)
+          end
+        end
+      end
+    end
+  end
+
+  -- not found
+  print("previous pos not found, proceeding")
+  return false
+end
+
+CaveBot.getFirstWaypointBeforeLabel = function(label)
+  label = label:lower()
+  local actions = ui.list:getChildren()
+  local index
+
+  -- find index of label
+  for i, child in pairs(actions) do
+    if child.action == "label" and child.value:lower() == label then
+      index = i
+      break
+    end
+  end
+
+  -- if there's no index then label was not found
+  if not index then return false end
+
+  for i=1,#actions do
+    if index - 1 < 1 then
+      -- did not found any waypoint in range before label 
+      return false
+    end
+
+    local child = ui.list:getChildByIndex(index-i)
+    if child then
+      local pos = getWaypointPositionFromAction(child.action, child.value)
+      if pos then
+        if posz() == pos.z then
+          if distanceFromPlayer(pos) <= storage.coreSettings.gotoMaxDistance/2 then
+            return ui.list:focusChild(child)
+          end
+        end
+      end
+    end
+  end
+end
+
+CaveBot.getPreviousLabel = function()
+  local actions = ui.list:getChildren()
+  -- check if config is empty
+  if #actions == 0 then return false end
+
+  local currentAction = ui.list:getFocusedChild()
+  --check we made any progress in waypoints, if no focused or first then no point checking
+  if not currentAction or currentAction == ui.list:getFirstChild() then return false end
+
+  local index = ui.list:getChildIndex(currentAction)
+
+  -- if not index then something went wrong and there's no selected child
+  if not index then return false end
+
+  for i=1,#actions do
+    if index - i < 1 then
+      -- did not found any waypoint in range before label 
+      return false
+    end
+
+    local child = ui.list:getChildByIndex(index-i)
+    if child then
+      if child.action == "label" then
+        return child.value
+      end
+    end
+  end
+end
+
+CaveBot.getNextLabel = function()
+  local actions = ui.list:getChildren()
+  -- check if config is empty
+  if #actions == 0 then return false end
+
+  local currentAction = ui.list:getFocusedChild() or ui.list:getFirstChild()
+  local index = ui.list:getChildIndex(currentAction)
+
+  -- if not index then something went wrong
+  if not index then return false end
+
+  for i=1,#actions do
+    if index + i > #actions then
+      -- did not found any waypoint in range before label 
+      return false
+    end
+
+    local child = ui.list:getChildByIndex(index+i)
+    if child then
+      if child.action == "label" then
+        return child.value
+      end
+    end
+  end
+end
+
+local botConfigName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+CaveBot.setCurrentProfile = function(name)
+  if not g_resources.fileExists("/bot/"..botConfigName.."/cavebot_configs/"..name..".cfg") then
+    return warn("there is no cavebot profile with that name!")
+  end
+  CaveBot.setOff()
+  storage._configs.cavebot_configs.selected = name
+  CaveBot.setOn()
+end
+
+CaveBot.delay = function(value)
+  cavebotMacro.delay = math.max(cavebotMacro.delay or 0, now + value)
+end
+
+CaveBot.gotoLabel = function(label)
+  label = label:lower()
+  for index, child in ipairs(ui.list:getChildren()) do
+    if child.action == "label" and child.value:lower() == label then    
+      ui.list:focusChild(child)
+      return true
+    end
+  end
+  return false
+end
+
+CaveBot.save = function()
+  local data = {}
+  for index, child in ipairs(ui.list:getChildren()) do
+    table.insert(data, {child.action, child.value})
+  end
+  
+  if CaveBot.Config then
+    table.insert(data, {"config", json.encode(CaveBot.Config.save())})
+  end
+  
+  local extension_data = {}
+  for extension, callbacks in pairs(CaveBot.Extensions) do
+    if callbacks.onSave then
+      local ext_data = callbacks.onSave()
+      if type(ext_data) == "table" then
+        extension_data[extension] = ext_data
+      end
+    end
+  end
+  table.insert(data, {"extensions", json.encode(extension_data, 2)})
+  config.save(data)
+end
+
+CaveBotList = function()
+  return ui.list
+end
+]=]
+FILES["cavebot/cavebot.otui"] = [[CaveBotAction < Label
+  background-color: alpha
+  text-offset: 2 0
+  focusable: true
+
+  $focus:
+    background-color: #00000055
+
+
+CaveBotPanel < Panel
+  layout:
+    type: verticalBox
+    fit-children: true
+
+  BotSwitch
+    id: autoRecording
+    text: Auto Recording
+    margin-bottom: 2      
+
+  HorizontalSeparator
+    margin-top: 2
+    margin-bottom: 1
+    
+  Panel
+    id: listPanel
+    height: 130
+    margin-top: 2
+
+    TextList
+      id: list
+      anchors.fill: parent
+      vertical-scrollbar: listScrollbar
+      margin-right: 15
+      focusable: false
+      auto-focus: first
+      background-color: #585860
+      
+    VerticalScrollBar
+      id: listScrollbar
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.right: parent.right
+      pixels-scroll: true
+      step: 10  
+    
+  BotSwitch
+    id: showEditor
+    margin-top: 2
+    
+    $on:
+      text: Hide waypoints editor
+      
+    $!on:
+      text: Show waypoints editor
+
+  BotSwitch
+    id: showConfig
+    margin-top: 2
+    
+    $on:
+      text: Hide config
+      
+    $!on:
+      text: Show config
+
+  BotSwitch
+    id: showMapWaypoints
+    margin-top: 2
+
+    $on:
+      text: Hide map waypoints
+
+    $!on:
+      text: Show map waypoints
+]]
+FILES["cavebot/clear_tile.lua"] = [[CaveBot.Extensions.ClearTile = {}
+
+CaveBot.Extensions.ClearTile.setup = function()
+  CaveBot.registerAction("ClearTile", "#00FFFF", function(value, retries)
+    local data = string.split(value, ",")
+    local pos = {x=tonumber(data[1]), y=tonumber(data[2]), z=tonumber(data[3])}
+    local doors = false
+    local stand = false
+    local pPos = player:getPosition()
+
+
+    for i, value in ipairs(data) do
+      value = value:lower():trim()
+      if value == "stand" then
+        stand = true
+      elseif value == "doors" then
+        doors = true
+      end
+    end
+
+
+    if not #pos == 3 then
+      warn("CaveBot[ClearTile]: invalid value. It should be position (x,y,z), is: " .. value)
+      return false
+    end
+
+    if retries >= 20 then
+      print("CaveBot[ClearTile]: too many tries, can't clear it")
+      return false -- tried 20 times, can't clear it
+    end
+
+    if getDistanceBetween(player:getPosition(), pos) == 0 then
+      print("CaveBot[ClearTile]: tile reached, proceeding")
+      return true
+    end
+    local tile = g_map.getTile(pos)
+    if not tile then
+      print("CaveBot[ClearTile]: can't find tile or tile is unreachable, skipping")
+      return false
+    end
+    local tPos = tile:getPosition()
+
+    -- no items on tile and walkability means we are done
+    if tile:isWalkable() and tile:getTopUseThing():isNotMoveable() and not tile:hasCreature() and not doors then
+      if stand then
+        if not CaveBot.MatchPosition(tPos, 0) then
+          CaveBot.GoTo(tPos, 0)
+          return "retry"
+        end
+      end
+      print("CaveBot[ClearTile]: tile clear, proceeding")
+      return true
+    end
+
+    if not CaveBot.MatchPosition(tPos, 3) then
+      CaveBot.GoTo(tPos, 3)
+      return "retry"
+    end
+
+    if retries > 0 then
+      delay(1100)
+    end
+
+    -- monster
+    if tile:hasCreature() then
+      local c = tile:getCreatures()[1]
+      if c:isMonster() then
+        attack(c)
+        return "retry"
+      end
+    end
+
+    -- moveable item
+    local item = tile:getTopMoveThing()
+    if item:isItem() then
+      if item and not item:isNotMoveable() then
+        print("CaveBot[ClearTile]: moving item... " .. item:getId().. " from tile")
+        g_game.move(item, pPos, item:getCount())
+        return "retry"
+      end   
+    end
+
+    -- player
+
+      -- push creature
+      if tile:hasCreature() then
+        local c = tile:getCreatures()[1]
+        if c and c:isPlayer() then
+
+          local candidates = {}
+          for _, tile in ipairs(g_map.getTiles(posz())) do
+            local tPos = tile:getPosition()
+            if getDistanceBetween(c:getPosition(), tPos) == 1 and tPos ~= pPos and tile:isWalkable() then
+              table.insert(candidates, tPos)
+            end
+          end
+
+          if #candidates == 0 then
+            print("CaveBot[ClearTile]: can't find tile to push, cannot clear way, skipping")
+            return false
+          else
+            print("CaveBot[ClearTile]: pushing player... " .. c:getName() .. " out of the way")
+            local pos = candidates[math.random(1,#candidates)]
+            local tile = g_map.getTile(pos)
+            tile:setText("here")
+            schedule(500, function() tile:setText("") end)
+            g_game.move(c, pos, 1)
+            return "retry"
+          end
+        end
+      end
+
+    -- doors
+    if doors then
+      use(tile:getTopUseThing())
+      return "retry"
+    end
+
+    return "retry"
+  end)
+
+  CaveBot.Editor.registerAction("cleartile", "clear tile", {
+    value=function() return posx() .. "," .. posy() .. "," .. posz() end,
+    title="position of tile to clear",
+    description="tile position (x,y,z), doors/stand - optional",
+    multiline=false
+})
+end]]
+FILES["cavebot/config.lua"] = [[-- config for bot
+CaveBot.Config = {}
+CaveBot.Config.values = {}
+CaveBot.Config.default_values = {}
+CaveBot.Config.value_setters = {}
+CaveBot.Config.widgets = {}
+CaveBot.Config.lureWindow = nil
+CaveBot.Config.lureMageRunWidgets = {}
+
+local function setSliderLabel(panel, title, value)
+  panel.title:setText(tostring(title or "") .. ": " .. value)
+end
+
+CaveBot.Config.registerVirtualSlider = function(id, title, defaultValue)
+  if CaveBot.Config.default_values[id] ~= nil then
+    return warn("Duplicated config key: " .. id)
+  end
+
+  CaveBot.Config.values[id] = defaultValue
+  CaveBot.Config.default_values[id] = defaultValue
+  CaveBot.Config.value_setters[id] = function(value)
+    value = tonumber(value) or defaultValue
+    CaveBot.Config.values[id] = value
+
+    local panel = CaveBot.Config.widgets[id]
+    if panel and panel.scroll then
+      panel.scroll:setValue(value)
+      setSliderLabel(panel, title, value)
+    end
+  end
+end
+
+CaveBot.Config.registerVirtualBoolean = function(id, title, defaultValue)
+  if CaveBot.Config.default_values[id] ~= nil then
+    return warn("Duplicated config key: " .. id)
+  end
+
+  defaultValue = defaultValue and true or false
+  CaveBot.Config.values[id] = defaultValue
+  CaveBot.Config.default_values[id] = defaultValue
+  CaveBot.Config.value_setters[id] = function(value)
+    value = value and true or false
+    CaveBot.Config.values[id] = value
+
+    local panel = CaveBot.Config.widgets[id]
+    if panel and panel.value then
+      panel.value:setOn(value, true)
+    end
+  end
+end
+
+CaveBot.Config.ensureLureWindow = function()
+  if CaveBot.Config.lureWindow then
+    return CaveBot.Config.lureWindow
+  end
+
+  CaveBot.Config.lureWindow = UI.createWindow("CaveBotLureConfigWindow", g_ui.getRootWidget())
+  CaveBot.Config.lureWindow:hide()
+
+  local function addSection(text, tooltip)
+    local separator = UI.createWidget("CaveBotConfigSectionSeparator", CaveBot.Config.lureWindow.content)
+    if tooltip then separator:setTooltip(tooltip) end
+    local section = UI.createWidget("CaveBotConfigSection", CaveBot.Config.lureWindow.content)
+    section:setText(text)
+    if tooltip then section:setTooltip(tooltip) end
+  end
+
+  addSection("Minimum creatures", "Rules for how many configured creatures are required before stopping at End Lure.")
+  CaveBot.Config.addSlider("lureMinCreature", "Min creature", 0, 30, 1, CaveBot.Config.lureWindow.content, "Minimum configured creatures required at End Lure to stop and kill.")
+  CaveBot.Config.addSlider("lureCreatureRange", "Creature range", 1, 15, 8, CaveBot.Config.lureWindow.content, "Shared Mage Run detection radius: Start/End Lure counts, Ignore remaining, lure walking, TargetBot scanning and target path search.")
+
+  addSection("Lure walk", "Controls when the bot should walk using the Lure walk delay while pulling creatures.")
+  CaveBot.Config.addSlider("minLure", "Min lure (walk)", 0, 30, 1, CaveBot.Config.lureWindow.content, "Minimum configured creatures on screen to use Lure walk delay.")
+  CaveBot.Config.addSlider("lureMaxToWalk", "Max lure (walk)", 0, 30, 8, CaveBot.Config.lureWindow.content, "Maximum configured creatures to keep using Lure walk delay. Above this value, the bot keeps walking normally without the lure walk delay.")
+  CaveBot.Config.addSlider("lureWalkDelay", "Lure walk delay", 0, 5000, 100, CaveBot.Config.lureWindow.content, "Extra walking delay used only between Min lure (walk) and Max lure (walk).")
+
+  local mageRunSeparator = UI.createWidget("CaveBotConfigSectionSeparator", CaveBot.Config.lureWindow.content)
+  mageRunSeparator:setTooltip("Extra lure safety settings used only while TargetBot attack style is Mage run.")
+  local mageRunSection = UI.createWidget("CaveBotConfigSection", CaveBot.Config.lureWindow.content)
+  mageRunSection:setText("Mage run")
+  mageRunSection:setTooltip("Extra lure safety settings used only while TargetBot attack style is Mage run.")
+  local adjacentPanel = CaveBot.Config.addSlider("lureAdjacentMax", "Adjacent lure", 0, 8, 1, CaveBot.Config.lureWindow.content, "Maximum adjacent monsters allowed while luring before switching to fast sequential movement toward End Lure.")
+  local minRangePanel = CaveBot.Config.addSlider("lureMageRunMinRange", "Safe distance", 1, 6, 3, CaveBot.Config.lureWindow.content, "Minimum preferred distance from the nearest configured monster while kiting.")
+  local maxRangePanel = CaveBot.Config.addSlider("lureMageRunMaxRange", "Kiting max distance", 2, 8, 6, CaveBot.Config.lureWindow.content, "Maximum normal kiting distance from the nearest configured monster. Creature range controls detection and target scanning for the entire Mage Run stack.")
+  local arenaPanel = CaveBot.Config.addSlider("lureMageRunArenaRadius", "Arena radius", 3, 15, 5, CaveBot.Config.lureWindow.content, "Maximum normal distance from the End Lure point. Emergency movement may temporarily use Arena radius + 2.")
+  local decisionPanel = CaveBot.Config.addSlider("lureMageRunDecisionDelay", "Decision hold", 200, 1500, 650, CaveBot.Config.lureWindow.content, "Milliseconds to keep a safe destination before choosing another one. Higher values reduce direction changes.")
+  local carryPanel = CaveBot.Config.addCheckBox("lureMageRunCarryRemaining", "Carry remaining", false, CaveBot.Config.lureWindow.content, "Mage Run only: when at most two configured creatures remain above Ignore remaining, leave End Lure and pull them with Lure walk delay until the next waypoint. Adjacent lure still switches the walk to fast movement when needed.")
+  local debugPanel = CaveBot.Config.addCheckBox("lureMageRunDebugPath", "Debug path", false, CaveBot.Config.lureWindow.content, "Marks the Mage Run chosen path with colored tiles for a short time.")
+  CaveBot.Config.lureMageRunWidgets = {mageRunSeparator, mageRunSection, adjacentPanel, minRangePanel, maxRangePanel, arenaPanel, decisionPanel, carryPanel, debugPanel}
+
+  addSection("Ignore remaining", "Controls when the bot can leave End Lure with a few configured creatures still alive.")
+  CaveBot.Config.addSlider("lureIgnoreRemaining", "Ignore remaining", 0, 32, 0, CaveBot.Config.lureWindow.content, "Maximum configured creatures allowed to remain before leaving End Lure.")
+  CaveBot.Config.addSlider("lureIgnoreHp", "HP %", 0, 100, 0, CaveBot.Config.lureWindow.content, "Remaining creatures above this HP can be ignored. Creatures at or below this HP are killed. 0 disables HP filtering.")
+
+  CaveBot.Config.lureWindow.closeButton.onClick = function()
+    CaveBot.Config.lureWindow:hide()
+  end
+
+  CaveBot.Config.refreshTargetMode()
+
+  return CaveBot.Config.lureWindow
+end
+
+CaveBot.Config.setup = function()
+  CaveBot.Config.ui = UI.createWidget("CaveBotConfigPanel")
+  local ui = CaveBot.Config.ui
+  local add = CaveBot.Config.add
+  
+  add("ping", "Server ping", 100)
+  add("walkDelay", "Walk delay", 10)
+  add("floorChangeDelay", "Floor change delay", 850)
+  add("recordDistance", "Record distance", 5)
+
+  CaveBot.Config.registerVirtualSlider("lureMinCreature", "Min creature", 1)
+  CaveBot.Config.registerVirtualSlider("lureCreatureRange", "Creature range", 8)
+  CaveBot.Config.registerVirtualSlider("minLure", "Min lure (walk)", 1)
+  CaveBot.Config.registerVirtualSlider("lureMaxToWalk", "Max lure (walk)", 8)
+  CaveBot.Config.registerVirtualSlider("lureWalkDelay", "Lure walk delay", 100)
+  CaveBot.Config.registerVirtualSlider("lureAdjacentMax", "Adjacent lure", 1)
+  CaveBot.Config.registerVirtualSlider("lureMageRunMinRange", "Safe distance", 3)
+  CaveBot.Config.registerVirtualSlider("lureMageRunMaxRange", "Kiting max distance", 6)
+  CaveBot.Config.registerVirtualSlider("lureMageRunArenaRadius", "Arena radius", 5)
+  CaveBot.Config.registerVirtualSlider("lureMageRunDecisionDelay", "Decision hold", 650)
+  CaveBot.Config.registerVirtualBoolean("lureMageRunCarryRemaining", "Carry remaining", false)
+  CaveBot.Config.registerVirtualBoolean("lureMageRunDebugPath", "Debug path", false)
+  CaveBot.Config.registerVirtualSlider("lureIgnoreRemaining", "Ignore remaining", 0)
+  CaveBot.Config.registerVirtualSlider("lureIgnoreHp", "HP %", 0)
+
+  local lureButton = UI.createWidget("CaveBotConfigOpenButton", CaveBot.Config.ui)
+  lureButton:setText("Config")
+  lureButton:setTooltip("Open lure settings.")
+  lureButton.onClick = function()
+    local window = CaveBot.Config.ensureLureWindow()
+    CaveBot.Config.refreshTargetMode()
+    window:show()
+    window:raise()
+    window:focus()
+  end
+
+  add("mapClick", "Use map click", false)
+  add("mapClickDelay", "Map click delay", 100)
+  add("ignoreFields", "Ignore fields", false)  
+  add("skipBlocked", "Skip blocked path", false)  
+  add("useDelay", "Delay after use", 400)
+end
+
+CaveBot.Config.refreshTargetMode = function()
+  local showMageRun = TargetBot and TargetBot.isMageRunMode and TargetBot.isMageRunMode()
+  for _, widget in ipairs(CaveBot.Config.lureMageRunWidgets or {}) do
+    if widget then
+      if showMageRun then
+        widget:show()
+      else
+        widget:hide()
+      end
+    end
+  end
+end
+
+CaveBot.Config.show = function()
+  CaveBot.Config.ui:show()
+end
+
+CaveBot.Config.hide = function()
+  CaveBot.Config.ui:hide()
+  if CaveBot.Config.lureWindow then
+    CaveBot.Config.lureWindow:hide()
+  end
+end
+
+CaveBot.Config.onConfigChange = function(configName, isEnabled, configData)
+  for k, v in pairs(CaveBot.Config.default_values) do
+    CaveBot.Config.value_setters[k](v)
+  end
+  if not configData then return end
+  for k, v in pairs(configData) do
+    if CaveBot.Config.value_setters[k] then
+      CaveBot.Config.value_setters[k](v)
+    end
+  end
+end
+
+CaveBot.Config.save = function()
+  local data = {}
+  for k, v in pairs(CaveBot.Config.default_values) do
+    data[k] = v
+  end
+  for k, v in pairs(CaveBot.Config.values) do
+    data[k] = v
+  end
+  return data
+end
+
+CaveBot.Config.add = function(id, title, defaultValue)
+  if CaveBot.Config.values[id] then
+    return warn("Duplicated config key: " .. id)
+  end
+    
+  local panel
+  local setter -- sets value
+  if type(defaultValue) == "number" then
+    panel = UI.createWidget("CaveBotConfigNumberValuePanel", CaveBot.Config.ui)
+    panel:setId(id)
+    setter = function(value)
+      CaveBot.Config.values[id] = value
+      panel.value:setText(value, true)
+    end
+    setter(defaultValue)
+    panel.value.onTextChange = function(widget, newValue)
+      newValue = tonumber(newValue)
+      if newValue then
+        CaveBot.Config.values[id] = newValue
+        CaveBot.save()
+      end
+    end
+  elseif type(defaultValue) == "boolean" then
+    panel = UI.createWidget("CaveBotConfigBooleanValuePanel", CaveBot.Config.ui)
+    panel:setId(id)
+    setter = function(value)
+      CaveBot.Config.values[id] = value
+      panel.value:setOn(value, true)
+    end
+    setter(defaultValue)
+    panel.value.onClick = function(widget)
+      widget:setOn(not widget:isOn())
+      CaveBot.Config.values[id] = widget:isOn()
+      CaveBot.save()
+    end
+  else
+    return warn("Invalid default value of config for key " .. id .. ", should be number or boolean")      
+  end
+  
+  panel.title:setText(tostring(title or "") .. ":")
+  
+  CaveBot.Config.value_setters[id] = setter
+  CaveBot.Config.values[id] = defaultValue
+  CaveBot.Config.default_values[id] = defaultValue
+  CaveBot.Config.widgets[id] = panel
+end
+
+CaveBot.Config.addCheckBox = function(id, title, defaultValue, parent, tooltip)
+  if CaveBot.Config.widgets[id] then
+    return warn("Duplicated config key: " .. id)
+  end
+
+  local panel = UI.createWidget("CaveBotConfigBooleanValuePanel", parent or CaveBot.Config.ui)
+  panel:setId(id)
+  if tooltip then
+    panel:setTooltip(tooltip)
+    panel.title:setTooltip(tooltip)
+    panel.value:setTooltip(tooltip)
+  end
+
+  local currentValue = CaveBot.Config.values[id]
+  if currentValue == nil then
+    currentValue = defaultValue and true or false
+  end
+
+  local setter = function(value)
+    value = value and true or false
+    CaveBot.Config.values[id] = value
+    panel.value:setOn(value, true)
+  end
+
+  panel.title:setText(tostring(title or "") .. ":")
+  panel.value.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+    CaveBot.Config.values[id] = widget:isOn()
+    CaveBot.save()
+  end
+
+  CaveBot.Config.value_setters[id] = setter
+  CaveBot.Config.default_values[id] = defaultValue and true or false
+  CaveBot.Config.widgets[id] = panel
+  setter(currentValue)
+  return panel
+end
+
+CaveBot.Config.addSlider = function(id, title, minValue, maxValue, defaultValue, parent, tooltip)
+  if CaveBot.Config.widgets[id] then
+    return warn("Duplicated config key: " .. id)
+  end
+
+  local panel = UI.createWidget("CaveBotConfigSliderValuePanel", parent or CaveBot.Config.ui)
+  panel:setId(id)
+  if tooltip then
+    panel:setTooltip(tooltip)
+    panel.title:setTooltip(tooltip)
+    panel.scroll:setTooltip(tooltip)
+  end
+  local silent = false
+
+  local function setLabel(value)
+    panel.title:setText(tostring(title or "") .. ": " .. value)
+  end
+
+  local currentValue = CaveBot.Config.values[id]
+  if currentValue == nil then
+    currentValue = defaultValue
+  end
+
+  local setter = function(value)
+    value = tonumber(value) or defaultValue
+    CaveBot.Config.values[id] = value
+    silent = true
+    panel.scroll:setValue(value)
+    silent = false
+    setSliderLabel(panel, title, value)
+  end
+
+  panel.scroll:setRange(minValue, maxValue)
+  if maxValue - minValue > 1000 then
+    panel.scroll:setStep(100)
+  elseif maxValue - minValue > 100 then
+    panel.scroll:setStep(10)
+  else
+    panel.scroll:setStep(1)
+  end
+
+  panel.scroll.onValueChange = function(widget, value)
+    CaveBot.Config.values[id] = value
+    setSliderLabel(panel, title, value)
+    if silent then return end
+    CaveBot.save()
+  end
+
+  CaveBot.Config.value_setters[id] = setter
+  CaveBot.Config.default_values[id] = defaultValue
+  CaveBot.Config.widgets[id] = panel
+  setter(currentValue)
+  return panel
+end
+
+CaveBot.Config.get = function(id)
+  if CaveBot.Config.values[id] == nil then
+    return warn("Invalid CaveBot.Config.get, id: " .. id)
+  end
+  return CaveBot.Config.values[id]
+end
+
+CaveBot.Config.set = function(id, value)
+  local valueType = CaveBot.Config.get(id)
+  local panel = CaveBot.Config.widgets[id] or CaveBot.Config.ui[id] or (CaveBot.Config.lureWindow and CaveBot.Config.lureWindow.content[id])
+
+  if not panel then
+    CaveBot.Config.values[id] = value
+    CaveBot.save()
+    return
+  end
+
+  if type(valueType) == 'boolean' then
+    CaveBot.Config.values[id] = value
+    panel.value:setOn(value, true)
+    CaveBot.save()
+  elseif panel.scroll then
+    CaveBot.Config.values[id] = value
+    panel.scroll:setValue(value)
+    CaveBot.save()
+  else
+    CaveBot.Config.values[id] = value
+    panel.value:setText(value, true)
+    CaveBot.save()
+  end
+end
+]]
+FILES["cavebot/config.otui"] = [[CaveBotConfigPanel < Panel
+  id: cavebotEditor
+  visible: false
+  
+  layout:
+    type: verticalBox
+    fit-children: true
+  
+  HorizontalSeparator
+    margin-top: 5
+
+  Label
+    text-align: center
+    text: CaveBot Config
+    margin-top: 5
+
+CaveBotConfigSection < Label
+  height: 18
+  margin-top: 2
+  text-align: center
+  font: verdana-11px-rounded
+  color: #9dd1ce
+
+CaveBotConfigSectionSeparator < HorizontalSeparator
+  margin-top: 8
+  margin-bottom: 2
+
+CaveBotConfigOpenButton < Button
+  height: 20
+  margin-top: 5
+
+CaveBotLureConfigWindow < MainWindow
+  text: Lure Config
+  size: 340 540
+  padding: 20
+  @onEscape: self:hide()
+
+  VerticalScrollBar
+    id: contentScroll
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.bottom: closeButton.top
+    margin-bottom: 10
+    step: 38
+    pixels-scroll: true
+
+  ScrollablePanel
+    id: content
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: contentScroll.left
+    anchors.bottom: closeButton.top
+    margin-right: 4
+    margin-bottom: 10
+    vertical-scrollbar: contentScroll
+    layout: verticalBox
+
+  Button
+    id: closeButton
+    text: Close
+    anchors.bottom: parent.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: 80
+
+CaveBotConfigNumberValuePanel < Panel
+  height: 20
+  margin-top: 5
+  
+  BotTextEdit
+    id: value
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    margin-right: 5
+    width: 50
+
+  Label
+    id: title
+    anchors.left: parent.left
+    anchors.verticalCenter: prev.verticalCenter
+    margin-left: 5
+
+CaveBotConfigBooleanValuePanel < Panel
+  height: 20
+  margin-top: 5
+  
+  BotSwitch
+    id: value
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    margin-right: 5
+    width: 50
+    
+    $on:
+      text: On
+      
+    $!on:
+      text: Off
+
+  Label
+    id: title
+    anchors.left: parent.left
+    anchors.verticalCenter: prev.verticalCenter
+    margin-left: 5
+
+CaveBotConfigSliderValuePanel < Panel
+  height: 34
+  margin-top: 5
+
+  Label
+    id: title
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    margin-left: 5
+    margin-right: 5
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 5
+    margin-right: 5
+    margin-top: 3
+    minimum: 0
+    maximum: 10
+    step: 1
+]]
+FILES["cavebot/depositor.lua"] = [[CaveBot.Extensions.Depositor = {}
+
+--local variables
+local destination = nil
+local lootTable = nil
+local reopenedContainers = false
+local stowRemoveBoxIndex = 1
+local stowLootScope = {}
+local stowPendingLootContainerId = nil
+local stowOpenedLootItems = {}
+local stowStoreReopened = false
+
+local function resetCache()
+	reopenedContainers = false
+	destination = nil
+	lootTable = nil
+	stowRemoveBoxIndex = 1
+	stowLootScope = {}
+	stowPendingLootContainerId = nil
+	stowOpenedLootItems = {}
+	stowStoreReopened = false
+
+	for i, container in ipairs(getContainers()) do
+		if container:getName():lower():find("depot") or container:getName():lower():find("locker") then
+			g_game.close(container)
+		end
+	end
+
+	if storage.caveBot.backStop then
+		storage.caveBot.backStop = false
+		CaveBot.setOff()
+	elseif storage.caveBot.backTrainers then
+		storage.caveBot.backTrainers = false
+		CaveBot.gotoLabel('toTrainers')
+	elseif storage.caveBot.backOffline then
+		storage.caveBot.backOffline = false
+		CaveBot.gotoLabel('toOfflineTraining')
+	end
+end
+
+local description = g_game.getClientVersion() > 960 and "No - just deposit \n Yes - also reopen loot containers" or "currently not supported, will be added in near future"
+
+local function getStowSettings()
+	if type(getStowAllSettings) == "function" then
+		return getStowAllSettings()
+	end
+
+	storage.specialDeposit = storage.specialDeposit or {}
+	storage.specialDeposit.storeItems = storage.specialDeposit.storeItems or {}
+	storage.specialDeposit.removeItems = storage.specialDeposit.removeItems or {}
+	storage.specialDeposit.lootContainers = storage.specialDeposit.lootContainers or {}
+	storage.specialDeposit.delay = tonumber(storage.specialDeposit.delay) or 300
+	return storage.specialDeposit
+end
+
+local function getEntryId(entry)
+	if type(entry) == "number" then
+		return entry
+	end
+	if type(entry) == "table" then
+		return tonumber(entry.id)
+	end
+end
+
+local function itemInList(list, id)
+	if type(list) ~= "table" then
+		return false
+	end
+
+	for _, entry in ipairs(list) do
+		if getEntryId(entry) == id then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function listHasItems(list)
+	if type(list) ~= "table" then
+		return false
+	end
+
+	for _, entry in ipairs(list) do
+		local id = getEntryId(entry)
+		if id and id > 0 then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function isDepotContainer(container)
+	if not container then return false end
+	local name = container:getName():lower()
+	return name:find("depot")
+		or name:find("locker")
+		or name:find("your inbox")
+end
+
+local function findFreeBackpack()
+	for _, container in pairs(getContainers()) do
+		local name = container:getName():lower()
+		if not name:find("depot")
+			and not name:find("locker")
+			and not name:find("your inbox")
+			and not name:find("quiver")
+			and container:getCapacity() > #container:getItems() then
+			return container
+		end
+	end
+end
+
+local function getContainerKey(container)
+	if container and container.getId then
+		return container:getId()
+	end
+end
+
+local function getItemKey(item)
+	if not item then return nil end
+	local itemPos = item:getPosition()
+	if not itemPos then return tostring(item:getId()) end
+	return table.concat({
+		tostring(item:getId()),
+		tostring(itemPos.x),
+		tostring(itemPos.y),
+		tostring(itemPos.z),
+		tostring(item:getStackPos() or 0)
+	}, ":")
+end
+
+local function markLootScope(settings)
+	local lootContainers = settings.lootContainers or {}
+	if not listHasItems(lootContainers) then
+		return
+	end
+
+	for _, container in pairs(getContainers()) do
+		if not isDepotContainer(container) then
+			local containerItem = container:getContainerItem()
+			local id = containerItem and containerItem:getId()
+			if itemInList(lootContainers, id)
+				or id == stowPendingLootContainerId then
+				local key = getContainerKey(container)
+				if key then
+					stowLootScope[key] = true
+				end
+			end
+		end
+	end
+
+	stowPendingLootContainerId = nil
+end
+
+local function isLootScopeContainer(container, settings)
+	local lootContainers = settings.lootContainers or {}
+	if not listHasItems(lootContainers) then
+		return false
+	end
+
+	local key = getContainerKey(container)
+	if key and stowLootScope[key] then
+		return true
+	end
+
+	local containerItem = container and container:getContainerItem()
+	local id = containerItem and containerItem:getId()
+	return itemInList(lootContainers, id)
+end
+
+local function openLootRoot(settings)
+	local lootContainers = settings.lootContainers or {}
+	if not listHasItems(lootContainers) then
+		return false
+	end
+
+	for _, container in pairs(getContainers()) do
+		if not isDepotContainer(container) then
+			local containerItem = container:getContainerItem()
+			local id = containerItem and containerItem:getId()
+			if itemInList(lootContainers, id) then
+				local key = getContainerKey(container)
+				if key then stowLootScope[key] = true end
+				return "ready"
+			end
+		end
+	end
+
+	for _, container in pairs(getContainers()) do
+		if not isDepotContainer(container) then
+			for _, item in ipairs(container:getItems()) do
+				if item:isContainer() and itemInList(lootContainers, item:getId()) then
+					local itemKey = getItemKey(item)
+					if itemKey then stowOpenedLootItems[itemKey] = true end
+					stowPendingLootContainerId = item:getId()
+					g_game.open(item, container)
+					return "opened"
+				end
+			end
+		end
+	end
+
+	for slot = InventorySlotFirst, InventorySlotLast do
+		local item = getInventoryItem(slot)
+		if item and item:isContainer() and itemInList(lootContainers, item:getId()) then
+			local itemKey = getItemKey(item)
+			if itemKey then stowOpenedLootItems[itemKey] = true end
+			stowPendingLootContainerId = item:getId()
+			g_game.open(item)
+			return "opened"
+		end
+	end
+
+	return false
+end
+
+local function openNextLootChild(settings)
+	for _, container in pairs(getContainers()) do
+		if isLootScopeContainer(container, settings) then
+			for _, item in ipairs(container:getItems()) do
+				if item:isContainer() then
+					local itemKey = getItemKey(item)
+					if not (itemKey and stowOpenedLootItems[itemKey]) then
+						if itemKey then stowOpenedLootItems[itemKey] = true end
+						stowPendingLootContainerId = item:getId()
+						g_game.open(item, container)
+						return true
+					end
+				end
+			end
+		end
+	end
+
+	return false
+end
+
+local function closeLootScope(settings)
+	for _, container in pairs(getContainers()) do
+		if isLootScopeContainer(container, settings) then
+			g_game.close(container)
+		end
+	end
+
+	stowLootScope = {}
+	stowPendingLootContainerId = nil
+	stowOpenedLootItems = {}
+end
+
+local function runStowStore(settings)
+	local items = settings.storeItems or {}
+	if #items == 0 then
+		print("CaveBot[StowAll]: no items configured to guardar")
+		resetCache()
+		return true
+	end
+
+	if not listHasItems(settings.lootContainers) then
+		print("CaveBot[StowAll]: no loot container configured")
+		resetCache()
+		return false
+	end
+
+	if type(g_game.stashStowItem) ~= "function" then
+		warn("CaveBot[StowAll]: g_game.stashStowItem is not available in this client")
+		resetCache()
+		return false
+	end
+
+	if not CaveBot.ReachAndOpenDepot() then
+		return "retry"
+	end
+
+	markLootScope(settings)
+
+	local lootRootState = openLootRoot(settings)
+	if not lootRootState then
+		print("CaveBot[StowAll]: no loot container found/open")
+		resetCache()
+		return false
+	elseif lootRootState == "opened" then
+		CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+		return "retry"
+	end
+
+	for _, container in pairs(getContainers()) do
+		if isLootScopeContainer(container, settings) then
+			for _, item in pairs(container:getItems()) do
+				local id = item:getId()
+				if itemInList(items, id) then
+					statusMessage("[Stow All] stowing all items of type: " .. id)
+					g_game.stashStowItem(item:getPosition(), id, 0, item:getStackPos(), 2)
+					CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+					return "retry"
+				end
+			end
+		end
+	end
+
+	if openNextLootChild(settings) then
+		CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+		return "retry"
+	end
+
+	if listHasItems(settings.lootContainers) and not stowStoreReopened then
+		stowStoreReopened = true
+		closeLootScope(settings)
+		if openLootRoot(settings) then
+			CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+			return "retry"
+		end
+	end
+
+	print("CaveBot[StowAll]: guardar list finished")
+	resetCache()
+	return true
+end
+
+local function runStowRemove(settings)
+	local items = settings.removeItems or {}
+	if #items == 0 then
+		print("CaveBot[StowAll]: no items configured to remover")
+		resetCache()
+		return true
+	end
+
+	if not CaveBot.ReachAndOpenDepot() then
+		return "retry"
+	end
+
+	local destination = findFreeBackpack()
+	if not destination then
+		print("CaveBot[StowAll]: no backpack with free slots to remove items")
+		resetCache()
+		return false
+	end
+
+	for _, container in pairs(getContainers()) do
+		if isDepotContainer(container) then
+			for _, item in pairs(container:getItems()) do
+				local id = item:getId()
+				if itemInList(items, id) then
+					statusMessage("[Stow All] removing item: " .. id)
+					g_game.move(item, destination:getSlotPosition(destination:getItemsCount()), item:getCount())
+					CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+					return "retry"
+				end
+			end
+		end
+	end
+
+	if stowRemoveBoxIndex <= 17 then
+		for _, container in pairs(getContainers()) do
+			if container:getName():lower():find("depot box") then
+				g_game.close(container)
+			end
+		end
+
+		CaveBot.OpenDepotBox(stowRemoveBoxIndex)
+		stowRemoveBoxIndex = stowRemoveBoxIndex + 1
+		CaveBot.delay(math.max(tonumber(settings.delay) or 300, 0))
+		return "retry"
+	end
+
+	print("CaveBot[StowAll]: remover list finished")
+	resetCache()
+	return true
+end
+
+CaveBot.Extensions.Depositor.setup = function()
+	CaveBot.registerAction("stow all", "#00D4AA", function(value, retries)
+		local mode = tostring(value or "guardar"):lower():trim()
+		local settings = getStowSettings()
+
+		if retries > 400 then
+			print("CaveBot[StowAll]: actions limit reached, proceeding")
+			resetCache()
+			return true
+		end
+
+		if mode == "guardar" or mode == "store" or mode == "stash" then
+			return runStowStore(settings)
+		elseif mode == "remover" or mode == "remove" or mode == "withdraw" then
+			return runStowRemove(settings)
+		end
+
+		warn("CaveBot[StowAll]: invalid mode " .. tostring(value))
+		resetCache()
+		return false
+	end)
+
+	if CaveBot.Editor and CaveBot.Editor.registerAction then
+		CaveBot.Editor.registerAction("stow all", "stow all", {
+			value="guardar",
+			title="Stow All",
+			description="Choose Guardar to stash the guardar list or Remover to withdraw the remover list.",
+			multiline=false,
+			customEditor=function(currentValue, callback)
+				CaveBot.Editor.openStowAllEditor(currentValue, callback)
+			end
+		})
+	end
+
+	CaveBot.registerAction("depositor", "#002FFF", function(value, retries)
+		-- version check, TODO old tibia
+		if g_game.getClientVersion() < 960 then
+			resetCache()
+			warn("CaveBot[Depositor]: unsupported Tibia version, will be added in near future")
+			return false
+		end
+
+		-- loot list check
+		lootTable = lootTable or CaveBot.GetLootItems()
+		if #lootTable == 0 then
+			print("CaveBot[Depositor]: no items in loot list. Wrong TargetBot Config? Proceeding")
+			resetCache()
+			return true
+		end
+
+		delay(70)
+
+		-- backpacks etc
+		if value:lower() == "yes" then
+			if not reopenedContainers then
+				CaveBot.CloseAllLootContainers()
+				delay(3000)
+				reopenedContainers = true
+				return "retry"
+			end
+			-- open next backpacks if no more loot
+			if not CaveBot.HasLootItems() then
+				local lootContainers = CaveBot.GetLootContainers()
+				for _, container in ipairs(getContainers()) do
+					local cId = container:getContainerItem():getId()
+					if table.find(lootContainers, cId) then
+						for i, item in ipairs(container:getItems()) do
+							if item:getId() == cId then
+								g_game.open(item, container)
+								delay(100)
+								return "retry"
+							end
+						end
+					end
+				end
+				-- couldn't find next container, so we done
+				print("CaveBot[Depositor]: all items stashed, no backpack to open next, proceeding")
+				CaveBot.CloseAllLootContainers()
+				delay(3000)
+				resetCache()
+				return true
+			end
+		end
+
+		-- first check items
+		if retries == 0 then
+			if not CaveBot.HasLootItems() then -- resource consuming function
+				print("CaveBot[Depositor]: no items to stash, proceeding")
+				resetCache()
+				return true
+			end
+		end
+
+		-- next check retries
+		if retries > 400 then 
+			print("CaveBot[Depositor]: Depositor actions limit reached, proceeding")
+			resetCache()
+			return true 
+		end
+
+		-- reaching and opening depot 
+		if not CaveBot.ReachAndOpenDepot() then
+			return "retry"
+		end
+
+		-- add delay to prevent bugging
+		CaveBot.PingDelay(2)
+
+		-- prep time and stashing
+		destination = destination or getContainerByName("Depot chest")
+		if not destination then return "retry" end
+
+		for _, container in pairs(getContainers()) do
+    	    local name = container:getName():lower()
+    	    if not name:find("depot") and not name:find("your inbox") then
+    	        for _, item in pairs(container:getItems()) do
+    	            local id = item:getId()
+					if table.find(lootTable, id) then
+						local index = getStashingIndex(id) or item:isStackable() and 1 or 0
+						statusMessage("[Depositer] stashing item: " ..id.. " to depot: "..index+1)
+						CaveBot.StashItem(item, index, destination)
+						return "retry"
+					end
+				end
+			end
+		end
+
+		-- we gucci
+		resetCache()
+		return true
+	end)
+
+	CaveBot.Editor.registerAction("depositor", "depositor", {
+	 value="no",
+	 title="Depositor",
+	 description=description,
+	 validation="(yes|Yes|YES|no|No|NO)"
+	})
+end
+]]
+FILES["cavebot/doors.lua"] = [=[CaveBot.Extensions.OpenDoors = {}
+
+CaveBot.Extensions.OpenDoors.setup = function()
+  CaveBot.registerAction("OpenDoors", "#00FFFF", function(value, retries)
+    local pos = string.split(value, ",")
+    local key = nil
+    if #pos == 4 then
+      key = tonumber(pos[4])
+    end
+    if not pos[1] then
+      warn("CaveBot[OpenDoors]: invalid value. It should be position (x,y,z), is: " .. value)
+      return false
+    end
+
+    if retries >= 5 then
+      print("CaveBot[OpenDoors]: too many tries, can't open doors")
+      return false -- tried 5 times, can't open
+    end
+
+    pos = {x=tonumber(pos[1]), y=tonumber(pos[2]), z=tonumber(pos[3])}  
+
+    local doorTile
+    if not doorTile then
+      for i, tile in ipairs(g_map.getTiles(posz())) do
+        if tile:getPosition().x == pos.x and tile:getPosition().y == pos.y and tile:getPosition().z == pos.z then
+          doorTile = tile
+        end
+      end
+    end
+
+    if not doorTile then
+      return false
+    end
+  
+    if not doorTile:isWalkable() then
+      if not key then
+        use(doorTile:getTopUseThing())
+        delay(200)
+        return "retry"
+      else
+        useWith(key, doorTile:getTopUseThing())
+        delay(200)
+        return "retry"
+      end
+    else
+      print("CaveBot[OpenDoors]: possible to cross, proceeding")
+      return true
+    end
+  end)
+
+  CaveBot.Editor.registerAction("opendoors", "open doors", {
+    value=function() return posx() .. "," .. posy() .. "," .. posz() end,
+    title="Door position",
+    description="doors position (x,y,z) and key id (optional)",
+    multiline=false,
+    validation=[[\d{1,5},\d{1,5},\d{1,2}(?:,\d{1,5}$|$)]]
+})
+end]=]
+FILES["cavebot/editor.lua"] = [[CaveBot.Editor = {}
+CaveBot.Editor.Actions = {}
+CaveBot.Editor.walkDirectionWindow = nil
+
+local function ensureWalkDirectionWindow()
+  if CaveBot.Editor.walkDirectionWindow then
+    return CaveBot.Editor.walkDirectionWindow
+  end
+
+  local window = UI.createWindow("CaveBotWalkDirectionWindow", g_ui.getRootWidget())
+  window:hide()
+  window._callback = nil
+
+  local function choose(direction)
+    local callback = window._callback
+    window._callback = nil
+    window:hide()
+    if callback then
+      callback(direction)
+    end
+  end
+
+  local buttonDirections = {
+    nw = "nw",
+    n = "n",
+    ne = "ne",
+    w = "w",
+    c = "c",
+    e = "e",
+    sw = "sw",
+    s = "s",
+    se = "se"
+  }
+
+  for id, direction in pairs(buttonDirections) do
+    local button = window.content[id]
+    if button then
+      button.onClick = function()
+        choose(direction)
+      end
+    end
+  end
+
+  window.closeButton.onClick = function()
+    window._callback = nil
+    window:hide()
+  end
+
+  CaveBot.Editor.walkDirectionWindow = window
+  return window
+end
+
+local function ensureExaniHurWindow()
+  if CaveBot.Editor.exaniHurWindow then
+    return CaveBot.Editor.exaniHurWindow
+  end
+
+  local window = UI.createWindow("CaveBotExaniHurWindow", g_ui.getRootWidget())
+  window:hide()
+  window._callback = nil
+  window._mode = "up"
+  window._direction = "n"
+
+  local function refresh()
+    local modeIds = {"up", "down"}
+    for _, id in ipairs(modeIds) do
+      local button = window.modePanel[id]
+      if button then
+        button:setColor(window._mode == id and "#66FF99" or "#FFFFFF")
+      end
+    end
+
+    local directionIds = {"n", "e", "s", "w"}
+    for _, id in ipairs(directionIds) do
+      local button = window.directionPanel[id]
+      if button then
+        button:setColor(window._direction == id and "#66FF99" or "#FFFFFF")
+      end
+    end
+
+    window.summary:setText('exani hur "' .. window._mode .. '" facing ' .. window._direction:upper())
+  end
+
+  window.modePanel.up.onClick = function()
+    window._mode = "up"
+    refresh()
+  end
+
+  window.modePanel.down.onClick = function()
+    window._mode = "down"
+    refresh()
+  end
+
+  for _, id in ipairs({"n", "e", "s", "w"}) do
+    local directionId = id
+    window.directionPanel[directionId].onClick = function()
+      window._direction = directionId
+      refresh()
+    end
+  end
+
+  window.saveButton.onClick = function()
+    local callback = window._callback
+    local value = window._mode .. "," .. window._direction
+    window._callback = nil
+    window:hide()
+    if callback then
+      callback(value)
+    end
+  end
+
+  window.cancelButton.onClick = function()
+    window._callback = nil
+    window:hide()
+  end
+
+  window.refresh = refresh
+  CaveBot.Editor.exaniHurWindow = window
+  return window
+end
+
+local function openExaniHurEditor(currentValue, callback)
+  local window = ensureExaniHurWindow()
+  local parts = string.split(tostring(currentValue or "up,n"), ",")
+  local mode = parts[1] and parts[1]:lower():trim() or "up"
+  local direction = parts[2] and parts[2]:lower():trim() or "n"
+
+  if mode ~= "up" and mode ~= "down" then mode = "up" end
+  if direction ~= "n" and direction ~= "e" and direction ~= "s" and direction ~= "w" then
+    direction = "n"
+  end
+
+  window._mode = mode
+  window._direction = direction
+  window._callback = callback
+  window.refresh()
+  window:show()
+  window:raise()
+  window:focus()
+end
+
+local function ensureStowAllWindow()
+  if CaveBot.Editor.stowAllWindow then
+    return CaveBot.Editor.stowAllWindow
+  end
+
+  local window = UI.createWindow("CaveBotStowAllWindow", g_ui.getRootWidget())
+  window:hide()
+  window._callback = nil
+  window._mode = "guardar"
+
+  local function refresh()
+    for _, id in ipairs({"guardar", "remover"}) do
+      local button = window.modePanel[id]
+      if button then
+        button:setColor(window._mode == id and "#66FF99" or "#FFFFFF")
+      end
+    end
+    window.summary:setText("stow all: " .. window._mode)
+  end
+
+  window.modePanel.guardar.onClick = function()
+    window._mode = "guardar"
+    refresh()
+  end
+
+  window.modePanel.remover.onClick = function()
+    window._mode = "remover"
+    refresh()
+  end
+
+  window.saveButton.onClick = function()
+    local callback = window._callback
+    local value = window._mode
+    window._callback = nil
+    window:hide()
+    if callback then
+      callback(value)
+    end
+  end
+
+  window.cancelButton.onClick = function()
+    window._callback = nil
+    window:hide()
+  end
+
+  window.refresh = refresh
+  CaveBot.Editor.stowAllWindow = window
+  return window
+end
+
+local function openStowAllEditor(currentValue, callback)
+  local window = ensureStowAllWindow()
+  local mode = tostring(currentValue or "guardar"):lower():trim()
+  if mode ~= "guardar" and mode ~= "remover" then
+    mode = "guardar"
+  end
+
+  window._mode = mode
+  window._callback = callback
+  window.refresh()
+  window:show()
+  window:raise()
+  window:focus()
+end
+CaveBot.Editor.openStowAllEditor = openStowAllEditor
+
+local function openWalkDirectionPicker(currentValue, callback)
+  local window = ensureWalkDirectionWindow()
+  window._callback = callback
+  window:show()
+  window:raise()
+  window:focus()
+end
+
+-- also works as registerAction(action, params), then text == action
+-- params are options for text editor or function to be executed when clicked
+-- you have many examples how to use it bellow
+CaveBot.Editor.registerAction = function(action, text, params)
+  if type(text) ~= 'string' then
+    params = text
+    text = action
+  end
+
+  local color = nil
+  if type(params) ~= 'function' then
+    local raction = CaveBot.Actions[action]
+    if not raction then
+      return warn("CaveBot editor warn: action " .. action .. " doesn't exist")
+    end
+    CaveBot.Editor.Actions[action] = params
+    color = raction.color
+  end
+  
+  local button = UI.createWidget('CaveBotEditorButton', CaveBot.Editor.ui.buttons)
+  button:setText(text)
+  if color then
+    button:setColor(color)
+  end
+  button:setFont('verdana-11px-rounded')
+  button.onClick = function()    
+    if type(params) == 'function' then
+      params()
+      return
+    end
+    CaveBot.Editor.edit(action, nil, function(action, value)
+      local focusedAction = CaveBot.actionList:getFocusedChild()
+      local index = CaveBot.actionList:getChildCount()
+      if focusedAction then
+        index = CaveBot.actionList:getChildIndex(focusedAction)
+      end
+      local widget = CaveBot.addAction(action, value)
+      CaveBot.actionList:moveChildToIndex(widget, index + 1)
+      CaveBot.actionList:focusChild(widget)
+      CaveBot.refreshActionListNumbers()
+      CaveBot.save()
+    end)
+  end
+  return button
+end
+
+CaveBot.Editor.setup = function()
+  CaveBot.Editor.ui = UI.createWidget("CaveBotEditorPanel")
+  local ui = CaveBot.Editor.ui
+  local registerAction = CaveBot.Editor.registerAction
+
+  registerAction("move up", function()
+    local action = CaveBot.actionList:getFocusedChild()
+    if not action then return end
+    local index = CaveBot.actionList:getChildIndex(action)
+    if index < 2 then return end
+    CaveBot.actionList:moveChildToIndex(action, index - 1)
+    CaveBot.actionList:ensureChildVisible(action)
+    CaveBot.refreshActionListNumbers()
+    CaveBot.save()
+  end)
+  registerAction("edit", function()
+    local action = CaveBot.actionList:getFocusedChild()
+    if not action or not action.onDoubleClick then return end
+    action.onDoubleClick(action)
+  end)
+  registerAction("move down", function()
+    local action = CaveBot.actionList:getFocusedChild()
+    if not action then return end
+    local index = CaveBot.actionList:getChildIndex(action)
+    if index >= CaveBot.actionList:getChildCount() then return end
+    CaveBot.actionList:moveChildToIndex(action, index + 1)
+    CaveBot.actionList:ensureChildVisible(action)
+    CaveBot.refreshActionListNumbers()
+    CaveBot.save()
+  end)
+  registerAction("remove", function()
+    local action = CaveBot.actionList:getFocusedChild()
+    if not action then return end
+    action:destroy()
+    CaveBot.refreshActionListNumbers()
+    CaveBot.save()
+  end)
+    
+  registerAction("label", {
+    value="labelName",
+    title="Label",
+    description="Add label",
+    multiline=false   
+  })
+  registerAction("delay", {
+    value="500",
+    title="Delay",
+    description="Delay next action (in milliseconds),randomness (in percent-optional)",
+    multiline=false,
+    validation="^[0-9]{1,10}$|^[0-9]{1,10},[0-9]{1,4}$"
+  })
+  registerAction("gotolabel", "go to label", {
+    value="labelName",
+    title="Go to label",
+    description="Go to label",
+    multiline=false   
+  })
+  registerAction("goto", "go to", {
+    value=function() return posx() .. "," .. posy() .. "," .. posz() end,
+    title="Go to position",
+    description="Go to position (x,y,z)",
+    multiline=false,
+    validation="^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+),?\\s*([0-9]?)$"
+  })
+  registerAction("walk", {
+    value="n",
+    title="Walk",
+    description="Walk one tile in a chosen direction",
+    multiline=false,
+    customEditor=function(currentValue, callback)
+      openWalkDirectionPicker(currentValue, callback)
+    end
+  })
+  registerAction("exani hur", "Exani Hur", {
+    value="up,n",
+    title="Exani Hur",
+    description="Use Levitate persistently until the character changes floor",
+    multiline=false,
+    customEditor=function(currentValue, callback)
+      openExaniHurEditor(currentValue, callback)
+    end
+  })
+  registerAction("stand", {
+    value=function() return posx() .. "," .. posy() .. "," .. posz() end,
+    title="Stand",
+    description="Stand exactly on position (x,y,z)",
+    multiline=false,
+    validation="^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)$"
+  })
+  registerAction("checkcontainers", "check containers", {
+    value="refill",
+    title="Check Containers",
+    description="Go to label if all carried containers are full",
+    multiline=false,
+    validation="^[^,]+$"
+  })
+  registerAction("use", {
+    value=function() return posx() .. "," .. posy() .. "," .. posz() end,
+    title="Use",
+    description="Use item from position (x,y,z) or from inventory (itemId)",
+    multiline=false   
+  }) 
+  registerAction("usewith", "use with", {
+    value=function() return "itemId," .. posx() .. "," .. posy() .. "," .. posz() end,
+    title="Use with",
+    description="Use item at position (itemid,x,y,z)",
+    multiline=false,
+    validation="^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)$"
+  })
+  registerAction("say", {
+    value="text",
+    title="Say",
+    description="Enter text to say",
+    multiline=false   
+  }) 
+  registerAction("follow", {
+    value="NPC name",
+    title="Follow Creature",
+    description="insert creature name to follow",
+    multiline=false   
+  })
+  registerAction("npcsay", {
+    value="text",
+    title="NPC Say",
+    description="Enter text to NPC say",
+    multiline=false   
+  }) 
+  registerAction("function", {
+    title="Edit bot function",
+    multiline=true,
+    value=CaveBot.Editor.ExampleFunctions[1][2],
+    examples=CaveBot.Editor.ExampleFunctions,
+    width=650
+  })
+  
+  -- ui.autoRecording.onClick = function()
+  --   if ui.autoRecording:isOn() then
+  --     CaveBot.Recorder.disable()
+  --   else
+  --     CaveBot.Recorder.enable()
+  --   end
+  -- end
+  
+  -- callbacks
+  onPlayerPositionChange(function(pos)
+    ui.pos:setText("Position: " .. pos.x .. ", " .. pos.y .. ", " .. pos.z) 
+  end)
+  ui.pos:setText("Position: " .. posx() .. ", " .. posy() .. ", " .. posz()) 
+end
+
+CaveBot.Editor.show = function()
+  CaveBot.Editor.ui:show()
+end
+
+
+CaveBot.Editor.hide = function()
+  CaveBot.Editor.ui:hide()
+end
+
+CaveBot.Editor.edit = function(action, value, callback) -- callback = function(action, value)
+  local params = CaveBot.Editor.Actions[action]
+  if not params then return end
+  if not value then
+    if type(params.value) == 'function' then
+      value = params.value()
+    elseif type(params.value) == 'string' then
+      value = params.value
+    end
+  end
+
+  if params.customEditor then
+    return params.customEditor(value, function(newText)
+      callback(action, newText)
+    end)
+  end
+
+  UI.EditorWindow(value, params, function(newText)
+    callback(action, newText)
+  end)   
+end
+]]
+FILES["cavebot/editor.otui"] = [[CaveBotEditorButton < Button
+
+CaveBotDirectionButton < Button
+  width: 44
+  height: 28
+
+CaveBotWalkDirectionWindow < MainWindow
+  text: Walk Direction
+  size: 180 190
+  padding: 14
+  @onEscape: self:hide()
+
+  Label
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Choose direction
+    text-align: center
+
+  Panel
+    id: content
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: closeButton.top
+    margin-top: 10
+    margin-bottom: 10
+    layout:
+      type: grid
+      num-columns: 3
+      cell-size: 48 30
+      cell-spacing: 4
+
+    CaveBotDirectionButton
+      id: nw
+      text: NW
+
+    CaveBotDirectionButton
+      id: n
+      text: N
+
+    CaveBotDirectionButton
+      id: ne
+      text: NE
+
+    CaveBotDirectionButton
+      id: w
+      text: W
+
+    CaveBotDirectionButton
+      id: c
+      text: C
+
+    CaveBotDirectionButton
+      id: e
+      text: E
+
+    CaveBotDirectionButton
+      id: sw
+      text: SW
+
+    CaveBotDirectionButton
+      id: s
+      text: S
+
+    CaveBotDirectionButton
+      id: se
+      text: SE
+
+  Button
+    id: closeButton
+    text: Close
+    anchors.bottom: parent.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: 80
+
+
+CaveBotExaniHurChoiceButton < Button
+  height: 28
+  width: 78
+
+CaveBotStowAllChoiceButton < Button
+  height: 30
+  width: 92
+
+CaveBotExaniHurWindow < MainWindow
+  text: Exani Hur
+  size: 230 250
+  padding: 14
+  @onEscape: self:hide()
+
+  Label
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Choose floor movement
+    text-align: center
+
+  Panel
+    id: modePanel
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 32
+    margin-top: 10
+    layout:
+      type: horizontalBox
+      spacing: 6
+
+    CaveBotExaniHurChoiceButton
+      id: up
+      text: Up
+
+    CaveBotExaniHurChoiceButton
+      id: down
+      text: Down
+
+  Label
+    anchors.top: modePanel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 12
+    text: Direction to face
+    text-align: center
+
+  Panel
+    id: directionPanel
+    anchors.top: prev.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: 166
+    height: 66
+    margin-top: 8
+    layout:
+      type: grid
+      num-columns: 2
+      cell-size: 80 30
+      cell-spacing: 6
+
+    CaveBotExaniHurChoiceButton
+      id: n
+      text: North
+
+    CaveBotExaniHurChoiceButton
+      id: e
+      text: East
+
+    CaveBotExaniHurChoiceButton
+      id: s
+      text: South
+
+    CaveBotExaniHurChoiceButton
+      id: w
+      text: West
+
+  Label
+    id: summary
+    anchors.top: directionPanel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 10
+    text: exani hur
+    text-align: center
+    color: #9dd1ce
+
+  Button
+    id: saveButton
+    text: Save
+    anchors.bottom: parent.bottom
+    anchors.right: parent.horizontalCenter
+    margin-right: 4
+    width: 82
+
+  Button
+    id: cancelButton
+    text: Cancel
+    anchors.bottom: parent.bottom
+    anchors.left: parent.horizontalCenter
+    margin-left: 4
+    width: 82
+
+CaveBotStowAllWindow < MainWindow
+  text: Stow All
+  size: 230 150
+  padding: 14
+  @onEscape: self:hide()
+
+  Label
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Choose action
+    text-align: center
+
+  Panel
+    id: modePanel
+    anchors.top: prev.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: 194
+    height: 34
+    margin-top: 16
+    layout:
+      type: horizontalBox
+      spacing: 10
+
+    CaveBotStowAllChoiceButton
+      id: guardar
+      text: Guardar
+
+    CaveBotStowAllChoiceButton
+      id: remover
+      text: Remover
+
+  Label
+    id: summary
+    anchors.top: modePanel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 12
+    text: guardar
+    text-align: center
+    color: #9dd1ce
+
+  Button
+    id: saveButton
+    text: Save
+    anchors.bottom: parent.bottom
+    anchors.right: parent.horizontalCenter
+    margin-right: 4
+    width: 82
+
+  Button
+    id: cancelButton
+    text: Cancel
+    anchors.bottom: parent.bottom
+    anchors.left: parent.horizontalCenter
+    margin-left: 4
+    width: 82
+
+
+CaveBotEditorPanel < Panel
+  id: cavebotEditor
+  visible: false
+  width: 176
+  layout:
+    type: verticalBox
+    fit-children: true
+  
+  Label
+    id: pos
+    text-align: center
+    text: -
+    
+  Panel
+    id: buttons
+    margin-top: 2
+    width: 173
+    layout:
+      type: grid
+      cell-size: 86 20
+      cell-spacing: 1
+      num-columns: 2
+      fit-children: true
+
+  Label
+    text: Double click on action from action list to edit it
+    text-align: center
+    text-auto-resize: true
+    text-wrap: true
+    margin-top: 3
+    margin-left: 2
+    margin-right: 2
+]]
+FILES["cavebot/example_functions.lua"] = [=[CaveBot.Editor.ExampleFunctions = {}
+
+local function addExampleFunction(title, text)
+  return table.insert(CaveBot.Editor.ExampleFunctions, {title, text:trim()})
+end
+
+addExampleFunction("Click to browse example functions", [[
+-- available functions/variables:
+-- prev - result of previous action (true or false)
+-- retries - number of retries of current function, goes up by one when you return "retry"
+-- delay(number) - delays bot next action, value in milliseconds
+-- gotoLabel(string) - goes to specific label, return true if label exists
+-- you can easily access bot extensions, Depositer.run() instead of CaveBot.Extensions.Depositer.run()
+-- also you can access bot global variables, like CaveBot, TargetBot
+-- use storage variable to store date between calls
+
+-- function should return false, true or "retry"
+-- if "retry" is returned, function will be executed again in 20 ms (so better call delay before)
+
+return true
+]])
+
+addExampleFunction("Check for PZ and wait until dropped", [[
+if retries > 25 or not isPzLocked() then
+  return true
+else
+  if isPoisioned() then
+      say("exana pox")
+  end
+  if isPzLocked() then
+      delay(8000)
+  end
+  return "retry"
+end
+]])
+
+addExampleFunction("Check for stamina and imbues", [[
+  if stamina() < 900 or player:getSkillLevel(11) == 0 then CaveBot.setOff() return false else return true end
+]])
+
+addExampleFunction("buy 200 mana potion from npc Eryn", [[
+--buy 200 mana potions
+local npc = getCreatureByName("Eryn")
+if not npc then 
+  return false 
+end
+if retries > 10 then
+  return false
+end
+local pos = player:getPosition()
+local npcPos = npc:getPosition()
+if math.max(math.abs(pos.x - npcPos.x), math.abs(pos.y - npcPos.y)) > 3 then
+  autoWalk(npcPos, {precision=3})
+  delay(300)
+  return "retry"
+end
+if not NPC.isTrading() then
+  NPC.say("hi")
+  NPC.say("trade")
+  delay(200)
+  return "retry"
+end
+NPC.buy(268, 100)
+schedule(1000, function()
+  -- buy again in 1s
+  NPC.buy(268, 100)
+  NPC.closeTrade()
+  NPC.say("bye")
+end)
+delay(1200)
+return true
+]])
+
+addExampleFunction("Say hello 5 times with some delay", [[
+--say hello
+if retries > 5 then
+  return true -- finish
+end
+say("hello")
+delay(100 + retries * 100)
+return "retry"
+]])
+
+addExampleFunction("Disable TargetBot", [[
+TargetBot.setOff()
+return true
+]])
+
+addExampleFunction("Enable TargetBot", [[
+TargetBot.setOn()
+return true
+]])
+
+addExampleFunction("Logout", [[
+g_game.safeLogout()
+delay(1000)
+return "retry"
+]])
+
+addExampleFunction("Close Loot Containers", [[
+CaveBot.CloseAllLootContainers()
+delay(3000)
+return true
+]])
+]=]
+FILES["cavebot/extensions/checkLevel.lua"] = [[CaveBot.Extensions.LvlCheck = {}
+
+CaveBot.Extensions.LvlCheck.setup = function()
+  CaveBot.registerAction("LvlCheck", "#00FFFF", function(value, retries)
+    local data = string.split(value, ",")
+    if #data ~= 3 then
+     warn("wrong format, should be: level, leaveHunt, startHunt")
+     return false
+    end
+    local minRange, maxRange
+    local leaveLabel = data[2]:trim()
+    local loopLabel = data[3]:trim()
+    local lvlRange = string.split(data[1], ":")
+    local level = lvl()
+
+    minRange = tonumber(lvlRange[1])
+    maxRange = (#lvlRange > 1 and tonumber(lvlRange[2]) or nil)
+
+    if minRange and maxRange then
+      if level >= minRange and level <= maxRange then
+        CaveBot.gotoLabel(leaveLabel)
+        print("CaveBot[LvlCheck]: level range ".. "(".. minRange.. "-"..maxRange .." reached, proceeding to label "..leaveLabel)
+        return true
+      end
+    elseif minRange then
+      if level >= minRange then
+        print("CaveBot[LvlCheck]: level ".. minRange.." reached, proceeding to label "..leaveLabel)
+        CaveBot.gotoLabel(leaveLabel)
+        return true
+      end
+    end
+
+    print("CaveBot[LvlCheck]: level not reached, proceeding to label "..loopLabel)
+    CaveBot.gotoLabel(loopLabel)
+    return true
+  end)
+
+  CaveBot.Editor.registerAction("lvlcheck", "lvl check", {
+    value=function() return lvl() .. ", leaveHunt, startHunt" end,
+    title="Level Check",
+    description="level or range (10:100), label to leave, label to loop",
+    multiline=false,
+})
+end]]
+FILES["cavebot/extensions/dropItem_toPos.lua"] = [[function getPosByDir()
+  local dirs = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 }}
+  local dir = player:getDirection() + 1
+  local dirPos = pos()
+  dirPos.x = dirPos.x + dirs[dir][1]
+  dirPos.y = dirPos.y + dirs[dir][2]
+
+  return dirPos.x .. "," .. dirPos.y .. "," .. dirPos.z
+end
+
+CaveBot.Extensions.dropItem = {}
+
+CaveBot.Extensions.dropItem.setup = function()
+  CaveBot.registerAction("drop item", "orange", function(value, retries)
+    local val = string.split(value, ",")
+    local itemid = nil
+    local count = nil
+    local tries = nil
+    if #val >= 4 then
+      itemid = tonumber(val[4])
+    end
+    if #val == 5 then
+      tries = tonumber(val[5])
+    end
+
+    if not val[1] or not val[2] or not val[3] then
+      warn("CaveBot[Drop]: invalid value. It should be position (x,y,z), is: " .. value)
+      return false
+    end
+
+    if retries >= (tries and tries or 20) then
+      print("CaveBot[Drop]: too many tries, can't open hole")
+      return false -- tried 20 times, can't drop
+    end
+
+    local pos = {x=tonumber(val[1]), y=tonumber(val[2]), z=tonumber(val[3])}  
+
+    local dropTile = g_map.getTile(pos)
+    if not dropTile then
+      return "retry"
+    end
+
+    local holeitem = dropTile:getTopThing()
+    if holeitem and holeitem:getId() == itemid then
+      return true
+    end
+
+    local item = findItem(itemid)
+    if item then
+      g_game.move(item, pos, 1)
+      CaveBot.delay(1000)
+    end
+    return "retry"
+  end)
+CaveBot.Editor.registerAction("drop item", "drop item", {
+    value=function() return getPosByDir() end,
+    title="Drop",
+    description="Drop item to position (x,y,z), itemid, retries(optional) ",
+    multiline=false,
+})
+end]]
+FILES["cavebot/imbuing.lua"] = [[-- imbuing window should be handled separatly
+-- reequiping should be handled separatly (ie. equipment manager)
+
+CaveBot.Extensions.Imbuing = {}
+
+local SHRINES = {25060, 25061, 25182, 25183}
+local currentIndex = 1
+local shrine = nil
+local item = nil
+local currentId = 0
+local triedToTakeOff = false
+local destination = nil
+
+local function reset()
+  EquipManager.setOn()
+  shrine = nil
+  currentIndex = 1
+  item = nil
+  currentId = 0
+  triedToTakeOff = false
+  destination = nil
+end
+
+CaveBot.Extensions.Imbuing.setup = function()
+  CaveBot.registerAction("imbuing", "red", function(value, retries)
+    local data = string.split(value, ",")
+    local ids = {}
+
+    if #data == 0 and value ~= 'name' then
+      warn("CaveBot[Imbuing] no items added, proceeding")
+      reset()
+      return false
+    end
+
+    -- setting of equipment manager so it wont disturb imbuing process
+    EquipManager.setOff()
+
+    if value == 'name' then
+      local imbuData = AutoImbueTable[player:getName()]      
+      for id, imbues in pairs(imbuData) do
+        table.insert(ids, id)
+      end
+    else
+      -- convert to number
+      for i, id in ipairs(data) do
+        id = tonumber(id)
+        if not table.find(ids, id) then
+          table.insert(ids, id)
+        end
+      end
+    end
+ 
+    -- all items imbued, can proceed
+    if currentIndex > #ids then
+      warn("CaveBot[Imbuing] used shrine on all items, proceeding")
+      reset()
+      return true
+    end
+
+    for _, tile in ipairs(g_map.getTiles(posz())) do
+      for _, item in ipairs(tile:getItems()) do
+          local id = item:getId()
+          if table.find(SHRINES, id) then
+            shrine = item
+            break
+          end
+      end
+    end
+
+    -- if not shrine
+    if not shrine then
+      warn("CaveBot[Imbuing] shrine not found! proceeding")
+      reset()
+      return false
+    end
+
+    destination = shrine:getPosition()
+
+    currentId = ids[currentIndex]
+    item = findItem(currentId)
+    
+    -- maybe equipped? try to take off
+    if not item then
+      -- did try before, still not found so item is unavailable
+      if triedToTakeOff then
+        warn("CaveBot[Imbuing] item not found! skipping: "..currentId)
+        triedToTakeOff = false
+        currentIndex = currentIndex + 1
+        return "retry"
+      end
+      triedToTakeOff = true
+      g_game.equipItemId(currentId)
+      delay(1000)
+      return "retry"
+    end
+
+    -- we are past unequiping so just in case we were forced before, reset var
+    triedToTakeOff = false
+
+    -- reaching shrine
+    if not CaveBot.MatchPosition(destination, 1) then
+      CaveBot.GoTo(destination, 1)
+      delay(200)
+      return "retry"
+    end
+
+    useWith(shrine, item)
+    currentIndex = currentIndex + 1
+    warn("CaveBot[Imbuing] Using shrine on item: "..currentId)
+    delay(4000)
+    return "retry"
+  end)
+
+ CaveBot.Editor.registerAction("imbuing", "imbuing", {
+  value="name",
+  title="Auto Imbuing",
+  description="insert below item ids to be imbued, separated by comma\nor 'name' to load from file",
+ })
+end]]
+FILES["cavebot/inbox_withdraw.lua"] = [[CaveBot.Extensions.InWithdraw = {}
+
+CaveBot.Extensions.InWithdraw.setup = function()
+	CaveBot.registerAction("inwithdraw", "#002FFF", function(value, retries)
+		local data = string.split(value, ",")
+		local withdrawId
+		local amount
+
+		-- validation
+		if #data ~= 2 then
+			warn("CaveBot[InboxWithdraw]: incorrect withdraw value")
+			return false
+		else
+			withdrawId = tonumber(data[1])
+			amount = tonumber(data[2])
+		end
+
+		local currentAmount = itemAmount(withdrawId)
+
+		if currentAmount >= amount then
+			print("CaveBot[InboxWithdraw]: enough items, proceeding")
+			return true
+		end
+
+		if retries > 400 then
+			print("CaveBot[InboxWithdraw]: actions limit reached, proceeding")
+			return true
+		end
+
+		-- actions
+		local inboxContainer = getContainerByName("your inbox")
+		delay(100)
+		if not inboxContainer then
+			if not CaveBot.ReachAndOpenInbox() then
+				return "retry"
+			end
+		end
+		local inboxAmount = 0
+		if not inboxContainer then
+			return "retry"
+		end
+		for i, item in pairs(inboxContainer:getItems()) do
+			if item:getId() == withdrawId then
+				inboxAmount = inboxAmount + item:getCount()
+			end
+		end
+		if inboxAmount == 0 then
+			warn("CaveBot[InboxWithdraw]: not enough items in inbox container, proceeding")
+			g_game.close(inboxContainer)
+			return true
+		end
+
+		local destination
+		for i, container in pairs(getContainers()) do
+			if container:getCapacity() > #container:getItems() and not string.find(container:getName():lower(), "quiver") and not string.find(container:getName():lower(), "depot") and not string.find(container:getName():lower(), "loot") and not string.find(container:getName():lower(), "inbox") then
+				destination = container 
+			end
+		end
+
+		if not destination then
+			print("CaveBot[InboxWithdraw]: couldn't find proper destination container, skipping")
+			g_game.close(inboxContainer)
+			return false
+		end
+
+		CaveBot.PingDelay(2)
+
+		for i, container in pairs(getContainers()) do
+			if string.find(container:getName():lower(), "your inbox") then
+				for j, item in pairs(container:getItems()) do
+					if item:getId() == withdrawId then
+						if item:isStackable() then
+							g_game.move(item, destination:getSlotPosition(destination:getItemsCount()), math.min(item:getCount(), (amount - currentAmount)))
+							return "retry"
+						else
+							g_game.move(item, destination:getSlotPosition(destination:getItemsCount()), 1)
+							return "retry"
+						end
+						return "retry"
+					end
+				end
+			end
+		end
+  	end)
+
+ 	CaveBot.Editor.registerAction("inwithdraw", "in withdraw", {
+ 	 value="id,amount",
+ 	 title="Withdraw Items",
+ 	 description="insert item id and amount",
+ 	})
+end]]
+FILES["cavebot/lure.lua"] = [[-- Lure extension for CaveBot
+-- v14.0: optional Mage Run carry of up to two extra survivors to the next waypoint.
+
+CaveBot.Extensions = CaveBot.Extensions or {}
+CaveBot.Extensions.Lure = CaveBot.Extensions.Lure or {}
+
+local Lure = CaveBot.Extensions.Lure
+
+Lure._state = Lure._state or {}
+local state = Lure._state
+
+if state.active == nil then state.active = false end
+if state.rushingEnd == nil then state.rushingEnd = false end
+if state.killingEnd == nil then state.killingEnd = false end
+if state.endWidget == nil then state.endWidget = nil end
+if state.endLureArrivedAt == nil then state.endLureArrivedAt = 0 end
+if state.endLureLowCountStreak == nil then state.endLureLowCountStreak = 0 end
+if state.endLureClearStreak == nil then state.endLureClearStreak = 0 end
+if state.walkDelayActive == nil then state.walkDelayActive = false end
+if state.walkDelayValue == nil then state.walkDelayValue = -1 end
+if state.ignoreExitAllowedUntil == nil then state.ignoreExitAllowedUntil = 0 end
+if state.ignoreExitCandidateSince == nil then state.ignoreExitCandidateSince = 0 end
+if state.carryingRemaining == nil then state.carryingRemaining = false end
+if state.carryTargetWidget == nil then state.carryTargetWidget = nil end
+if state.carryTargetPos == nil then state.carryTargetPos = nil end
+if state.carryTargetAction == nil then state.carryTargetAction = nil end
+if state.carryTargetSeen == nil then state.carryTargetSeen = false end
+if state.carryAtTargetSince == nil then state.carryAtTargetSince = 0 end
+if state.carryOriginPos == nil then state.carryOriginPos = nil end
+if state.carryIgnoreLimit == nil then state.carryIgnoreLimit = 0 end
+if state.carryBelowIgnore == nil then state.carryBelowIgnore = false end
+if state.carryCandidateSince == nil then state.carryCandidateSince = 0 end
+if state.carryStartedAt == nil then state.carryStartedAt = 0 end
+if state.carryReleaseUntil == nil then state.carryReleaseUntil = 0 end
+state.statsCache = state.statsCache or {}
+state.monsterTrack = state.monsterTrack or {}
+
+local oldTibia = g_game.getClientVersion() < 960
+local CARRY_REMAINING_EXTRA_LIMIT = 2
+
+local function clockMillis()
+  if type(now) == "number" then
+    return now
+  end
+
+  if g_clock and g_clock.millis then
+    return g_clock.millis()
+  end
+
+  return 0
+end
+
+local function configNumber(id, defaultValue, minValue, maxValue)
+  local value = defaultValue
+
+  if CaveBot.Config and CaveBot.Config.values and CaveBot.Config.values[id] ~= nil then
+    value = tonumber(CaveBot.Config.values[id]) or defaultValue
+  end
+
+  value = math.floor(value)
+
+  if minValue and value < minValue then value = minValue end
+  if maxValue and value > maxValue then value = maxValue end
+
+  return value
+end
+
+local function configBoolean(id, defaultValue)
+  local value = defaultValue and true or false
+
+  if CaveBot.Config and CaveBot.Config.values
+    and CaveBot.Config.values[id] ~= nil then
+    value = CaveBot.Config.values[id] and true or false
+  end
+
+  return value
+end
+
+local function copyPosition(position)
+  if not position then return nil end
+  return {x=position.x, y=position.y, z=position.z}
+end
+
+local function originalConfigGet(id)
+  if Lure._originalConfigGet then
+    return Lure._originalConfigGet(id)
+  end
+
+  if CaveBot.Config and CaveBot.Config.values then
+    return CaveBot.Config.values[id]
+  end
+
+  return nil
+end
+
+local function normalWalkDelay()
+  local value = tonumber(originalConfigGet("walkDelay"))
+
+  if value == nil and CaveBot.Config and CaveBot.Config.values then
+    value = tonumber(CaveBot.Config.values.walkDelay)
+  end
+
+  return math.max(0, math.floor(value or 100))
+end
+
+local function isAliveMonster(creature)
+  if not creature or not creature:isMonster() then return false end
+
+  local hp = creature:getHealthPercent()
+  if not hp or hp <= 0 then return false end
+
+  if not oldTibia and creature:getType() >= 3 then
+    return false
+  end
+
+  return true
+end
+
+local function isMageRunEnabled()
+  return TargetBot and TargetBot.isMageRunMode and TargetBot.isMageRunMode()
+end
+
+local function isCarryRemainingEnabled()
+  return isMageRunEnabled()
+    and configBoolean("lureMageRunCarryRemaining", false)
+end
+
+local function setMageRunState(activeValue, center)
+  if TargetBot and TargetBot.setMageRunLureState then
+    TargetBot.setMageRunLureState(activeValue, center)
+  end
+end
+
+local function parseWaypointPosition(value)
+  local match = regexMatch(value or "", "^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)")
+
+  if not match[1] then
+    return nil
+  end
+
+  return {
+    x = tonumber(match[1][2]),
+    y = tonumber(match[1][3]),
+    z = tonumber(match[1][4])
+  }
+end
+
+local function isInsideMageRunEndArea(endPos)
+  if not endPos then return false end
+  local playerPos = player and player:getPosition() or nil
+  if not playerPos or playerPos.z ~= endPos.z then return false end
+
+  -- Precision 1 in both axes means the complete 3x3 area centered on End Lure.
+  return math.abs(playerPos.x - endPos.x) <= 1
+    and math.abs(playerPos.y - endPos.y) <= 1
+end
+
+local function tileDistance(a, b)
+  return math.max(math.abs(a.x - b.x), math.abs(a.y - b.y))
+end
+
+local function clearStatsCache()
+  state.statsCache = {}
+end
+
+local function clearCarryRemainingState()
+  state.carryingRemaining = false
+  state.carryTargetWidget = nil
+  state.carryTargetPos = nil
+  state.carryTargetAction = nil
+  state.carryTargetSeen = false
+  state.carryAtTargetSince = 0
+  state.carryOriginPos = nil
+  state.carryIgnoreLimit = 0
+  state.carryBelowIgnore = false
+  state.carryCandidateSince = 0
+  state.carryStartedAt = 0
+end
+
+local function resetLureState()
+  state.active = false
+  state.rushingEnd = false
+  state.killingEnd = false
+  state.endWidget = nil
+  state.endLureArrivedAt = 0
+  state.endLureLowCountStreak = 0
+  state.endLureClearStreak = 0
+  state.walkDelayActive = false
+  state.walkDelayValue = -1
+  state.ignoreExitAllowedUntil = 0
+  state.ignoreExitCandidateSince = 0
+  state.carryReleaseUntil = 0
+  clearCarryRemainingState()
+  state.monsterTrack = {}
+  clearStatsCache()
+  setMageRunState(false)
+end
+
+local function creatureId(creature)
+  return creature and creature.getId and creature:getId() or tostring(creature)
+end
+
+local function getSharedMonsterSource()
+  local snapshot = TargetBot and TargetBot.getMageRunSnapshot
+    and TargetBot.getMageRunSnapshot(350)
+
+  -- The MageRun snapshot is centered on the player. During a wide kite it may
+  -- not contain monsters that are still inside the End Lure radius on the
+  -- opposite side. Count from all currently visible spectators and use the
+  -- snapshot only as a fast configured-id hint.
+  return (getSpectators(false) or {}), snapshot and snapshot.configuredIds or nil
+end
+
+local function isConfiguredMonster(creature, configuredIds)
+  local id = creatureId(creature)
+  if configuredIds and configuredIds[id] == true then
+    return true
+  end
+
+  -- A false/missing snapshot entry is not authoritative because the snapshot
+  -- may cover only part of the End Lure area. getConfigs is name-cached by
+  -- TargetBot, so this fallback is both accurate and inexpensive.
+  if not TargetBot or not TargetBot.Creature or not TargetBot.Creature.getConfigs then
+    return configuredIds == nil
+  end
+  local configs = TargetBot.Creature.getConfigs(creature)
+  return configs and #configs > 0 or false
+end
+
+local function configuredMonsterStats(hpIgnoreLimit, centerPos, rangeOverride, includePlayerRadius)
+  local localPlayer = player or g_game.getLocalPlayer()
+  if not localPlayer then return 0, 0 end
+
+  local playerPos = localPlayer:getPosition()
+  if not playerPos then return 0, 0 end
+
+  centerPos = centerPos or playerPos
+  if not centerPos then return 0, 0 end
+  local creatureRange = rangeOverride or configNumber("lureCreatureRange", 8, 1, 15)
+  local hpLimit = tonumber(hpIgnoreLimit) or 0
+  includePlayerRadius = math.max(0, tonumber(includePlayerRadius) or 0)
+  local currentTime = clockMillis()
+  local cacheKey = table.concat({
+    centerPos.x, centerPos.y, centerPos.z,
+    playerPos.x, playerPos.y, playerPos.z,
+    creatureRange, hpLimit, includePlayerRadius
+  }, ":")
+
+  local cached = state.statsCache[cacheKey]
+  if cached and cached.expiresAt > currentTime then
+    return cached.count, cached.mustKill
+  end
+
+  local count = 0
+  local mustKill = 0
+  local monsters, configuredIds = getSharedMonsterSource()
+  local counted = {}
+  local visible = {}
+
+  local function insideCountArea(creaturePos)
+    if not creaturePos then return false end
+    local insideCenter = creaturePos.z == centerPos.z
+      and tileDistance(centerPos, creaturePos) <= creatureRange
+    local insidePlayerSafety = includePlayerRadius > 0
+      and creaturePos.z == playerPos.z
+      and tileDistance(playerPos, creaturePos) <= includePlayerRadius
+    return insideCenter or insidePlayerSafety
+  end
+
+  local function addCount(id, hp)
+    if counted[id] then return end
+    counted[id] = true
+    count = count + 1
+    if hpLimit > 0 and (tonumber(hp) or 0) <= hpLimit then
+      mustKill = mustKill + 1
+    end
+  end
+
+  for _, creature in ipairs(monsters or {}) do
+    local id = creatureId(creature)
+
+    if isAliveMonster(creature) then
+      local creaturePos = creature:getPosition()
+      local hp = tonumber(creature:getHealthPercent()) or 0
+
+      if creaturePos then
+        if isConfiguredMonster(creature, configuredIds) then
+          visible[id] = true
+          state.monsterTrack[id] = {
+            pos = {x=creaturePos.x, y=creaturePos.y, z=creaturePos.z},
+            hp = hp,
+            lastSeen = currentTime
+          }
+          if insideCountArea(creaturePos) then
+            addCount(id, hp)
+          end
+        else
+          state.monsterTrack[id] = nil
+        end
+      end
+      -- A creature can disappear between getSpectators() and getPosition().
+      -- Keep its previous tracked position until the visibility grace expires
+      -- instead of dropping it from Ignore Remaining for one frame.
+    else
+      state.monsterTrack[id] = nil
+    end
+  end
+
+  -- Keep recently seen configured monsters in the count for a short grace
+  -- window. This prevents a player movement/screen edge from temporarily
+  -- dropping two or three monsters and authorizing an early End Lure exit.
+  local visibilityGrace = 1200
+  for id, tracked in pairs(state.monsterTrack) do
+    if currentTime - (tracked.lastSeen or 0) > visibilityGrace then
+      state.monsterTrack[id] = nil
+    elseif not visible[id] and insideCountArea(tracked.pos) then
+      addCount(id, tracked.hp)
+    end
+  end
+
+  state.statsCache[cacheKey] = {
+    count = count,
+    mustKill = mustKill,
+    expiresAt = currentTime + 160
+  }
+
+  if currentTime % 2000 < 200 then
+    for key, value in pairs(state.statsCache) do
+      if value.expiresAt <= currentTime then
+        state.statsCache[key] = nil
+      end
+    end
+  end
+
+  return count, mustKill
+end
+
+local function configuredMonsterCount()
+  local count = configuredMonsterStats()
+  return count
+end
+
+local function getEndLureExitStats(endPos)
+  local mageRun = isMageRunEnabled()
+  local ignoreRemaining = configNumber("lureIgnoreRemaining", 0, 0, 32)
+  local ignoreHp = configNumber("lureIgnoreHp", 0, 0, 100)
+  local statsCenter = mageRun and endPos or nil
+  local playerSafetyRadius = mageRun
+    and configNumber("lureCreatureRange", 8, 1, 15) or 0
+  local creatures, mustKill = configuredMonsterStats(
+    ignoreHp, statsCenter, nil, playerSafetyRadius
+  )
+
+  return {
+    mageRun = mageRun,
+    ignoreRemaining = ignoreRemaining,
+    ignoreHp = ignoreHp,
+    creatures = creatures,
+    mustKill = mustKill,
+    countBlocks = creatures > ignoreRemaining,
+    hpBlocks = ignoreHp > 0 and mustKill > 0
+  }
+end
+
+local function updateIgnoreExitAllowance(exitStats, strictSafetyBlocksExit)
+  local currentTime = clockMillis()
+  local qualifies = state.active
+    and state.killingEnd
+    and exitStats
+    and not exitStats.countBlocks
+    and not exitStats.hpBlocks
+    and not strictSafetyBlocksExit
+
+  -- Require the valid count to remain stable across more than one scan. A
+  -- single stale frame can no longer release CaveBot past End Lure.
+  if qualifies then
+    if state.ignoreExitCandidateSince == 0 then
+      state.ignoreExitCandidateSince = currentTime
+    end
+  else
+    state.ignoreExitCandidateSince = 0
+  end
+
+  local allowed = qualifies
+    and currentTime - state.ignoreExitCandidateSince >= 180
+
+  if allowed then
+    -- Short lease, continuously renewed by lureTick/endLure while the exact
+    -- configured limit remains valid.
+    state.ignoreExitAllowedUntil = currentTime + 380
+  else
+    state.ignoreExitAllowedUntil = 0
+  end
+
+  return allowed
+end
+
+CaveBot.isLureIgnoreExitAllowed = function()
+  local currentTime = clockMillis()
+  if state.carryingRemaining then
+    return true
+  end
+  if state.carryReleaseUntil > currentTime then
+    return true
+  end
+  return state.active
+    and state.killingEnd
+    and state.ignoreExitAllowedUntil > currentTime
+end
+
+CaveBot.isMageRunCarryRemainingActive = function()
+  return state.carryingRemaining and isMageRunEnabled()
+end
+
+local function adjacentMonsterCount()
+  local localPlayer = player or g_game.getLocalPlayer()
+  if not localPlayer then return 0 end
+
+  local playerPos = localPlayer:getPosition()
+  if not playerPos then return 0 end
+
+  local count = configuredMonsterStats(nil, playerPos, 1)
+  return count
+end
+
+local function hasBlockingTrap(radius)
+  local localPlayer = player or g_game.getLocalPlayer()
+  if not localPlayer then return false end
+
+  local playerPos = localPlayer:getPosition()
+  if not playerPos then return false end
+
+  radius = radius or 1
+
+  for _, creature in ipairs(getSpectators(false) or {}) do
+    if isAliveMonster(creature) then
+      local creaturePos = creature:getPosition()
+
+      if creaturePos
+        and creaturePos.z == playerPos.z
+        and math.abs(creaturePos.x - playerPos.x) <= radius
+        and math.abs(creaturePos.y - playerPos.y) <= radius then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
+local function hasImmediateEndLureThreat(radius)
+  radius = radius or 1
+  if hasBlockingTrap(radius) then
+    return true
+  end
+
+  local attacking = g_game.getAttackingCreature and g_game.getAttackingCreature() or nil
+  if isAliveMonster(attacking) then
+    local localPlayer = player or g_game.getLocalPlayer()
+    local playerPos = localPlayer and localPlayer:getPosition() or nil
+    local targetPos = attacking:getPosition()
+    if playerPos and targetPos
+      and playerPos.z == targetPos.z
+      and tileDistance(playerPos, targetPos) <= math.max(2, radius) then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function countFreeAdjacentTiles()
+  local localPlayer = player or g_game.getLocalPlayer()
+  if not localPlayer then return 0 end
+
+  local playerPos = localPlayer:getPosition()
+  if not playerPos then return 0 end
+
+  local free = 0
+
+  for dx = -1, 1 do
+    for dy = -1, 1 do
+      if dx ~= 0 or dy ~= 0 then
+        local checkPos = {
+          x = playerPos.x + dx,
+          y = playerPos.y + dy,
+          z = playerPos.z
+        }
+
+        local tile = g_map.getTile(checkPos)
+        if tile and tile:isWalkable() then
+          local occupied = false
+
+          if tile.getCreatures then
+            local creatures = tile:getCreatures() or {}
+            occupied = #creatures > 0
+          elseif tile.getTopCreature then
+            occupied = tile:getTopCreature() ~= nil
+          end
+
+          if not occupied then
+            free = free + 1
+          end
+        end
+      end
+    end
+  end
+
+  return free
+end
+
+local function isHardTrappedAtEndLure()
+  -- Ignore Remaining may leave monsters alive, but it must not advance when
+  -- the player has effectively no route to leave the End Lure.
+  return countFreeAdjacentTiles() <= 1
+end
+
+local function shouldUseLureWalkDelay(creatures)
+  if not state.active or state.killingEnd then
+    return false
+  end
+
+  -- Carry Remaining deliberately behaves like a temporary Ignore Remaining
+  -- walk: use the configured lure delay while the extra survivors are still
+  -- above Ignore Remaining. Adjacent lure may temporarily remove that delay
+  -- so the character can move away instead of getting boxed.
+  if state.carryingRemaining then
+    return not state.carryBelowIgnore and not state.rushingEnd
+  end
+
+  -- Outside Carry Remaining, Min/Max lure settings remain authoritative.
+  if creatures == nil then
+    creatures = configuredMonsterCount()
+  end
+
+  local minLure = configNumber("minLure", 1, 0, 50)
+  local maxToWalk = configNumber("lureMaxToWalk", 8, 0, 50)
+
+  if creatures < minLure then
+    return false
+  end
+
+  if maxToWalk > 0 and creatures > maxToWalk then
+    return false
+  end
+
+  return true
+end
+
+local function effectiveWalkDelay()
+  if shouldUseLureWalkDelay() then
+    -- The UI describes this as an extra delay, so preserve the normal CaveBot
+    -- delay and add the configured lure value on top of it.
+    return normalWalkDelay()
+      + configNumber("lureWalkDelay", 100, 0, 5000)
+  end
+
+  return nil
+end
+
+local function installWalkDelayHook()
+  if Lure._walkDelayHookInstalled then return end
+  if not CaveBot.Config or not CaveBot.Config.get then return end
+
+  Lure._originalConfigGet = CaveBot.Config.get
+
+  -- cavebot/walking.lua reads CaveBot.Config.get("walkDelay") directly.
+  -- Hooking only CaveBot.getWalkDelay has no effect on actual walking.
+  CaveBot.Config.get = function(id)
+    if id == "walkDelay" then
+      local extension = CaveBot.Extensions
+        and CaveBot.Extensions.Lure
+
+      if extension and extension._effectiveWalkDelay then
+        local delay = extension._effectiveWalkDelay()
+        if delay ~= nil then
+          return delay
+        end
+      end
+    end
+
+    return Lure._originalConfigGet(id)
+  end
+
+  Lure._walkDelayHookInstalled = true
+end
+
+CaveBot.getWalkDelay = function()
+  return effectiveWalkDelay() or normalWalkDelay()
+end
+
+CaveBot.isLureWalkDelayActive = function()
+  return shouldUseLureWalkDelay()
+end
+
+local function syncWalkDelayMode()
+  local activeNow = shouldUseLureWalkDelay()
+  local delayNow = activeNow and effectiveWalkDelay() or normalWalkDelay()
+
+  if state.walkDelayActive == activeNow
+    and state.walkDelayValue == delayNow then
+    return
+  end
+
+  state.walkDelayActive = activeNow
+  state.walkDelayValue = delayNow
+
+  -- A client/map-click auto-walk already in progress cannot change its interval.
+  -- Stop it once when either activation or the configured delay changes.
+  if CaveBot.resetWalking then
+    CaveBot.resetWalking()
+  end
+
+  if g_game and g_game.stop then
+    pcall(function()
+      g_game.stop()
+    end)
+  end
+end
+
+local function findNextEndLure()
+  if not CaveBot.actionList then return nil end
+
+  local focused = CaveBot.actionList:getFocusedChild()
+  local startIndex = focused and CaveBot.actionList:getChildIndex(focused) or 1
+  local children = CaveBot.actionList:getChildren()
+
+  for i = startIndex + 1, #children do
+    if children[i].action == "endlure" then
+      return children[i]
+    end
+  end
+
+  -- Keep support for circular waypoint lists.
+  for i = 1, startIndex - 1 do
+    if children[i].action == "endlure" then
+      return children[i]
+    end
+  end
+
+  return nil
+end
+
+local carryWaypointActions = {
+  ["goto"]=true,
+  stand=true,
+  startlure=true
+}
+
+local function findNextCarryWaypoint()
+  if not CaveBot.actionList then return nil, nil end
+
+  local focused = CaveBot.actionList:getFocusedChild()
+  local startIndex = focused and CaveBot.actionList:getChildIndex(focused) or 1
+  local children = CaveBot.actionList:getChildren()
+
+  local function candidateAt(index)
+    local child = children[index]
+    if not child or not carryWaypointActions[child.action] then
+      return nil, nil
+    end
+
+    local waypointPos = parseWaypointPosition(child.value)
+    if not waypointPos then return nil, nil end
+    return child, waypointPos
+  end
+
+  for index = startIndex + 1, #children do
+    local child, waypointPos = candidateAt(index)
+    if child then return child, waypointPos end
+  end
+
+  -- Preserve circular waypoint profiles without carrying back to the same End Lure.
+  for index = 1, startIndex - 1 do
+    local child, waypointPos = candidateAt(index)
+    if child then return child, waypointPos end
+  end
+
+  return nil, nil
+end
+
+local function isAtCarryTarget()
+  local targetPos = state.carryTargetPos
+  local localPlayer = player or g_game.getLocalPlayer()
+  local playerPos = localPlayer and localPlayer:getPosition() or nil
+  if not targetPos or not playerPos or targetPos.z ~= playerPos.z then
+    return false
+  end
+
+  local precision = state.carryTargetAction == "stand" and 0 or 1
+  return tileDistance(targetPos, playerPos) <= precision
+end
+
+local function carryTargetCompleted(focused)
+  if not state.carryTargetWidget then return true end
+
+  if focused == state.carryTargetWidget then
+    state.carryTargetSeen = true
+  elseif state.carryTargetSeen then
+    return true
+  end
+
+  if isAtCarryTarget() then
+    if state.carryAtTargetSince == 0 then
+      state.carryAtTargetSince = clockMillis()
+    elseif clockMillis() - state.carryAtTargetSince >= 350 then
+      return true
+    end
+  else
+    state.carryAtTargetSince = 0
+  end
+
+  return false
+end
+
+local function allowCavebotWhileLuring()
+  if not state.active or not TargetBot or not TargetBot.allowCaveBot then return end
+
+  -- Respect the same condition used by the actual walk delay.
+  -- Outside the configured creature range, use the normal CaveBot delay.
+  local wait = effectiveWalkDelay() or normalWalkDelay()
+  if state.carryingRemaining then
+    -- The carry tick runs every 300 ms. Keep a small overlap so TargetBot does
+    -- not revoke CaveBot movement between two renewals when Adjacent is rushing.
+    wait = math.max(wait, 300)
+  end
+  TargetBot.allowCaveBot(wait + 250)
+end
+
+local function beginCarryRemaining(endPos, exitStats)
+  local targetWidget, targetPos = findNextCarryWaypoint()
+  if not targetWidget or not targetPos then
+    return false
+  end
+
+  clearCarryRemainingState()
+  state.carryingRemaining = true
+  state.carryTargetWidget = targetWidget
+  state.carryTargetPos = copyPosition(targetPos)
+  state.carryTargetAction = targetWidget.action
+  state.carryOriginPos = copyPosition(endPos)
+  state.carryIgnoreLimit = exitStats.ignoreRemaining or 0
+  state.carryBelowIgnore = false
+  state.carryStartedAt = clockMillis()
+
+  state.active = true
+  state.killingEnd = false
+  local adjacentMax = configNumber("lureAdjacentMax", 1, 0, 8)
+  state.rushingEnd = adjacentMonsterCount() > adjacentMax
+  state.endWidget = nil
+  state.endLureArrivedAt = 0
+  state.endLureLowCountStreak = 0
+  state.endLureClearStreak = 0
+  state.ignoreExitCandidateSince = 0
+  state.ignoreExitAllowedUntil = clockMillis() + 700
+  state.carryReleaseUntil = 0
+  clearStatsCache()
+
+  -- Keep the Mage Run lure state marked active during the handoff. Movement
+  -- planning itself only runs while End Lure is focused, but TargetBot uses
+  -- this flag together with isLureIgnoreExitAllowed() to avoid stopping the
+  -- CaveBot walk when creature configs have Stop/Chase enabled.
+  setMageRunState(true, endPos)
+  if TargetBot and TargetBot.setOn then
+    TargetBot.setOn()
+  end
+  if TargetBot and TargetBot.allowCaveBot then
+    TargetBot.allowCaveBot(700)
+  end
+
+  syncWalkDelayMode()
+  return true
+end
+
+local function finishCarryRemaining(belowIgnore)
+  local allowance = belowIgnore and 1800 or 400
+  resetLureState()
+  state.carryReleaseUntil = clockMillis() + allowance
+
+  if TargetBot and TargetBot.allowCaveBot then
+    TargetBot.allowCaveBot(allowance)
+  end
+
+  syncWalkDelayMode()
+end
+
+local function cappedRetries(retries)
+  retries = tonumber(retries) or 0
+
+  if retries < 0 then
+    return 0
+  end
+
+  return math.min(retries, 4)
+end
+
+local function hasActiveAttackTarget()
+  local creature = g_game.getAttackingCreature()
+  return isAliveMonster(creature)
+end
+
+local function hasCombatPressure()
+  return hasActiveAttackTarget()
+    or hasBlockingTrap(1)
+    or configuredMonsterCount() > 0
+end
+
+local function runGoto(value, retries, prev)
+  local action = CaveBot.Actions.goto
+  if not action or not action.callback then return false end
+
+  return action.callback(value, cappedRetries(retries), prev)
+end
+
+local function runStand(value, retries, prev)
+  local action = CaveBot.Actions.stand
+  if not action or not action.callback then return false end
+
+  return action.callback(value, cappedRetries(retries), prev)
+end
+
+local function startLure(value, retries, prev)
+  local result = runGoto(value, retries, prev)
+
+  if result ~= true then
+    if result == false and hasCombatPressure() then
+      if TargetBot and TargetBot.setOn then
+        TargetBot.setOn()
+      end
+
+      CaveBot.delay(250)
+      return "retry"
+    end
+
+    return result
+  end
+
+  if state.carryingRemaining then
+    clearCarryRemainingState()
+  end
+  state.carryReleaseUntil = 0
+  setMageRunState(false)
+  state.active = true
+  state.rushingEnd = false
+  state.killingEnd = false
+  state.endWidget = findNextEndLure()
+  state.endLureArrivedAt = 0
+  state.endLureLowCountStreak = 0
+  state.endLureClearStreak = 0
+  state.walkDelayActive = false
+  state.walkDelayValue = -1
+  clearStatsCache()
+  syncWalkDelayMode()
+  allowCavebotWhileLuring()
+
+  return true
+end
+
+local function endLure(value, retries, prev)
+  local endPos = parseWaypointPosition(value)
+  local mageRun = isMageRunEnabled()
+  local shouldHoldStand = not mageRun
+
+  if shouldHoldStand or not state.killingEnd then
+    local result
+
+    if mageRun and not state.killingEnd then
+      -- Mage Run starts as soon as the player enters the 3x3 area around the
+      -- End Lure marker. The generic Goto precision only accepted a vertical
+      -- line, so it could unnecessarily chase the exact waypoint tile.
+      if isInsideMageRunEndArea(endPos) then
+        result = true
+      else
+        result = runGoto(value, retries, prev)
+      end
+    else
+      result = runStand(value, retries, prev)
+    end
+
+    if result ~= true then
+      if state.active or state.killingEnd or hasCombatPressure() then
+        state.active = true
+
+        if TargetBot and TargetBot.setOn then
+          TargetBot.setOn()
+        end
+
+        allowCavebotWhileLuring()
+        CaveBot.delay(250)
+        return "retry"
+      end
+
+      return result
+    end
+
+    -- End Lure reached: leave lure-walk/rush movement modes.
+    state.rushingEnd = false
+    state.walkDelayActive = false
+    state.walkDelayValue = -1
+
+    if state.endLureArrivedAt == 0 then
+      state.endLureArrivedAt = clockMillis()
+      state.endLureLowCountStreak = 0
+      state.endLureClearStreak = 0
+    end
+  end
+
+  local minCreature = configNumber("lureMinCreature", 1, 0, 50)
+  local exitStats = getEndLureExitStats(endPos)
+  local creatures = exitStats.creatures
+  local immediateThreat = state.killingEnd and hasImmediateEndLureThreat(1)
+  local hardTrap = state.killingEnd and isHardTrappedAtEndLure()
+
+  -- Ignore Remaining and HP % are authoritative once enabled:
+  --   creatures <= Ignore Remaining
+  --   and no remaining creature is at/below HP %
+  -- Nearby survivors or a local trap may only block exit in strict mode
+  -- (Ignore Remaining = 0).
+  local strictSafetyBlocksExit = exitStats.ignoreRemaining == 0
+    and (hardTrap or immediateThreat)
+  local ignoreExitAllowed = updateIgnoreExitAllowance(exitStats, strictSafetyBlocksExit)
+
+  if not state.killingEnd and creatures > 0 and creatures >= minCreature then
+    state.killingEnd = true
+    state.endLureLowCountStreak = 0
+    state.endLureClearStreak = 0
+
+    if mageRun and endPos then
+      setMageRunState(true, endPos)
+    end
+  elseif not state.killingEnd then
+    state.endLureLowCountStreak = state.endLureLowCountStreak + 1
+
+    local graceTime = creatures > 0 and 450 or 250
+    if clockMillis() - state.endLureArrivedAt < graceTime
+      or state.endLureLowCountStreak < 3 then
+      CaveBot.delay(150)
+      return "retry"
+    end
+
+    resetLureState()
+    return true
+  end
+
+  local carryExtra = creatures - exitStats.ignoreRemaining
+  local carryQualifies = state.killingEnd
+    and mageRun
+    and isCarryRemainingEnabled()
+    and not ignoreExitAllowed
+    and not exitStats.hpBlocks
+    and carryExtra >= 1
+    and carryExtra <= CARRY_REMAINING_EXTRA_LIMIT
+
+  if carryQualifies then
+    if state.carryCandidateSince == 0 then
+      state.carryCandidateSince = clockMillis()
+    end
+
+    -- Confirm the small remainder for more than one scan. This avoids starting
+    -- a carry because two creatures briefly disappeared at the screen edge.
+    if clockMillis() - state.carryCandidateSince >= 180 then
+      if beginCarryRemaining(endPos, exitStats) then
+        return true
+      end
+      state.carryCandidateSince = 0
+    end
+  else
+    state.carryCandidateSince = 0
+  end
+
+  if state.killingEnd
+    and (not ignoreExitAllowed
+      or strictSafetyBlocksExit) then
+    state.endLureClearStreak = 0
+    state.active = true
+    state.rushingEnd = false
+
+    if TargetBot and TargetBot.setOn then
+      TargetBot.setOn()
+    end
+
+    allowCavebotWhileLuring()
+    CaveBot.delay(250)
+    return "retry"
+  end
+
+  state.endLureClearStreak = state.endLureClearStreak + 1
+
+  if state.endLureClearStreak < 2 then
+    CaveBot.delay(120)
+    return "retry"
+  end
+
+  resetLureState()
+  return true
+end
+
+local function lureTick()
+  if CaveBot.isOn and not CaveBot.isOn() then
+    if state.active or state.rushingEnd or state.killingEnd
+      or state.carryReleaseUntil > clockMillis() then
+      resetLureState()
+    end
+    return
+  end
+
+  local focused = CaveBot.actionList
+    and CaveBot.actionList:getFocusedChild()
+
+  if not state.active
+    and focused
+    and focused.action == "startlure"
+    and TargetBot
+    and TargetBot.allowCaveBot then
+    TargetBot.allowCaveBot(500)
+    return
+  end
+
+  if not state.active then return end
+
+  if state.carryingRemaining then
+    if not isCarryRemainingEnabled() then
+      finishCarryRemaining(false)
+      return
+    end
+
+    local carryStats = getEndLureExitStats(state.carryOriginPos)
+    state.carryIgnoreLimit = carryStats.ignoreRemaining
+    state.carryBelowIgnore = not carryStats.countBlocks
+      and not carryStats.hpBlocks
+
+    if carryTargetCompleted(focused) then
+      finishCarryRemaining(state.carryBelowIgnore)
+      return
+    end
+
+    if state.carryBelowIgnore then
+      -- It has fallen into the normal Ignore Remaining limit. Keep the short
+      -- handoff alive until the selected waypoint is reached, but stop slowing
+      -- the walk or reacting to Adjacent lure.
+      state.rushingEnd = false
+    else
+      local adjacentMax = configNumber("lureAdjacentMax", 1, 0, 8)
+      state.rushingEnd = adjacentMonsterCount() > adjacentMax
+    end
+
+    syncWalkDelayMode()
+    allowCavebotWhileLuring()
+    return
+  end
+
+  if state.killingEnd and focused and focused.action == "endlure" then
+    local endPos = parseWaypointPosition(focused.value)
+    local exitStats = getEndLureExitStats(endPos)
+    local strictSafetyBlocksExit = exitStats.ignoreRemaining == 0
+      and (isHardTrappedAtEndLure() or hasImmediateEndLureThreat(1))
+
+    if updateIgnoreExitAllowance(exitStats, strictSafetyBlocksExit)
+      and TargetBot
+      and TargetBot.allowCaveBot then
+      TargetBot.allowCaveBot(650)
+    end
+  end
+
+  if isMageRunEnabled() and not state.killingEnd then
+    local adjacentMax = configNumber("lureAdjacentMax", 1, 0, 8)
+    local adjacentCount = adjacentMonsterCount()
+    local shouldRush = adjacentCount > adjacentMax
+
+    if shouldRush then
+      state.endWidget = state.endWidget or findNextEndLure()
+      shouldRush = state.endWidget ~= nil
+    end
+
+    -- Rush is now dynamic. A temporary adjacent spike no longer disables the
+    -- configured Lure walk delay for the entire remaining route.
+    state.rushingEnd = shouldRush
+  else
+    state.rushingEnd = false
+  end
+
+  syncWalkDelayMode()
+
+  -- Keep renewing the CaveBot allowance. The action list must continue
+  -- sequentially so stairs, doors, uses and intermediate waypoints are kept.
+  allowCavebotWhileLuring()
+end
+
+-- Dynamic targets used by the one-time wrappers below. Reloading this file updates
+-- behavior without registering another action callback or macro.
+Lure._effectiveWalkDelay = effectiveWalkDelay
+Lure._startLure = startLure
+Lure._endLure = endLure
+Lure._tick = lureTick
+Lure.reset = resetLureState
+Lure.isActive = function()
+  return state.active
+end
+
+Lure.setup = function()
+  installWalkDelayHook()
+
+  if not Lure._actionsRegistered then
+    CaveBot.registerAction("startlure", "#FF0090", function(value, retries, prev)
+      local extension = CaveBot.Extensions.Lure
+      return extension._startLure(value, retries, prev)
+    end)
+
+    CaveBot.registerAction("endlure", "#FF55CC", function(value, retries, prev)
+      local extension = CaveBot.Extensions.Lure
+      return extension._endLure(value, retries, prev)
+    end)
+
+    Lure._actionsRegistered = true
+  end
+
+  if not Lure._editorActionsRegistered then
+    CaveBot.Editor.registerAction("startlure", "Start Lure", {
+      value = function()
+        return posx() .. "," .. posy() .. "," .. posz()
+      end,
+      title = "Start Lure",
+      description = "Start lure at position (x,y,z,precision optional)",
+      multiline = false,
+      validation = "^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+),?\\s*([0-9]?)$"
+    })
+
+    CaveBot.Editor.registerAction("endlure", "End Lure", {
+      value = function()
+        return posx() .. "," .. posy() .. "," .. posz()
+      end,
+      title = "End Lure",
+      description = "Mage Run uses a 3x3 arrival area; other styles stand on the exact position",
+      multiline = false,
+      validation = "^\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*,\\s*([0-9]+)$"
+    })
+
+    Lure._editorActionsRegistered = true
+  end
+
+  if not Lure._macroRegistered then
+    Lure._macroRegistered = true
+
+    Lure._macro = macro(300, function()
+      local extension = CaveBot.Extensions
+        and CaveBot.Extensions.Lure
+
+      if extension and extension._tick then
+        extension._tick()
+      end
+    end)
+  end
+end
+]]
+FILES["cavebot/minimap.lua"] = [[local function setupCaveBotMinimap(retries)
+  retries = retries or 0
+  local minimap = modules.game_minimap and modules.game_minimap.minimapWidget
+
+  if not minimap then
+    if retries < 20 then
+      schedule(250, function()
+        setupCaveBotMinimap(retries + 1)
+      end)
+    else
+      warn("[CaveBot] Unable to hook minimap menu: minimap widget not found.")
+    end
+    return
+  end
+
+  if minimap._cavebotMinimapHooked then
+    return
+  end
+
+  minimap._cavebotMinimapHooked = true
+  minimap._cavebotOriginalOnMouseRelease = minimap.onMouseRelease
+
+  minimap.onMouseRelease = function(widget,pos,button)
+    local original = minimap._cavebotOriginalOnMouseRelease
+
+    if not minimap.allowNextRelease then
+      if original then
+        return original(widget, pos, button)
+      end
+      return false
+    end
+    minimap.allowNextRelease = false
+
+    if button ~= 2 then
+      if original then
+        return original(widget, pos, button)
+      end
+      return false
+    end
+
+    if not minimap.getTilePosition or not CaveBot or not CaveBot.addAction or not CaveBot.save then
+      if original then
+        return original(widget, pos, button)
+      end
+      return false
+    end
+
+    local mapPos = minimap:getTilePosition(pos)
+    if not mapPos then
+      if original then
+        return original(widget, pos, button)
+      end
+      return false
+    end
+
+    local ok, result = pcall(function()
+      local menu = g_ui.createWidget('PopupMenu')
+      menu:setId("minimapMenu")
+      menu:setGameMenu(true)
+      if minimap.createFlagWindow then
+        menu:addOption(tr('Create mark'), function() minimap:createFlagWindow(mapPos) end)
+      end
+      menu:addOption(tr('Add CaveBot GoTo'), function() CaveBot.addAction("goto", mapPos.x .. "," .. mapPos.y .. "," .. mapPos.z, true) CaveBot.save() end)
+      menu:addOption(tr('Add CaveBot Stand'), function() CaveBot.addAction("stand", mapPos.x .. "," .. mapPos.y .. "," .. mapPos.z, true) CaveBot.save() end)
+      menu:addOption(tr('Add CaveBot Start Lure'), function() CaveBot.addAction("startlure", mapPos.x .. "," .. mapPos.y .. "," .. mapPos.z, true) CaveBot.save() end)
+      menu:addOption(tr('Add CaveBot End Lure'), function() CaveBot.addAction("endlure", mapPos.x .. "," .. mapPos.y .. "," .. mapPos.z, true) CaveBot.save() end)
+      menu:display(pos)
+      return true
+    end)
+
+    if ok then
+      return result
+    end
+
+    warn("[CaveBot] Minimap hook error: " .. result)
+    if original then
+      return original(widget, pos, button)
+    end
+    return false
+  end
+end
+
+setupCaveBotMinimap()
+]]
+FILES["cavebot/pos_check.lua"] = [[CaveBot.Extensions.PosCheck = {}
+
+local posCheckRetries = 0
+CaveBot.Extensions.PosCheck.setup = function()
+  CaveBot.registerAction("PosCheck", "#00FFFF", function(value, retries)
+    local tilePos
+    local data = string.split(value, ",")
+    if #data ~= 5 then
+     warn("wrong travel format, should be: label, distance, x, y, z")
+     return false
+    end
+
+    local tilePos = player:getPosition()
+
+    tilePos.x = tonumber(data[3])
+    tilePos.y = tonumber(data[4])
+    tilePos.z = tonumber(data[5])
+
+    if posCheckRetries > 10 then
+        posCheckRetries = 0
+        print("CaveBot[CheckPos]: waypoints locked, too many tries, unclogging cavebot and proceeding")
+        return false
+    elseif (tilePos.z == player:getPosition().z) and (getDistanceBetween(player:getPosition(), tilePos) <= tonumber(data[2])) then
+        posCheckRetries = 0
+        print("CaveBot[CheckPos]: position reached, proceeding")
+        return true
+    else
+        posCheckRetries = posCheckRetries + 1
+        if data[1] == "last" then
+          CaveBot.gotoFirstPreviousReachableWaypoint()
+          print("CaveBot[CheckPos]: position not-reached, going back to first reachable waypoint.")
+          return false
+        else
+          CaveBot.gotoLabel(data[1])
+          print("CaveBot[CheckPos]: position not-reached, going back to label: " .. data[1])
+          return false
+        end
+    end
+  end)
+
+  CaveBot.Editor.registerAction("poscheck", "pos check", {
+    value=function() return "last" .. "," .. "10" .. "," .. posx() .. "," .. posy() .. "," .. posz() end,
+    title="Location Check",
+    description="label name, accepted dist from coordinates, x, y, z",
+    multiline=false,
+})
+end]]
+FILES["cavebot/recorder.lua"] = [[-- auto recording for cavebot
+CaveBot.Recorder = {}
+
+local isEnabled = nil
+local lastPos = nil
+local lastWaypointWidget = nil
+local lastWaypointPos = nil
+local lastWaypointType = nil
+
+local function copyPos(pos)
+  return {x = pos.x, y = pos.y, z = pos.z}
+end
+
+local function samePos(a, b)
+  return a and b and a.x == b.x and a.y == b.y and a.z == b.z
+end
+
+local function setup()
+  local function getRecordDistance()
+    local distance = 5
+
+    if CaveBot.Config and CaveBot.Config.values and CaveBot.Config.values.recordDistance ~= nil then
+      distance = tonumber(CaveBot.Config.values.recordDistance) or distance
+    end
+
+    distance = math.floor(distance)
+    if distance < 1 then distance = 1 end
+    if distance > 50 then distance = 50 end
+
+    return distance
+  end
+
+  local function addPosition(pos)
+    if lastWaypointType == "goto" and samePos(lastWaypointPos, pos) then
+      lastPos = copyPos(pos)
+      return
+    end
+    lastWaypointWidget = CaveBot.addAction("goto", pos.x .. "," .. pos.y .. "," .. pos.z, true)
+    lastWaypointPos = copyPos(pos)
+    lastWaypointType = "goto"
+    lastPos = copyPos(pos)
+  end
+  local function addStand(pos)
+    if samePos(lastWaypointPos, pos) then
+      if lastWaypointType == "stand" then
+        lastPos = copyPos(pos)
+        return
+      end
+      if lastWaypointType == "goto" and lastWaypointWidget and CaveBot.editAction then
+        CaveBot.editAction(lastWaypointWidget, "stand", pos.x .. "," .. pos.y .. "," .. pos.z)
+        lastWaypointType = "stand"
+        lastPos = copyPos(pos)
+        return
+      end
+    end
+    lastWaypointWidget = CaveBot.addAction("stand", pos.x .. "," .. pos.y .. "," .. pos.z, true)
+    lastWaypointPos = copyPos(pos)
+    lastWaypointType = "stand"
+    lastPos = copyPos(pos)
+  end
+
+  local function addStairs(pos)
+    if samePos(lastWaypointPos, pos) then
+      if lastWaypointType == "stairs" then
+        lastPos = copyPos(pos)
+        return
+      end
+      if lastWaypointType == "goto" and lastWaypointWidget and CaveBot.editAction then
+        CaveBot.editAction(lastWaypointWidget, "goto", pos.x .. "," .. pos.y .. "," .. pos.z .. ",0")
+        lastWaypointType = "stairs"
+        lastPos = copyPos(pos)
+        return
+      end
+    end
+    lastWaypointWidget = CaveBot.addAction("goto", pos.x .. "," .. pos.y .. "," .. pos.z .. ",0", true)
+    lastWaypointPos = copyPos(pos)
+    lastWaypointType = "stairs"
+    lastPos = copyPos(pos)
+  end
+
+  onPlayerPositionChange(function(newPos, oldPos)
+    if CaveBot.isOn() or not isEnabled then return end    
+    if not lastPos then
+      -- first step
+      addPosition(oldPos)
+    elseif newPos.z ~= oldPos.z then
+      -- floor change: require the exact origin tile, then record the landing tile
+      addStand(oldPos)
+      addPosition(newPos)
+    elseif math.abs(oldPos.x - newPos.x) > 1 or math.abs(oldPos.y - newPos.y) > 1 then
+      -- stairs/teleport
+      addStairs(oldPos)
+    elseif math.max(math.abs(lastPos.x - newPos.x), math.abs(lastPos.y - newPos.y)) >= getRecordDistance() then
+      -- configured steps from last recorded pos
+      addPosition(newPos)
+    end
+  end)
+  
+  onUse(function(pos, itemId, stackPos, subType)
+    if CaveBot.isOn() or not isEnabled then return end
+    if pos.x ~= 0xFFFF then 
+      lastPos = copyPos(pos)
+      lastWaypointWidget = nil
+      lastWaypointPos = nil
+      lastWaypointType = nil
+      CaveBot.addAction("use", pos.x .. "," .. pos.y .. "," .. pos.z, true)
+    end
+  end)
+  
+  onUseWith(function(pos, itemId, target, subType)
+    if CaveBot.isOn() or not isEnabled then return end
+    if not target:isItem() then return end
+    local targetPos = target:getPosition()
+    if targetPos.x == 0xFFFF then return end
+    lastPos = copyPos(pos)
+    lastWaypointWidget = nil
+    lastWaypointPos = nil
+    lastWaypointType = nil
+    CaveBot.addAction("usewith", itemId .. "," .. targetPos.x .. "," .. targetPos.y .. "," .. targetPos.z, true)
+  end)
+end
+
+CaveBot.Recorder.isOn = function()
+  return isEnabled
+end
+
+CaveBot.Recorder.enable = function()
+  CaveBot.setOff()
+  if isEnabled == nil then
+    setup()
+  end
+  -- CaveBot.Editor.ui.autoRecording:setOn(true)
+  isEnabled = true
+  lastPos = nil
+  lastWaypointWidget = nil
+  lastWaypointPos = nil
+  lastWaypointType = nil
+end
+
+CaveBot.Recorder.disable = function()
+  if isEnabled == true then
+    isEnabled = false
+  end
+  -- CaveBot.Editor.ui.autoRecording:setOn(false)
+  CaveBot.save()
+end
+]]
+FILES["cavebot/sell_all.lua"] = [[CaveBot.Extensions.SellAll = {}
+
+local SELL = 2
+
+local MAX_RETRIES = 180
+local MAX_TRADE_ATTEMPTS = 8
+local MAX_NO_PROGRESS = 6
+
+local state = {
+  key = nil,
+  lastTalkAt = 0,
+  tradeAttempts = 0,
+  tradeOpenedAt = 0,
+  lastFingerprint = nil,
+  lastSellAt = 0,
+  noProgress = 0
+}
+
+local function resetState(key)
+  state.key = key
+  state.lastTalkAt = 0
+  state.tradeAttempts = 0
+  state.tradeOpenedAt = 0
+  state.lastFingerprint = nil
+  state.lastSellAt = 0
+  state.noProgress = 0
+end
+
+local function trim(text)
+  return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function nowMs()
+  if type(now) == "number" then
+    return now
+  end
+
+  if g_clock and g_clock.millis then
+    local ok, result = pcall(function()
+      return g_clock.millis()
+    end)
+
+    if ok and result then
+      return result
+    end
+  end
+
+  return os.time() * 1000
+end
+
+local function hasAnyEntry(tbl)
+  if type(tbl) ~= "table" then
+    return false
+  end
+
+  for _, _ in pairs(tbl) do
+    return true
+  end
+
+  return false
+end
+
+local function getTalkDelay(default)
+  default = default or 1000
+
+  if storage and storage.coreSettings and storage.coreSettings.talkDelay then
+    return math.max(
+      tonumber(storage.coreSettings.talkDelay) or default,
+      300
+    )
+  end
+
+  return math.max(default, 300)
+end
+
+local function stopMoving()
+  pcall(function()
+    player:stopAutoWalk()
+  end)
+
+  pcall(function()
+    g_game.stop()
+  end)
+end
+
+local function sayNpc(text)
+  if NPC and NPC.say then
+    local ok = pcall(function()
+      NPC.say(text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  if g_game and g_game.talkChannel then
+    local ok = pcall(function()
+      g_game.talkChannel(11, 0, text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  if type(say) == "function" then
+    local ok = pcall(function()
+      say(text)
+    end)
+
+    if ok then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function widgetVisible(widget)
+  if not widget or not widget.isVisible then
+    return false
+  end
+
+  local ok, visible = pcall(function()
+    return widget:isVisible()
+  end)
+
+  return ok and visible
+end
+
+local function findNpcTradeWindow()
+  local tradeModule = modules and modules.game_npctrade
+
+  if tradeModule and tradeModule.npcWindow then
+    return tradeModule.npcWindow
+  end
+
+  local roots = {}
+
+  if rootWidget then
+    table.insert(roots, rootWidget)
+  end
+
+  if g_ui and g_ui.getRootWidget then
+    local ok, root = pcall(function()
+      return g_ui.getRootWidget()
+    end)
+
+    if ok and root then
+      table.insert(roots, root)
+    end
+  end
+
+  if modules and modules.game_interface then
+    if modules.game_interface.getRootPanel then
+      local ok, root = pcall(function()
+        return modules.game_interface.getRootPanel()
+      end)
+
+      if ok and root then
+        table.insert(roots, root)
+      end
+    end
+  end
+
+  for _, root in ipairs(roots) do
+    if root and root.recursiveGetChildById then
+      local ok, widget = pcall(function()
+        return root:recursiveGetChildById("npcWindow")
+      end)
+
+      if ok and widget then
+        return widget
+      end
+    end
+  end
+
+  return nil
+end
+
+local function isTradeOpen()
+  if NPC and NPC.isTrading then
+    local ok, result = pcall(function()
+      return NPC.isTrading()
+    end)
+
+    if ok and result then
+      return true
+    end
+  end
+
+  return widgetVisible(findNpcTradeWindow())
+end
+
+local function closeTrade()
+  if NPC and NPC.closeTrade then
+    pcall(function()
+      NPC.closeTrade()
+    end)
+    return
+  end
+
+  if modules
+    and modules.game_npctrade
+    and modules.game_npctrade.closeNpcTrade then
+
+    pcall(function()
+      modules.game_npctrade.closeNpcTrade()
+    end)
+    return
+  end
+
+  if g_game and g_game.closeNpcTrade then
+    pcall(function()
+      g_game.closeNpcTrade()
+    end)
+  end
+end
+
+local function getTradeModule()
+  return modules and modules.game_npctrade
+end
+
+local function getSellTradeList()
+  local tradeModule = getTradeModule()
+
+  if not tradeModule or type(tradeModule.tradeItems) ~= "table" then
+    return nil
+  end
+
+  local sellIndex = tradeModule.SELL or SELL
+  local list = tradeModule.tradeItems[sellIndex]
+
+  if type(list) == "table" then
+    return list
+  end
+
+  return nil
+end
+
+local function getPlayerItems()
+  local tradeModule = getTradeModule()
+
+  if tradeModule and type(tradeModule.playerItems) == "table" then
+    return tradeModule.playerItems
+  end
+
+  return {}
+end
+
+local function shouldIgnoreEquipped()
+  local tradeModule = getTradeModule()
+  local widget = tradeModule and tradeModule.ignoreEquipped
+
+  if widget and widget.isChecked then
+    local ok, checked = pcall(function()
+      return widget:isChecked()
+    end)
+
+    if ok then
+      return checked
+    end
+  end
+
+  -- Mais seguro: não vender itens equipados por padrão.
+  return true
+end
+
+local function getEquippedAmount(id)
+  local localPlayer = nil
+
+  if g_game and g_game.getLocalPlayer then
+    localPlayer = g_game.getLocalPlayer()
+  end
+
+  if not localPlayer then
+    return 0
+  end
+
+  local firstSlot = InventorySlotFirst or 1
+  local lastSlot = InventorySlotLast or 10
+  local amount = 0
+
+  for slot = firstSlot, lastSlot do
+    local item = localPlayer:getInventoryItem(slot)
+
+    if item and item:getId() == id then
+      amount = amount + math.max(item:getCount(), 1)
+    end
+  end
+
+  return amount
+end
+
+local function getSellQuantity(id, itemPtr, ignoreEquipped)
+  local tradeModule = getTradeModule()
+
+  if tradeModule
+    and tradeModule.getSellQuantity
+    and itemPtr then
+
+    local ok, amount = pcall(function()
+      return tradeModule.getSellQuantity(itemPtr)
+    end)
+
+    if ok and type(amount) == "number" then
+      return math.max(amount, 0)
+    end
+  end
+
+  local playerItems = getPlayerItems()
+  local amount = tonumber(playerItems[id]) or 0
+
+  if ignoreEquipped then
+    amount = amount - getEquippedAmount(id)
+  end
+
+  return math.max(amount, 0)
+end
+
+local function getMaxSellAmount()
+  if g_game
+    and g_game.getFeature
+    and GameDoubleShopSellAmount
+    and g_game.getFeature(GameDoubleShopSellAmount) then
+
+    return 10000
+  end
+
+  return 100
+end
+
+local function buildExceptionList(exceptions)
+  local list = {}
+
+  if type(exceptions) ~= "table" then
+    return list
+  end
+
+  for id, enabled in pairs(exceptions) do
+    if enabled then
+      table.insert(list, tonumber(id) or id)
+    end
+  end
+
+  table.sort(list, function(a, b)
+    return tostring(a) < tostring(b)
+  end)
+
+  return list
+end
+
+local function runNativeSellAll(delayed, exceptions)
+  local tradeModule = getTradeModule()
+
+  if not tradeModule or type(tradeModule.sellAll) ~= "function" then
+    return false
+  end
+
+  local ok = pcall(function()
+    tradeModule.sellAll(delayed, buildExceptionList(exceptions))
+  end)
+
+  return ok
+end
+
+local function parseSettings(value)
+  local parts = string.split(tostring(value or ""), ",")
+  local npcName = trim(parts[1])
+  local sellWithDelay = false
+  local exceptions = {}
+
+  for i = 2, #parts do
+    local token = trim(parts[i])
+    local lowerToken = token:lower()
+
+    if lowerToken == "yes"
+      or lowerToken == "sim"
+      or lowerToken == "true" then
+
+      sellWithDelay = true
+    else
+      local id = tonumber(token)
+
+      if id then
+        exceptions[id] = true
+      elseif token ~= "" then
+        warn(
+          "CaveBot[SellAll]: invalid parameter ignored: " ..
+          token
+        )
+      end
+    end
+  end
+
+  -- Itens configurados em cavebotSell continuam sendo exceções.
+  if storage and type(storage.cavebotSell) == "table" then
+    for _, item in ipairs(storage.cavebotSell) do
+      local id = nil
+
+      if type(item) == "number" then
+        id = item
+      elseif type(item) == "table" then
+        id = tonumber(item.id)
+      end
+
+      if id then
+        exceptions[id] = true
+      end
+    end
+  end
+
+  return npcName, sellWithDelay, exceptions
+end
+
+local function buildSellList(exceptions)
+  local tradeList = getSellTradeList()
+  local ignoreEquipped = shouldIgnoreEquipped()
+  local sellList = {}
+  local seen = {}
+
+  if type(tradeList) ~= "table" then
+    return sellList
+  end
+
+  for _, tradeData in pairs(tradeList) do
+    local itemPtr = tradeData and tradeData.ptr
+
+    if itemPtr and itemPtr.getId then
+      local ok, id = pcall(function()
+        return itemPtr:getId()
+      end)
+
+      if ok
+        and id
+        and not seen[id]
+        and not exceptions[id] then
+
+        seen[id] = true
+
+        local amount = getSellQuantity(
+          id,
+          itemPtr,
+          ignoreEquipped
+        )
+
+        if amount > 0 then
+          table.insert(sellList, {
+            id = id,
+            amount = amount,
+            ptr = itemPtr
+          })
+        end
+      end
+    end
+  end
+
+  table.sort(sellList, function(a, b)
+    return a.id < b.id
+  end)
+
+  return sellList
+end
+
+local function getFingerprint(sellList)
+  local parts = {}
+
+  for _, entry in ipairs(sellList) do
+    table.insert(
+      parts,
+      tostring(entry.id) .. ":" .. tostring(entry.amount)
+    )
+  end
+
+  return table.concat(parts, "|")
+end
+
+local function sellEntry(entry, ignoreEquipped)
+  if not entry or not entry.ptr then
+    return false
+  end
+
+  if not g_game or not g_game.sellItem then
+    return false
+  end
+
+  local amount = math.max(
+    0,
+    math.min(tonumber(entry.amount) or 0, getMaxSellAmount())
+  )
+
+  if amount <= 0 then
+    return false
+  end
+
+  local ok = pcall(function()
+    g_game.sellItem(
+      entry.ptr,
+      amount,
+      ignoreEquipped
+    )
+  end)
+
+  return ok
+end
+
+CaveBot.Extensions.SellAll.setup = function()
+  CaveBot.registerAction(
+    "SellAll",
+    "#C300FF",
+    function(value, retries)
+
+      local npcName, sellWithDelay, exceptions =
+        parseSettings(value)
+
+      if npcName == "" then
+        warn("CaveBot[SellAll]: NPC name is empty")
+        return false
+      end
+
+      local stateKey =
+        npcName ..
+        "|" ..
+        tostring(value or "")
+
+      if state.key ~= stateKey then
+        resetState(stateKey)
+      end
+
+      if retries > MAX_RETRIES then
+        print(
+          "CaveBot[SellAll]: too many retries, stopping"
+        )
+
+        resetState(nil)
+        return false
+      end
+
+      local npc = getCreatureByName(npcName)
+
+      if not npc then
+        if retries < 15 then
+          CaveBot.delay(400)
+          return "retry"
+        end
+
+        print(
+          "CaveBot[SellAll]: NPC not found: " ..
+          npcName
+        )
+
+        resetState(nil)
+        return false
+      end
+
+      local npcPos = npc:getPosition()
+
+      if getDistanceBetween(pos(), npcPos) > 4 then
+        CaveBot.GoTo(npcPos, 3)
+        CaveBot.delay(300)
+        return "retry"
+      end
+
+      if not isTradeOpen() then
+        state.tradeOpenedAt = 0
+        state.lastFingerprint = nil
+
+        local currentTime = nowMs()
+        local talkDelay = getTalkDelay(1000)
+        local cooldown = math.max(talkDelay * 3, 2500)
+
+        local canTalk =
+          state.lastTalkAt == 0
+          or currentTime - state.lastTalkAt >= cooldown
+
+        if canTalk then
+          state.tradeAttempts =
+            state.tradeAttempts + 1
+
+          state.lastTalkAt = currentTime
+
+          if state.tradeAttempts > MAX_TRADE_ATTEMPTS then
+            print(
+              "CaveBot[SellAll]: trade window did not open"
+            )
+
+            resetState(nil)
+            return false
+          end
+
+          stopMoving()
+
+          print(
+            "CaveBot[SellAll]: opening trade with " ..
+            npcName ..
+            " attempt " ..
+            state.tradeAttempts
+          )
+
+          sayNpc("hi")
+
+          schedule(talkDelay, function()
+            sayNpc("trade")
+          end)
+        end
+
+        CaveBot.delay(300)
+        return "retry"
+      end
+
+      state.tradeAttempts = 0
+
+      local currentTime = nowMs()
+
+      if state.tradeOpenedAt == 0 then
+        state.tradeOpenedAt = currentTime
+
+        -- Espera a lista do NPC e os player goods carregarem.
+        CaveBot.delay(800)
+        return "retry"
+      end
+
+      local tradeElapsed =
+        currentTime - state.tradeOpenedAt
+
+      local tradeList = getSellTradeList()
+
+      if not hasAnyEntry(tradeList) then
+        if tradeElapsed < 3500 then
+          CaveBot.delay(300)
+          return "retry"
+        end
+
+        print(
+          "CaveBot[SellAll]: trade opened, but sell list is unavailable"
+        )
+
+        resetState(nil)
+        return false
+      end
+
+      local playerItems = getPlayerItems()
+
+      if not hasAnyEntry(playerItems)
+        and tradeElapsed < 2500 then
+
+        CaveBot.delay(300)
+        return "retry"
+      end
+
+      local sellList = buildSellList(exceptions)
+
+      if #sellList == 0 then
+        closeTrade()
+
+        print(
+          "CaveBot[SellAll]: sold everything, proceeding"
+        )
+
+        resetState(nil)
+        return true
+      end
+
+      local fingerprint =
+        getFingerprint(sellList)
+
+      if state.lastFingerprint then
+        if fingerprint == state.lastFingerprint then
+          local updateDelay
+
+          if sellWithDelay then
+            updateDelay = getTalkDelay(500)
+          else
+            updateDelay = 800
+          end
+
+          if currentTime - state.lastSellAt < updateDelay then
+            CaveBot.delay(200)
+            return "retry"
+          end
+
+          state.noProgress =
+            state.noProgress + 1
+
+          if state.noProgress > MAX_NO_PROGRESS then
+            print(
+              "CaveBot[SellAll]: items are not decreasing; " ..
+              "check NPC, containers or server restrictions"
+            )
+
+            resetState(nil)
+            return false
+          end
+        else
+          state.noProgress = 0
+        end
+      end
+
+      local ignoreEquipped =
+        shouldIgnoreEquipped()
+
+      local usedNativeSellAll =
+        runNativeSellAll(sellWithDelay, exceptions)
+
+      if usedNativeSellAll then
+        if sellWithDelay then
+          print("CaveBot[SellAll]: selling with native delay")
+        else
+          print("CaveBot[SellAll]: selling with native sell all")
+        end
+      elseif sellWithDelay then
+        local entry = sellList[1]
+
+        print(
+          "CaveBot[SellAll]: selling " ..
+          math.min(entry.amount, getMaxSellAmount()) ..
+          "x item " ..
+          entry.id ..
+          " with delay"
+        )
+
+        if not sellEntry(entry, ignoreEquipped) then
+          print(
+            "CaveBot[SellAll]: failed to sell item " ..
+            entry.id
+          )
+        end
+      else
+        print(
+          "CaveBot[SellAll]: selling " ..
+          #sellList ..
+          " item types"
+        )
+
+        for _, entry in ipairs(sellList) do
+          local remaining = tonumber(entry.amount) or 0
+
+          while remaining > 0 do
+            local chunk = math.min(
+              remaining,
+              getMaxSellAmount()
+            )
+
+            local sent =
+              sellEntry({
+                id = entry.id,
+                amount = chunk,
+                ptr = entry.ptr
+              }, ignoreEquipped)
+
+            if not sent then
+              print(
+                "CaveBot[SellAll]: failed to sell item " ..
+                entry.id
+              )
+              break
+            end
+
+            remaining = remaining - chunk
+          end
+        end
+      end
+
+      state.lastFingerprint = fingerprint
+      state.lastSellAt = currentTime
+
+      if sellWithDelay then
+        CaveBot.delay(getTalkDelay(500))
+      else
+        CaveBot.delay(800)
+      end
+
+      return "retry"
+    end
+  )
+
+  CaveBot.Editor.registerAction(
+    "sellall",
+    "sell all",
+    {
+      value = "NPC",
+      title = "Sell All",
+      description =
+        "NPC Name, 'yes' for delay, exceptions separated by comma"
+    }
+  )
+end
+]]
+FILES["cavebot/stand_lure.lua"] = [=[CaveBot.Extensions.StandLure = {}
+local enable = nil
+
+local function modPos(dir)
+    local y = 0
+    local x = 0
+
+    if dir == 0 then
+        y = -1
+    elseif dir == 1 then
+        x = 1
+    elseif dir == 2 then
+        y = 1
+    elseif dir == 3 then
+        x = -1
+    elseif dir == 4 then
+        y = -1
+        x = 1
+    elseif dir == 5 then
+        y = 1
+        x = 1
+    elseif dir == 6 then
+        y = 1
+        x = -1
+    elseif dir == 7 then
+        y = -1
+        x = -1
+    end
+
+    return {x, y}
+end
+local function reset(delay)
+    if type(Supplies.hasEnough()) == 'table' then
+        return
+    end
+    delay = delay or 0
+    CaveBot.delay(delay)
+    if delay == nil then
+        enable = nil
+    end
+end
+
+local resetRetries = false
+CaveBot.Extensions.StandLure.setup = function()
+    CaveBot.registerAction(
+        "rushlure",
+        "#FF0090",
+        function(value, retries)
+            local nextPos = nil
+            local data = string.split(value, ",")
+            if not data[1] then
+                warn("Invalid cavebot lure action value. It should be position (x,y,z), delay(ms) is: " .. value)
+                return false
+            end
+
+            if type(Supplies.hasEnough()) == 'table' then -- do not execute if no supplies
+                return false
+            end
+
+            local pos = {x = tonumber(data[1]), y = tonumber(data[2]), z = tonumber(data[3])}
+
+            local delayTime = data[4] and tonumber(data[4]) or 1000
+            if not data[5] then
+                enable = nil
+            elseif data[5] == "yes" then
+                enable = true
+            else
+                enable = false
+            end
+
+            delay(100)
+
+            if retries > 50 and not resetRetries then
+                reset()
+                warn("[Rush Lure] Too many tries, can't reach position")
+                return false  -- can't stand on tile
+            end
+
+            if resetRetries then
+                resetRetries = false
+            end
+
+            if distanceFromPlayer(pos) > 30 then
+                reset()
+                return false -- not reachable
+            end
+
+            local playerPos = player:getPosition()
+            local pathWithoutMonsters = findPath(playerPos, pos, 30, { ignoreFields = true, ignoreNonPathable = true, ignoreCreatures = true, precision = 0})
+            local pathWithMonsters = findPath(playerPos, pos, maxDist, { ignoreFields = true, ignoreNonPathable = true, ignoreCreatures = false, precision = 0 })
+
+            if not pathWithoutMonsters then
+                reset()
+                warn("[Rush Lure] No possible path to reach position, skipping.")
+                return false -- spot is unreachable 
+            elseif pathWithoutMonsters and not pathWithMonsters then
+              local foundMonster = false
+              for i, dir in ipairs(pathWithoutMonsters) do
+                local dirs = modPos(dir)
+                nextPos = nextPos or playerPos
+                nextPos.x = nextPos.x + dirs[1]
+                nextPos.y = nextPos.y + dirs[2]
+
+            
+                local tile = g_map.getTile(nextPos)
+                if tile then
+                    if tile:hasCreature() then
+                        local creature = tile:getCreatures()[1]
+                        local hppc = creature:getHealthPercent()
+                        if creature:isMonster() and (hppc and hppc > 0) and (oldTibia or creature:getType() < 3) then
+                            -- real blocking creature can not meet those conditions - ie. it could be player, so just in case check if the next creature is reachable
+                            local path = findPath(playerPos, creature:getPosition(), 7, { ignoreNonPathable = true, precision = 1 }) 
+                            if path then
+                                creature:setMarked('#00FF00')
+                                if g_game.getAttackingCreature() ~= creature then
+                                  attack(creature)
+                                end
+                                g_game.setChaseMode(1)
+                                resetRetries = true -- reset retries, we are trying to unclog the cavebot
+                                delay(100)
+                                return "retry"
+                            end
+                        end
+                    end
+                end
+              end
+          
+              if not g_game.getAttackingCreature() then
+                reset()
+                warn("[Rush Lure] No path, no blocking monster, skipping.")
+                return false -- no other way
+              end
+            end
+
+            -- reaching position, delay targetbot in process
+            if not CaveBot.MatchPosition(pos, 0) then
+                TargetBot.delay(300)
+                CaveBot.walkTo(pos, 30, { ignoreCreatures = false, ignoreFields = true, ignoreNonPathable = true, precision = 0})
+                delay(100)
+                resetRetries = true
+                return "retry"
+            end
+
+            TargetBot.setOn()
+            reset(delayTime)
+            return true
+        end
+    )
+
+    CaveBot.Editor.registerAction(
+        "rushlure",
+        "rush lure",
+        {
+            value = function()
+                return posx() .. "," .. posy() .. "," .. posz() .. ",1000"
+            end,
+            title = "Stand Lure",
+            description = "Run to position(x,y,z), delay(ms), targetbot on/off (yes/no)",
+            multiline = false,
+            validation = [[\d{1,5},\d{1,5},\d{1,2},\d{1,5}(?:,(yes|no)$|$)]]
+        }
+    )
+end
+
+local next = false
+schedule(5, function() -- delay because cavebot.lua is loaded after this file
+    modules.game_bot.connect(CaveBotList(), {
+        onChildFocusChange = function(widget, newChild, oldChild)
+
+        if oldChild and oldChild.action == "rushlure" then
+            next = true
+            return
+        end
+
+        if next then
+            if enable then
+                TargetBot.setOn()
+            elseif enable == false then
+                TargetBot.setOff()
+            end
+            
+            enable = nil -- reset
+            next = false
+        end
+    end})
+end)]=]
+FILES["cavebot/supply_check.lua"] = [=[CaveBot.Extensions.SupplyCheck = {}
+
+local supplyRetries = 0
+local missedChecks = 0
+local maxMissedChecks = 6
+local rawRound = 0
+local time = now
+vBot.CaveBotData =
+  vBot.CaveBotData or
+  {
+    refills = 0,
+    rounds = 0,
+    time = {},
+    lastRefill = os.time(),
+    refillTime = {}
+  }
+
+local function setCaveBotData(hunting)
+  if hunting then
+    supplyRetries = supplyRetries + 1
+  else
+    supplyRetries = 0
+    table.insert(vBot.CaveBotData.refillTime, os.difftime(os.time() - vBot.CaveBotData.lastRefill))
+    vBot.CaveBotData.lastRefill = os.time()
+    vBot.CaveBotData.refills = vBot.CaveBotData.refills + 1
+  end
+
+  table.insert(vBot.CaveBotData.time, rawRound)
+  vBot.CaveBotData.rounds = vBot.CaveBotData.rounds + 1
+  missedChecks = 0
+end
+
+CaveBot.Extensions.SupplyCheck.setup = function()
+  CaveBot.registerAction(
+    "supplyCheck",
+    "#db5a5a",
+    function(value)
+      local data = string.split(value, ",")
+      local round = 0
+      rawRound = 0
+      local label = data[1]:trim()
+      local pos = nil
+      if #data == 4 then
+        pos = {x = tonumber(data[2]), y = tonumber(data[3]), z = tonumber(data[4])}
+      end
+
+      local function goToHuntLabel(reason)
+        if reason then
+          print(reason)
+        end
+        if not CaveBot.gotoLabel(label) then
+          warn("CaveBot[SupplyCheck]: label not found: " .. label)
+          return false
+        end
+        return true
+      end
+
+      if pos then
+        if missedChecks >= maxMissedChecks then
+          missedChecks = 0
+          supplyRetries = 0
+          print("CaveBot[SupplyCheck]: Missed " .. (maxMissedChecks + 1) .. " supply checks, proceeding with waypoints")
+          return true
+        end
+        local currentPos = player:getPosition()
+        local checkDistance = getDistanceBetween(currentPos, pos)
+        if checkDistance > 12 then
+          missedChecks = missedChecks + 1
+          return goToHuntLabel(
+            "CaveBot[SupplyCheck]: Missed supply check at distance " .. checkDistance ..
+            " from expected position (" .. pos.x .. "," .. pos.y .. "," .. pos.z .. "). " ..
+            ((maxMissedChecks + 1) - missedChecks) .. " tries left before skipping."
+          )
+        end
+      end
+
+      if time then
+        rawRound = math.ceil((now - time) / 1000)
+        round = rawRound .. "s"
+      else
+        round = ""
+      end
+      time = now
+
+      local softCount = itemAmount(6529) + itemAmount(3549)
+      local supplyData = Supplies.hasEnough()
+      local supplyInfo = Supplies.getAdditionalData()
+      local huntRoutesLimit = tonumber(storage.coreSettings.huntRoutes) or 50
+
+      if storage.caveBot.forceRefill then
+        print("CaveBot[SupplyCheck]: User forced, going back on refill. Last round took: " .. round)
+        storage.caveBot.forceRefill = false
+        supplyRetries = 0
+        missedChecks = 0
+        return false
+      elseif storage.caveBot.backStop then
+        print("CaveBot[SupplyCheck]: User forced, going back to city and turning off CaveBot. Last round took: " .. round)
+        supplyRetries = 0
+        missedChecks = 0
+        return false
+      elseif storage.caveBot.backTrainers then
+        print("CaveBot[SupplyCheck]: User forced, going back to city, then on trainers. Last round took: " .. round)
+        supplyRetries = 0
+        missedChecks = 0
+        return false
+      elseif storage.caveBot.backOffline then
+        print("CaveBot[SupplyCheck]: User forced, going back to city, then on offline training. Last round took: " .. round)
+        supplyRetries = 0
+        missedChecks = 0
+        return false
+      elseif huntRoutesLimit > 0 and supplyRetries > huntRoutesLimit then
+        print("CaveBot[SupplyCheck]: Round limit reached (" .. supplyRetries .. "/" .. huntRoutesLimit .. "), going back on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      elseif (supplyInfo.imbues.enabled and player:getSkillLevel(11) == 0) then
+        print("CaveBot[SupplyCheck]: Imbues ran out. Going on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      elseif (supplyInfo.stamina.enabled and stamina() < tonumber(supplyInfo.stamina.value)) then
+        print("CaveBot[SupplyCheck]: Stamina ran out. Going on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      elseif (supplyInfo.softBoots.enabled and softCount < 1) then
+        print("CaveBot[SupplyCheck]: No soft boots left. Going on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      elseif type(supplyData) == "table" then
+        print("CaveBot[SupplyCheck]: Not enough item: " .. supplyData.id .. "(only " .. supplyData.amount .. " left). Going on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      elseif (supplyInfo.capacity.enabled and freecap() < tonumber(supplyInfo.capacity.value)) then
+        print("CaveBot[SupplyCheck]: Not enough capacity. Going on refill. Last round took: " .. round)
+        setCaveBotData()
+        return false
+      else
+        local roundsText = huntRoutesLimit > 0 and (supplyRetries .. "/" .. huntRoutesLimit) or (supplyRetries .. "/off")
+        print("CaveBot[SupplyCheck]: Enough supplies. Hunting. Round (" .. roundsText .. "). Last round took: " .. round)
+        setCaveBotData(true)
+        return goToHuntLabel()
+      end
+    end
+  )
+
+  CaveBot.Editor.registerAction(
+    "supplycheck",
+    "supply check",
+    {
+      value = function()
+        return "startHunt," .. posx() .. "," .. posy() .. "," .. posz()
+      end,
+      title = "Supply check label",
+      description = "Insert here hunting start label",
+      validation = [[[^,]+,\d{1,5},\d{1,5},\d{1,2}$]]
+    }
+  )
+end
+]=]
+FILES["cavebot/tasker.lua"] = [=[CaveBot.Extensions.Tasker = {}
+
+local dataValidationFailed = function()
+    print("CaveBot[Tasker]: data validation failed! incorrect data, check cavebot/tasker for more info")
+    return false
+end
+
+-- miniconfig
+local talkDelay = storage.coreSettings.talkDelay
+if not storage.caveBotTasker then
+    storage.caveBotTasker = {
+        inProgress = false,
+        monster = "",
+        taskName = "",
+        count = 0,
+        max = 0
+    }
+end
+
+local resetTaskData = function()
+    storage.caveBotTasker.inProgress = false
+    storage.caveBotTasker.monster = ""
+    storage.caveBotTasker.monster2 = ""
+    storage.caveBotTasker.taskName = ""
+    storage.caveBotTasker.count = 0
+    storage.caveBotTasker.max = 0
+end
+
+CaveBot.Extensions.Tasker.setup = function()
+  CaveBot.registerAction("Tasker", "#FF0090", function(value, retries)
+    local taskName = ""
+    local monster = ""
+    local monster2 = ""
+    local count = 0
+    local label1 = ""
+    local label2 = ""
+    local task
+
+    local data = string.split(value, ",")
+    if not data or #data < 1 then
+        dataValidationFailed()
+    end
+    local marker = tonumber(data[1])
+
+    if not marker then
+        dataValidationFailed()
+        resetTaskData()
+    elseif marker == 1 then
+        if getNpcs(3) == 0 then
+            print("CaveBot[Tasker]: no NPC found in range! skipping")
+            return false
+        end
+        if #data ~= 4 and #data ~= 5 then
+            dataValidationFailed()
+            resetTaskData()
+        else
+            taskName = data[2]:lower():trim()
+            count = tonumber(data[3]:trim())
+            monster = data[4]:lower():trim()
+            if #data == 5 then
+                monster2 = data[5]:lower():trim()
+            end
+        end
+    elseif marker == 2 then
+        if #data ~= 3 then
+            dataValidationFailed()
+        else
+            label1 = data[2]:lower():trim()
+            label2 = data[3]:lower():trim()
+        end
+    elseif marker == 3 then
+        if getNpcs(3) == 0 then
+            print("CaveBot[Tasker]: no NPC found in range! skipping")
+            return false
+        end
+        if #data ~= 1 then
+            dataValidationFailed()
+        end
+    end
+    
+    -- let's cover markers now
+    if marker == 1 then -- starting task
+        CaveBot.Conversation("hi", "task", taskName, "yes")
+        delay(talkDelay*4)
+
+        storage.caveBotTasker.monster = monster
+        if monster2 then storage.caveBotTasker.monster2 = monster2 end
+        storage.caveBotTasker.taskName = taskName
+        storage.caveBotTasker.inProgress = true
+        storage.caveBotTasker.max = count
+        storage.caveBotTasker.count = 0
+
+        print("CaveBot[Tasker]: taken task for: " .. monster .. " x" .. count)
+        return true
+    elseif marker == 2 then -- only checking
+        if not storage.caveBotTasker.inProgress then
+            CaveBot.gotoLabel(label2)
+            print("CaveBot[Tasker]: there is no task in progress so going to take one.")
+            return true
+        end
+
+        local max = storage.caveBotTasker.max
+        local count = storage.caveBotTasker.count
+
+        if count >= max then
+            CaveBot.gotoLabel(label2)
+            print("CaveBot[Tasker]: task completed: " .. storage.caveBotTasker.taskName)
+            return true
+        else
+            CaveBot.gotoLabel(label1)
+            print("CaveBot[Tasker]: task in progress, left: " .. max - count .. " " .. storage.caveBotTasker.taskName)
+            return true
+        end
+
+
+    elseif marker == 3 then -- reporting task
+        CaveBot.Conversation("hi", "report", "task")
+        delay(talkDelay*3)
+
+        resetTaskData()
+        print("CaveBot[Tasker]: task reported, done")
+        return true
+    end
+
+  end)
+
+ CaveBot.Editor.registerAction("tasker", "tasker", {
+  value=[[     There is 3 scenarios for this extension, as example we will use medusa:
+
+  1. start task,
+      parameters:
+      - scenario for extension: 1
+      - task name in gryzzly adams: medusae
+      - monster count: 500
+      - monster name to track: medusa
+      - optional, monster name 2: 
+  2. check status, 
+      to be used on refill to decide whether to go back or spawn or go give task back
+      parameters:
+      - scenario for extension: 2
+      - label if task in progress: skipTask
+      - label if task done: taskDone  
+  3. report task,
+      parameters:
+      - scenario for extension: 3
+  
+  Strong suggestion, almost mandatory - USE POS CHECK to verify position! this module will only check if there is ANY npc in range!
+
+  when begin remove all the text and leave just a single string of parameters
+  some examples:
+
+  2, skipReport, goReport
+  3
+  1, drakens, 500, draken warmaster, draken spellweaver
+  1, medusae, 500, medusa]],
+  title="Tasker",
+  multiline = true
+ })
+end
+
+local regex = "Loot of ([a-z])* ([a-z A-Z]*):"
+local regex2 = "Loot of ([a-z A-Z]*):"
+onTextMessage(function(mode, text)
+   -- if CaveBot.isOff() then return end
+    if not text:lower():find("loot of") then return end
+    if #regexMatch(text, regex) == 1 and #regexMatch(text, regex)[1] == 3 then
+        monster = regexMatch(text, regex)[1][3]
+    elseif #regexMatch(text, regex2) == 1 and #regexMatch(text, regex2)[1] == 2 then
+        monster = regexMatch(text, regex2)[1][2]
+    end
+
+    local m1 = storage.caveBotTasker.monster
+    local m2 = storage.caveBotTasker.monster2
+
+    if monster == m1 or monster == m2 and storage.caveBotTasker.count then
+        storage.caveBotTasker.count = storage.caveBotTasker.count + 1
+    end
+end)
+]=]
+FILES["cavebot/travel.lua"] = [[CaveBot.Extensions.Travel = {}
+
+CaveBot.Extensions.Travel.setup = function()
+  CaveBot.registerAction("Travel", "#db5a5a", function(value, retries)
+   local data = string.split(value, ",")
+    if #data < 2 then
+     warn("CaveBot[Travel]: incorrect travel value!")
+     return false
+    end
+
+    local npcName = data[1]:trim()
+    local dest = data[2]:trim()
+
+    if retries > 5 then
+      print("CaveBot[Travel]: too many tries, can't travel")
+     return false
+    end
+
+    local npc = getCreatureByName(npcName)
+    if not npc then 
+      print("CaveBot[Travel]: NPC not found, can't travel")
+     return false 
+    end
+
+    if not CaveBot.ReachNPC(npcName) then
+      return "retry"
+    end
+
+    CaveBot.Travel(dest)
+    delay(storage.coreSettings.talkDelay*3)
+    print("CaveBot[Travel]: travel action finished")
+    return true
+  end)
+
+ CaveBot.Editor.registerAction("travel", "travel", {
+  value="NPC name, city",
+  title="Travel",
+  description="NPC name, City name, delay in ms(default is 200ms)",
+ })
+end]]
+FILES["cavebot/walking.lua"] = [[-- walking
+local expectedDirs = {}
+local isWalking = {}
+local walkPath = {}
+local walkPathIter = 0
+local usingClientAutoWalk = false
+local floorTransitionGuardUntil = 0
+
+local function getFloorTransitionDelay()
+  if CaveBot.Config and CaveBot.Config.values and CaveBot.Config.values.floorChangeDelay ~= nil then
+    return math.max(0, tonumber(CaveBot.Config.values.floorChangeDelay) or 850)
+  end
+  return 850
+end
+
+CaveBot.startFloorTransitionGuard = function(delayMs)
+  local guardDelay = math.max(0, tonumber(delayMs) or getFloorTransitionDelay())
+  floorTransitionGuardUntil = math.max(floorTransitionGuardUntil, now + guardDelay)
+
+  CaveBot.resetWalking()
+  if g_game and g_game.stop then
+    g_game.stop()
+  end
+
+  if CaveBot.delay then
+    CaveBot.delay(guardDelay)
+  end
+end
+
+CaveBot.isFloorTransitionGuardActive = function()
+  return now < floorTransitionGuardUntil
+end
+
+CaveBot.getFloorTransitionGuardRemaining = function()
+  return math.max(0, floorTransitionGuardUntil - now)
+end
+
+local function isLureWalkDelayActive()
+  return CaveBot.isLureWalkDelayActive
+    and CaveBot.isLureWalkDelayActive() or false
+end
+
+local function getWalkDelay()
+  if CaveBot.getWalkDelay then
+    return CaveBot.getWalkDelay()
+  end
+  return CaveBot.Config.get("walkDelay")
+end
+
+local function shouldUseClientAutoWalk()
+  if isLureWalkDelayActive() then
+    return false
+  end
+  if CaveBot.Config.get("mapClick") and not isLureWalkDelayActive() then
+    return false
+  end
+  return true
+end
+
+local function getQueuedStepDelay(dir)
+  local stepDuration = player:getStepDuration(false, dir)
+  if isLureWalkDelayActive() then
+    return getWalkDelay() + stepDuration
+  end
+  local configDelay = math.max(getWalkDelay(), CaveBot.Config.get("ping"))
+  local queuedDelay = math.floor(stepDuration / 3)
+
+  if queuedDelay < 20 then
+    queuedDelay = 20
+  end
+
+  return math.min(stepDuration, math.max(configDelay, queuedDelay))
+end
+
+CaveBot.resetWalking = function()
+  expectedDirs = {}
+  walkPath = {}
+  isWalking = false
+  usingClientAutoWalk = false
+end
+
+CaveBot.doWalking = function()
+  if usingClientAutoWalk then
+    return false
+  end
+  if CaveBot.Config.get("mapClick") then
+    return false
+  end
+  if #expectedDirs == 0 then
+    return false
+  end
+  if #expectedDirs >= 3 then
+    CaveBot.resetWalking()
+  end
+  local dir = walkPath[walkPathIter]
+  if dir then
+    g_game.walk(dir)
+    table.insert(expectedDirs, dir)
+    walkPathIter = walkPathIter + 1
+    CaveBot.delay(getQueuedStepDelay(dir))
+    return true
+  end
+  return false  
+end
+
+-- called when player position has been changed (step has been confirmed by server)
+onPlayerPositionChange(function(newPos, oldPos)
+  if not oldPos or not newPos then return end
+
+  if newPos.z ~= oldPos.z then
+    -- Stop every old path and wait for the new floor/map to settle before the
+    -- next waypoint can run. This covers stairs, holes, ladders and spells.
+    CaveBot.startFloorTransitionGuard()
+    return
+  end
+  
+  local dirs = {{NorthWest, North, NorthEast}, {West, 8, East}, {SouthWest, South, SouthEast}}
+  local dir = dirs[newPos.y - oldPos.y + 2]
+  if dir then
+    dir = dir[newPos.x - oldPos.x + 2]
+  end
+  if not dir then
+    dir = 8 -- 8 is invalid dir, it's fine
+  end
+
+  if usingClientAutoWalk then
+    return
+  end
+
+  if not isWalking or not expectedDirs[1] then
+    -- some other walk action is taking place (for example use on ladder), wait
+    walkPath = {}
+    CaveBot.delay(CaveBot.Config.get("ping") + player:getStepDuration(false, dir) + 150)
+    return
+  end
+  
+  if expectedDirs[1] ~= dir then
+    if CaveBot.Config.get("mapClick") and not isLureWalkDelayActive() then
+      CaveBot.delay(getWalkDelay() + player:getStepDuration(false, dir))
+    else
+      CaveBot.delay(getQueuedStepDelay(dir))
+    end
+    return
+  end
+  
+  table.remove(expectedDirs, 1)  
+  if CaveBot.Config.get("mapClick")
+    and not isLureWalkDelayActive()
+    and #expectedDirs > 0 then
+    CaveBot.delay(CaveBot.Config.get("mapClickDelay") + player:getStepDuration(false, dir))
+  end
+end)
+
+CaveBot.walkTo = function(dest, maxDist, params)
+  local path = getPath(player:getPosition(), dest, maxDist, params)
+  if not path or not path[1] then
+    return false
+  end
+  local dir = path[1]
+  
+  if CaveBot.Config.get("mapClick") and not isLureWalkDelayActive() then
+    local ret = autoWalk(path)
+    if ret then
+      isWalking = true
+      usingClientAutoWalk = false
+      expectedDirs = path
+      CaveBot.delay(CaveBot.Config.get("mapClickDelay") + math.max(CaveBot.Config.get("ping") + player:getStepDuration(false, dir), player:getStepDuration(false, dir) * 2))
+    end
+    return ret
+  end
+
+  if shouldUseClientAutoWalk() then
+    local clientWalk = autoWalk(dest, maxDist, params)
+    if clientWalk then
+      isWalking = true
+      usingClientAutoWalk = true
+      expectedDirs = {}
+      walkPath = {}
+      walkPathIter = 0
+      CaveBot.delay(math.max(getWalkDelay(), CaveBot.Config.get("ping")))
+      return true
+    end
+  end
+
+  usingClientAutoWalk = false
+  
+  g_game.walk(dir)
+  isWalking = true    
+  walkPath = path
+  walkPathIter = 2
+  expectedDirs = { dir }
+  CaveBot.delay(getQueuedStepDelay(dir))
+  return true
+end
+]]
+FILES["cavebot/withdraw.lua"] = [[CaveBot.Extensions.Withdraw = {}
+
+CaveBot.Extensions.Withdraw.setup = function()
+	CaveBot.registerAction("withdraw", "#002FFF", function(value, retries)
+		-- validation
+		local data = string.split(value, ",")
+		if #data ~= 3 then
+			print("CaveBot[Withdraw]: incorrect data! skipping")
+			return false
+		end
+
+		-- variables declaration
+		local source = tonumber(data[1])
+		local id = tonumber(data[2])
+		local amount = tonumber(data[3])
+
+		-- validation for correct values
+		if not id or not amount then
+			print("CaveBot[Withdraw]: incorrect id or amount! skipping") 
+			return false
+		end
+
+		-- check for retries
+		if retries > 100 then
+			print("CaveBot[Withdraw]: actions limit reached, proceeding")
+			for i, container in ipairs(getContainers()) do
+				if container:getName():lower():find("depot") or container:getName():lower():find("locker") then
+					g_game.close(container)
+				end
+			end
+			return true
+		end
+
+		-- check for items
+		if itemAmount(id) >= amount then
+			print("CaveBot[Withdraw]: enough items, proceeding")
+			for i, container in ipairs(getContainers()) do
+				if container:getName():lower():find("depot") or container:getName():lower():find("locker") then
+					g_game.close(container)
+				end
+			end
+			return true
+		end
+
+		statusMessage("[Withdraw] withdrawing item: " ..id.. " x"..amount)
+		CaveBot.WithdrawItem(id, amount, source)
+		CaveBot.PingDelay()
+		return "retry"
+  	end)
+
+ CaveBot.Editor.registerAction("withdraw", "withdraw", {
+  value="source,id,amount",
+  title="Withdraw Items",
+  description="index/inbox, item id and amount",
+ })
+end]]
+FILES["storage/profile_1.json"] = [[{
+  "manaTrain2": {
+    "on": false,
+    "title": "MP%",
+    "min": 95,
+    "max": 95,
+    "text": "utani hur"
+  },
+  "alarms": {
+    "defaultMsg": {
+      "enabled": false
+    },
+    "playerAttack": {
+      "enabled": false
+    },
+    "creatureName": {
+      "value": "",
+      "enabled": false
+    },
+    "enabled": true,
+    "ignoreFriends": {
+      "enabled": true
+    },
+    "gmDetected": {
+      "enabled": true
+    },
+    "alarmIcon": {
+      "enabled": true
+    },
+    "lowHealth": {
+      "value": 20,
+      "enabled": false
+    },
+    "flashClient": {
+      "enabled": false
+    },
+    "damageTaken": {
+      "enabled": false
+    },
+    "creatureDetected": {
+      "enabled": false
+    },
+    "playerDetected": {
+      "enabled": false
+    },
+    "customMessage": {
+      "value": "",
+      "enabled": false
+    },
+    "lowMana": {
+      "value": 20,
+      "enabled": false
+    },
+    "lowSupplies": {
+      "enabled": false
+    },
+    "privateMsg": {
+      "enabled": true
+    }
+  },
+  "dropper": {
+    "trashItems": [
+      {
+        "id": 3354,
+        "count": 0
+      },
+      {
+        "id": 3358,
+        "count": 0
+      },
+      {
+        "id": 21143,
+        "count": 0
+      },
+      {
+        "id": 3577,
+        "count": 0
+      },
+      {
+        "id": 3264,
+        "count": 0
+      },
+      {
+        "id": 3583,
+        "count": 0
+      },
+      {
+        "id": 3450,
+        "count": 0
+      },
+      {
+        "id": 2842,
+        "count": 0
+      },
+      {
+        "id": 2903,
+        "count": 0
+      },
+      {
+        "id": 7441,
+        "count": 0
+      },
+      {
+        "id": 3294,
+        "count": 0
+      },
+      {
+        "id": 284,
+        "count": 0
+      },
+      {
+        "id": 283,
+        "count": 0
+      },
+      {
+        "id": 21158,
+        "count": 0
+      },
+      {
+        "id": 21146,
+        "count": 0
+      },
+      {
+        "id": 21295,
+        "count": 0
+      },
+      {
+        "id": 21144,
+        "count": 0
+      }
+    ],
+    "enabled": true,
+    "minCap": "100",
+    "capItems": [
+      {
+        "id": 3359,
+        "count": 0
+      }
+    ],
+    "useItems": [
+      {
+        "id": 3061,
+        "count": 0
+      },
+      {
+        "id": 21203,
+        "count": 0
+      }
+    ]
+  },
+  "foodItems": [
+    {
+      "id": 3607,
+      "count": 0
+    },
+    {
+      "id": 3592,
+      "count": 0
+    },
+    {
+      "id": 3600,
+      "count": 0
+    },
+    {
+      "id": 3601,
+      "count": 0
+    },
+    {
+      "id": 3725,
+      "count": 0
+    },
+    {
+      "id": 3582,
+      "count": 0
+    },
+    {
+      "id": 3577,
+      "count": 0
+    },
+    {
+      "id": 3578,
+      "count": 0
+    },
+    {
+      "id": 3583,
+      "count": 0
+    },
+    {
+      "id": 3723,
+      "count": 0
+    },
+    {
+      "id": 3731,
+      "count": 0
+    },
+    {
+      "id": 3732,
+      "count": 0
+    },
+    {
+      "id": 3595,
+      "count": 0
+    },
+    {
+      "id": 3593,
+      "count": 0
+    },
+    {
+      "id": 9083,
+      "count": 0
+    },
+    {
+      "id": 3585,
+      "count": 0
+    }
+  ],
+  "newHealer": {
+    "vocations": [],
+    "groups": [],
+    "enabled": false,
+    "sCheckRL": true,
+    "settings": [
+      {
+        "value": 0,
+        "type": "HealItem",
+        "text": "Mana Item "
+      },
+      {
+        "value": 7,
+        "type": "HealScroll",
+        "text": "Item Range: "
+      },
+      {
+        "value": 3160,
+        "type": "HealItem",
+        "text": "Health Item "
+      },
+      {
+        "value": 2,
+        "type": "HealScroll",
+        "text": "Mas Res targets: "
+      },
+      {
+        "value": 95,
+        "type": "HealScroll",
+        "text": "Heal Friend at: "
+      },
+      {
+        "value": 50,
+        "type": "HealScroll",
+        "text": "Use Gran Sio at: "
+      },
+      {
+        "value": 0,
+        "type": "HealScroll",
+        "text": "Pause if my HP <= "
+      },
+      {
+        "value": 0,
+        "type": "HealScroll",
+        "text": "Pause if my MP <= "
+      },
+      {
+        "value": 80,
+        "type": "HealScroll",
+        "text": "My HP for Mas Res: "
+      }
+    ],
+    "priorities": [
+      {
+        "name": "Custom Spell",
+        "enabled": false,
+        "custom": true
+      },
+      {
+        "name": "Exura Gran Sio",
+        "enabled": true,
+        "strong": true
+      },
+      {
+        "name": "Exura Gran Mas Res",
+        "area": true,
+        "enabled": true
+      },
+      {
+        "name": "Exura Sio",
+        "enabled": true,
+        "normal": true
+      },
+      {
+        "name": "Health Item",
+        "health": true,
+        "enabled": false
+      },
+      {
+        "name": "Mana Item",
+        "enabled": false,
+        "mana": true
+      }
+    ],
+    "customPlayers": [],
+    "conditions": {
+      "botserver": false,
+      "sorcerers": false,
+      "guild": true,
+      "party": true,
+      "knights": true,
+      "friends": true,
+      "druids": false,
+      "paladins": true
+    }
+  },
+  "manaTrain": {
+    "on": false,
+    "title": "MP%",
+    "min": 95,
+    "max": 95,
+    "text": "exura gran san"
+  },
+  "caveBotTasker": {
+    "count": 3,
+    "max": 0,
+    "monster": "",
+    "taskName": "",
+    "inProgress": false
+  },
+  "quiverManagerUI": {
+    "ammoIds": [
+      0,
+      3449,
+      35901,
+      0
+    ],
+    "enabled": false,
+    "quiverIds": [
+      35849,
+      0,
+      0,
+      0
+    ],
+    "min": 100,
+    "ammoContainerId": 8860,
+    "max": 600
+  },
+  "autoEquip": [
+    {
+      "item1": 3098,
+      "item2": 3100,
+      "slot": 9,
+      "title": "Auto Equip",
+      "on": false
+    },
+    {
+      "item1": 25760,
+      "item2": 25760,
+      "slot": 6,
+      "title": "Auto Equip",
+      "on": false
+    }
+  ],
+  "specialDeposit": {
+    "items": [],
+    "storeItems": [
+      {
+        "id": 3091,
+        "count": 0
+      },
+      {
+        "id": 3049,
+        "count": 0
+      },
+      {
+        "id": 5912,
+        "count": 0
+      },
+      {
+        "id": 5910,
+        "count": 0
+      },
+      {
+        "id": 5911,
+        "count": 0
+      },
+      {
+        "id": 21202,
+        "count": 0
+      }
+    ],
+    "delay": 300,
+    "height": 0,
+    "removeItems": [],
+    "lootContainers": [
+      {
+        "id": 2854,
+        "count": 0
+      }
+    ]
+  },
+  "cavebotCompat": {
+    "safeMode": false,
+    "setupExtensions": true,
+    "stage": "full",
+    "loadTargetBot": true,
+    "setupEditor": true,
+    "loadMainUi": true,
+    "loadMainRuntime": true,
+    "bindMainConfig": true,
+    "setupConfigUi": true
+  },
+  "autoBuff": {
+    "iconPosX": 200,
+    "pz": true,
+    "enabled": false,
+    "exhausted": 1001,
+    "iconPosY": 170,
+    "icon": true,
+    "atk": false,
+    "spellList": [
+      "utito tempo san, 10"
+    ]
+  },
+  "_icons": {
+    "aI": {
+      "y": 0.12980132450331,
+      "x": 0.004950495049505
+    },
+    "BuffIcon": {
+      "y": 0.17551020408163,
+      "enabled": false,
+      "x": 0.003960396039604
+    }
+  },
+  "_macros": {
+    "": false,
+    "Eat Food": true,
+    "Quiver Manager": false
+  },
+  "playerList": {
+    "highlight": false,
+    "marks": false,
+    "enemyList": [],
+    "outfits": false,
+    "groupMembers": true,
+    "blackList": [],
+    "friendList": [
+      "Dexkulzin"
+    ]
+  },
+  "AttackBotSupport": {
+    "effectIcons": {
+      "exori moe": {
+        "1": true
+      },
+      "exori kor": {
+        "2": true
+      },
+      "exana amp res": {
+        "3": true
+      }
+    },
+    "rangedNames": {
+      "frost flower asura": true
+    }
+  },
+  "caveBotShowMapWaypoints": true,
+  "cavebotSell": [
+    {
+      "id": 23544,
+      "count": 0
+    },
+    {
+      "id": 3081,
+      "count": 0
+    },
+    {
+      "id": 44605,
+      "count": 0
+    },
+    {
+      "id": 22083,
+      "count": 0
+    },
+    {
+      "id": 830,
+      "count": 0
+    },
+    {
+      "id": 812,
+      "count": 0
+    },
+    {
+      "id": 5878,
+      "count": 0
+    },
+    {
+      "id": 21202,
+      "count": 0
+    },
+    {
+      "id": 5911,
+      "count": 0
+    },
+    {
+      "id": 5912,
+      "count": 0
+    },
+    {
+      "id": 5910,
+      "count": 0
+    }
+  ],
+  "caveBot": {
+    "backTrainers": false,
+    "backOffline": false,
+    "backStop": false,
+    "forceRefill": false
+  },
+  "coreSettings": {
+    "pathfinding": false,
+    "talkDelay": 1000,
+    "looting": 20,
+    "lootDelay": 225,
+    "huntRoutes": 0,
+    "killUnder": 100,
+    "gotoMaxDistance": 61,
+    "lootLast": false,
+    "joinBot": false,
+    "reachable": true,
+    "ignoreCreatures": "deer,rabbit",
+    "showTargetPriority": false,
+    "machete": 3308
+  }
+}
+]]
+FILES["targetbot/creature.lua"] = "\n" .. [[TargetBot.Creature = {}
+TargetBot.Creature.configsCache = {}
+TargetBot.Creature.cached = 0
+
+local function buildCreatureRegexPart(part)
+  part = part:trim():lower()
+  part = part:gsub("([%^%$%(%)%%%.%[%]%+%-%|])", "\\%1")
+  return "^" .. part:gsub("%*", ".*"):gsub("%?", ".?") .. "$"
+end
+
+TargetBot.Creature.resetConfigs = function()
+  TargetBot.targetList:destroyChildren()
+  TargetBot.Creature.resetConfigsCache()
+end
+
+TargetBot.Creature.resetConfigsCache = function()
+  TargetBot.Creature.configsCache = {}
+  TargetBot.Creature.cached = 0
+end
+
+TargetBot.Creature.addConfig = function(config, focus)
+  if type(config) ~= 'table' or type(config.name) ~= 'string' then
+    return error("Invalid targetbot creature config (missing name)")
+  end
+  TargetBot.Creature.resetConfigsCache()
+
+  if not config.regex then
+    config.regex = ""
+    for part in string.gmatch(config.name, "[^,]+") do
+      if config.regex:len() > 0 then
+        config.regex = config.regex .. "|"
+      end
+      config.regex = config.regex .. buildCreatureRegexPart(part)
+    end
+  end
+
+  local widget = UI.createWidget("TargetBotEntry", TargetBot.targetList)
+  widget:setText(config.name)
+  widget.value = config
+
+  widget.onDoubleClick = function(entry) -- edit on double click
+    schedule(20, function() -- schedule to have correct focus
+      TargetBot.Creature.edit(entry.value, function(newConfig)
+        entry:setText(newConfig.name)
+        entry.value = newConfig
+        TargetBot.Creature.resetConfigsCache()
+        TargetBot.save()
+      end)
+    end)
+  end
+
+  if focus then
+    widget:focus()
+    TargetBot.targetList:ensureChildVisible(widget)
+  end
+  return widget
+end
+
+TargetBot.Creature.getConfigs = function(creature)
+  if not creature then return {} end
+  local name = creature:getName():trim():lower()
+  -- ignore list
+  if storage.coreSettings.ignoreCreatures then
+    local ignoreList = string.split(storage.coreSettings.ignoreCreatures, ",")
+    for k, v in ipairs(ignoreList) do
+      if v:lower():trim() == name then
+        creature:setText("ignore")
+        return {}
+      end
+    end
+  end 
+  -- this function may be slow, so it will be using cache
+  if TargetBot.Creature.configsCache[name] then
+    return TargetBot.Creature.configsCache[name]
+  end
+  local configs = {}
+  for _, config in ipairs(TargetBot.targetList:getChildren()) do
+    if regexMatch(name, config.value.regex)[1] then
+      table.insert(configs, config.value)
+    end
+  end
+  if TargetBot.Creature.cached > 1000 then 
+    TargetBot.Creature.resetConfigsCache() -- too big cache size, reset
+  end
+  TargetBot.Creature.configsCache[name] = configs -- add to cache
+  TargetBot.Creature.cached = TargetBot.Creature.cached + 1
+  return configs
+end
+
+TargetBot.Creature.calculateParams = function(creature, path)
+  local configs = TargetBot.Creature.getConfigs(creature)
+  local priority = 0
+  local danger = 0
+  local selectedConfig = nil
+  for _, config in ipairs(configs) do
+    local config_priority = TargetBot.Creature.calculatePriority(creature, config, path)
+    if config_priority > priority then
+      priority = config_priority
+      danger = TargetBot.Creature.calculateDanger(creature, config, path)
+      selectedConfig = config
+    end
+  end
+  -- reachable
+  -- if distanceFromPlayer(creature:getPosition()) > 1 then
+    if selectedConfig and storage.coreSettings.reachable and not findPath(pos(),creature:getPosition(),storage.coreSettings.looting,{ignoreCreatures = false, precision = 1}) then
+      priority = 1
+    end
+  -- end
+  return {
+    config = selectedConfig,
+    creature = creature,
+    danger = danger,
+    priority = priority
+  }
+end
+
+TargetBot.Creature.calculateDanger = function(creature, config, path)
+  -- config is based on creature_editor
+  return config.danger
+end
+]]
+FILES["targetbot/creature_attack.lua"] = [[-- Smart Mage Run v15.0 - stricter anti-trap and cardinal-first Mage Run
+local anchorPosition = nil
+local lastCall = now
+local lastMageRunMove = 0
+local mageRunLastMoveDiagonal = false
+local mageRunDiagonalOpportunity = 0
+local mageRunLastDebugAt = 0
+local mageRunDebugSignature = nil
+local mageRunDirectStepOrigin = nil
+local mageRunDirectStepTarget = nil
+local mageRunDirectStepAt = 0
+local mageRunDirectStepDirection = nil
+local mageRunDecision = {
+  target = nil,
+  origin = nil,
+  chosenAt = 0,
+  expiresAt = 0,
+  lastEvaluationAt = 0,
+  arrivedAt = 0,
+  lastDx = 0,
+  lastDy = 0,
+  centerKey = nil,
+  escapeMode = false,
+  orbitMode = false,
+  orbitDirection = 0,
+  orbitLockedUntil = 0,
+  centerRecovery = false,
+  reserveEscape = false,
+  escapePhase = "inside",
+  escapeStartedAt = 0,
+  reentryTarget = nil,
+  route = nil,
+  routeOrigin = nil
+}
+
+-- Runtime safety state shared with the walking layer and AttackBot. Directional
+-- spells may briefly pause normal kiting, but that pause must never win over an
+-- actual emergency with monsters already closing the character.
+local mageRunRuntime = {
+  emergency = false,
+  pressure = false,
+  adjacent = 0,
+  nearTwo = 0,
+  nearestHazard = 99,
+  reason = "idle",
+  updatedAt = 0,
+  hazards = {}
+}
+
+local mageRunDebugTiles = {}
+
+local visibleMonsterCache = {
+  key = nil,
+  expiresAt = 0,
+  hazards = {},
+  configured = {}
+}
+
+local staticTileSafetyCache = {
+  z = nil,
+  expiresAt = 0,
+  values = {}
+}
+
+local magicFieldCache = {
+  z = nil,
+  expiresAt = 0,
+  values = {}
+}
+
+-- Creature positions are read dozens of times during one strategic pass. Cache
+-- them for the current movement slice so pcall/getPosition is not repeated for
+-- every candidate tile.
+local mageRunCreaturePositionCache = {
+  z = nil,
+  expiresAt = 0,
+  values = {}
+}
+
+-- The fast layer often checks the player, the held target and the next route
+-- step in the same tick. Reusing local mobility for a short window removes a
+-- large amount of repeated getNearTiles/tile inspection work.
+local mageRunFastMobilityCache = {
+  z = nil,
+  expiresAt = 0,
+  values = {}
+}
+
+local function safeCreaturePosition(creature, expectedZ)
+  if not creature or not creature.getPosition then return nil end
+
+  local cacheKey = nil
+  if expectedZ ~= nil then
+    if mageRunCreaturePositionCache.z ~= expectedZ
+      or mageRunCreaturePositionCache.expiresAt <= now then
+      mageRunCreaturePositionCache.z = expectedZ
+      mageRunCreaturePositionCache.expiresAt = now + 90
+      mageRunCreaturePositionCache.values = {}
+    end
+
+    local okId, id = pcall(function()
+      return creature.getId and creature:getId() or nil
+    end)
+    cacheKey = okId and id or tostring(creature)
+    local cached = mageRunCreaturePositionCache.values[cacheKey]
+    if cached ~= nil then
+      return cached or nil
+    end
+  end
+
+  local ok, creaturePos = pcall(function()
+    return creature:getPosition()
+  end)
+  if not ok or not creaturePos
+    or (expectedZ ~= nil and creaturePos.z ~= expectedZ) then
+    if cacheKey ~= nil then
+      mageRunCreaturePositionCache.values[cacheKey] = false
+    end
+    return nil
+  end
+
+  if cacheKey ~= nil then
+    mageRunCreaturePositionCache.values[cacheKey] = creaturePos
+  end
+  return creaturePos
+end
+
+local function filterValidMageRunCreatures(creatures, expectedZ)
+  local result = {}
+  for _, creature in ipairs(creatures or {}) do
+    local creaturePos = safeCreaturePosition(creature, expectedZ)
+    local okHp, hp = pcall(function()
+      return creature and creature.getHealthPercent and creature:getHealthPercent() or 0
+    end)
+    hp = okHp and tonumber(hp) or 0
+    if creaturePos and hp > 0 then
+      result[#result + 1] = creature
+    end
+  end
+  return result
+end
+
+local function tileHasCreature(tile)
+  if not tile then return false end
+  if tile.hasCreature then
+    return tile:hasCreature()
+  end
+  if tile.getCreatures then
+    local creatures = tile:getCreatures()
+    return creatures and #creatures > 0 or false
+  end
+  return false
+end
+
+local function callBooleanMethod(object, methodName)
+  if not object then return false, false end
+  local okMethod, method = pcall(function() return object[methodName] end)
+  if not okMethod or type(method) ~= "function" then
+    return false, false
+  end
+  local ok, value = pcall(function()
+    return method(object)
+  end)
+  return ok, ok and value == true
+end
+
+local function isStaticMageRunTileSafe(position)
+  if not position then return false end
+
+  if staticTileSafetyCache.z ~= position.z
+    or staticTileSafetyCache.expiresAt <= now then
+    staticTileSafetyCache.z = position.z
+    staticTileSafetyCache.expiresAt = now + 900
+    staticTileSafetyCache.values = {}
+  end
+
+  local key = position.x .. ":" .. position.y .. ":" .. position.z
+  if staticTileSafetyCache.values[key] ~= nil then
+    return staticTileSafetyCache.values[key]
+  end
+
+  local tile = g_map.getTile(position)
+  if not tile then
+    staticTileSafetyCache.values[key] = false
+    return false
+  end
+
+  local safe = true
+  if tile.isPathable then
+    local ok, pathable = pcall(function() return tile:isPathable() end)
+    if ok and not pathable then safe = false end
+  end
+
+  local minimapColor = g_map.getMinimapColor and g_map.getMinimapColor(position) or 0
+  if minimapColor >= 210 and minimapColor <= 213 then
+    safe = false
+  end
+
+  for _, methodName in ipairs({"isProtectionZone", "isPz", "isTeleport", "isFloorChange"}) do
+    local ok, value = callBooleanMethod(tile, methodName)
+    if ok and value then safe = false break end
+  end
+
+  if safe and tile.getItems then
+    local ok, items = pcall(function() return tile:getItems() end)
+    if ok and items then
+      for _, item in ipairs(items) do
+        for _, methodName in ipairs({"isTeleport", "isFloorChange"}) do
+          local methodOk, value = callBooleanMethod(item, methodName)
+          if methodOk and value then
+            safe = false
+            break
+          end
+        end
+        if not safe then break end
+      end
+    end
+  end
+
+  staticTileSafetyCache.values[key] = safe and true or false
+  return staticTileSafetyCache.values[key]
+end
+
+local function hasMageRunMagicField(position)
+  if not position then return false end
+
+  -- Magic fields are dynamic hazards, not permanent geometry. A short cache
+  -- prevents a removed field from remaining risky for almost a full second.
+  if magicFieldCache.z ~= position.z
+    or magicFieldCache.expiresAt <= now then
+    magicFieldCache.z = position.z
+    magicFieldCache.expiresAt = now + 120
+    magicFieldCache.values = {}
+  end
+
+  local key = position.x .. ":" .. position.y .. ":" .. position.z
+  if magicFieldCache.values[key] ~= nil then
+    return magicFieldCache.values[key]
+  end
+
+  local field = false
+  local tile = g_map.getTile(position)
+  if tile and tile.getItems then
+    local ok, items = pcall(function() return tile:getItems() end)
+    if ok and items then
+      for _, item in ipairs(items) do
+        local methodOk, value = callBooleanMethod(item, "isMagicField")
+        if methodOk and value then
+          field = true
+          break
+        end
+      end
+    end
+  end
+
+  magicFieldCache.values[key] = field and true or false
+  return magicFieldCache.values[key]
+end
+
+local function hasLineOfSight(fromPos, toPos, cache)
+  if not fromPos or not toPos or fromPos.z ~= toPos.z then return false end
+  if fromPos.x == toPos.x and fromPos.y == toPos.y then return true end
+
+  local key = fromPos.x .. ":" .. fromPos.y .. ":" .. fromPos.z
+    .. ">" .. toPos.x .. ":" .. toPos.y .. ":" .. toPos.z
+  if cache and cache[key] ~= nil then
+    return cache[key]
+  end
+
+  local result = true
+  if g_map and g_map.isSightClear then
+    local ok, clear = pcall(function()
+      return g_map.isSightClear(fromPos, toPos)
+    end)
+    if ok then result = clear == true end
+  end
+
+  if cache then cache[key] = result end
+  return result
+end
+
+function getWalkableTilesCount(position)
+  local count = 0
+
+  for _, tile in pairs(getNearTiles(position)) do
+    if tile:isWalkable() or tileHasCreature(tile) then
+      count = count + 1
+    end
+  end
+
+  return count
+end
+
+function rePosition(minTiles)
+  minTiles = minTiles or 8
+  if now - lastCall < 500 then return end
+  local pPos = player:getPosition()
+  local tiles = getNearTiles(pPos)
+  local playerTilesCount = getWalkableTilesCount(pPos)
+  local tilesTable = {}
+
+  if playerTilesCount > minTiles then return end
+  for _, tile in ipairs(tiles) do
+    tilesTable[tile] = not tileHasCreature(tile) and tile:isWalkable() and getWalkableTilesCount(tile:getPosition()) or nil
+  end
+
+  local best = 0
+  local target = nil
+  for tile, value in pairs(tilesTable) do
+    if value > best and value > playerTilesCount then
+      best = value
+      target = tile:getPosition()
+    end
+  end
+
+  if target then
+    lastCall = now
+    return CaveBot.GoTo(target, 0)
+  end
+end
+
+local function canStepTo(position)
+  local tile = g_map.getTile(position)
+  return tile and tile:isWalkable() and not tileHasCreature(tile)
+    and isStaticMageRunTileSafe(position)
+end
+
+local function getTargetDistanceInfo(fromPos, toPos)
+  local fallbackDistance = math.max(math.abs(fromPos.x - toPos.x), math.abs(fromPos.y - toPos.y))
+  local path = findPath(fromPos, toPos, 10, {ignoreCreatures=true, ignoreNonPathable=true, ignoreCost=true})
+  if path then
+    return path, #path
+  end
+  return nil, fallbackDistance
+end
+
+local function samePosition(a, b)
+  return a and b and a.x == b.x and a.y == b.y and a.z == b.z
+end
+
+local function copyPosition(pos)
+  if not pos then return nil end
+  return {x=pos.x, y=pos.y, z=pos.z}
+end
+
+local function tileDistance(a, b)
+  if not a or not b or a.z ~= b.z then return 99 end
+  return math.max(math.abs(a.x - b.x), math.abs(a.y - b.y))
+end
+
+local function getTileMobility(position, cache)
+  local key = position.x .. ":" .. position.y .. ":" .. position.z
+  if cache and cache[key] then return cache[key] end
+
+  local openTiles = 0
+  local orthogonalOpen = 0
+  local magicFieldTiles = 0
+
+  for _, tile in pairs(getNearTiles(position)) do
+    local tilePos = tile:getPosition()
+    if tile:isWalkable()
+      and not tileHasCreature(tile)
+      and isStaticMageRunTileSafe(tilePos) then
+      openTiles = openTiles + 1
+      if hasMageRunMagicField(tilePos) then
+        magicFieldTiles = magicFieldTiles + 1
+      end
+      if tilePos.x == position.x or tilePos.y == position.y then
+        orthogonalOpen = orthogonalOpen + 1
+      end
+    end
+  end
+
+  local tile = g_map.getTile(position)
+  local canShoot = tile and tile.canShoot and tile:canShoot() or false
+  local result = {
+    openTiles = openTiles,
+    orthogonalOpen = orthogonalOpen,
+    magicFieldTiles = magicFieldTiles,
+    canShoot = canShoot
+  }
+  if cache then cache[key] = result end
+  return result
+end
+
+local function getVisibleMonsters(snapshot)
+  local playerPos = player:getPosition()
+  snapshot = snapshot or (TargetBot.getMageRunSnapshot and TargetBot.getMageRunSnapshot(900))
+  if snapshot then
+    return filterValidMageRunCreatures(snapshot.hazards, playerPos.z),
+      filterValidMageRunCreatures(snapshot.configured, playerPos.z)
+  end
+
+  local scanRange = TargetBot.getMageRunScanRange and TargetBot.getMageRunScanRange() or 8
+  local cacheKey = table.concat({playerPos.x, playerPos.y, playerPos.z, scanRange}, ":")
+  if visibleMonsterCache.key == cacheKey and visibleMonsterCache.expiresAt > now then
+    return filterValidMageRunCreatures(visibleMonsterCache.hazards, playerPos.z),
+      filterValidMageRunCreatures(visibleMonsterCache.configured, playerPos.z)
+  end
+
+  local hazards = {}
+  local configured = {}
+  local oldTibia = g_game.getClientVersion() < 960
+  for _, creature in ipairs(getSpectators(false)) do
+    local cpos = safeCreaturePosition(creature, playerPos.z)
+    local okHp, hp = pcall(function()
+      return creature and creature.getHealthPercent and creature:getHealthPercent() or 0
+    end)
+    hp = okHp and tonumber(hp) or 0
+    if creature and creature.isMonster and creature:isMonster()
+      and cpos
+      and tileDistance(playerPos, cpos) <= scanRange
+      and hp > 0
+      and (oldTibia or creature:getType() < 3) then
+      hazards[#hazards + 1] = creature
+      local configs = TargetBot.Creature.getConfigs and TargetBot.Creature.getConfigs(creature) or nil
+      if configs and #configs > 0 then configured[#configured + 1] = creature end
+    end
+  end
+
+  visibleMonsterCache.key = cacheKey
+  visibleMonsterCache.expiresAt = now + 350
+  visibleMonsterCache.hazards = hazards
+  visibleMonsterCache.configured = configured
+  return hazards, configured
+end
+
+local function getMageRunConfigNumber(id, defaultValue, minValue, maxValue)
+  local value = defaultValue
+
+  if CaveBot and CaveBot.Config and CaveBot.Config.values and CaveBot.Config.values[id] ~= nil then
+    value = tonumber(CaveBot.Config.values[id]) or defaultValue
+  end
+
+  value = math.floor(value)
+  if minValue and value < minValue then value = minValue end
+  if maxValue and value > maxValue then value = maxValue end
+  return value
+end
+
+local function isProjectedOnScreen(position, creaturePos)
+  return math.abs(creaturePos.x - position.x) <= 7
+    and math.abs(creaturePos.y - position.y) <= 5
+    and creaturePos.z == position.z
+end
+
+local function countNearbyMonsters(position, monsters, maxDistance)
+  local count = 0
+  for _, creature in ipairs(monsters or {}) do
+    local creaturePos = safeCreaturePosition(creature, position.z)
+    if creaturePos and tileDistance(position, creaturePos) <= maxDistance then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+local function nearestMonsterDistance(position, monsters)
+  local best = 99
+  for _, creature in ipairs(monsters or {}) do
+    local creaturePos = safeCreaturePosition(creature, position.z)
+    if creaturePos then
+      local dist = tileDistance(position, creaturePos)
+      if dist < best then
+        best = dist
+      end
+    end
+  end
+  return best
+end
+
+local directionOffsets = {
+  [0] = {0, -1},
+  [1] = {1, 0},
+  [2] = {0, 1},
+  [3] = {-1, 0},
+  [4] = {1, -1},
+  [5] = {1, 1},
+  [6] = {-1, 1},
+  [7] = {-1, -1}
+}
+
+local function getDirectionFromOffset(dx, dy)
+  for direction, offset in pairs(directionOffsets) do
+    if offset[1] == dx and offset[2] == dy then
+      return direction
+    end
+  end
+  return nil
+end
+
+local function copyDirectionPath(path)
+  local result = {}
+  for index, direction in ipairs(path or {}) do
+    result[index] = direction
+  end
+  return result
+end
+
+local function buildMageRunRoutePositions(origin, path)
+  local positions = {}
+  local current = copyPosition(origin)
+  for _, direction in ipairs(path or {}) do
+    local offset = directionOffsets[direction]
+    if not offset then return nil end
+    current = {
+      x = current.x + offset[1],
+      y = current.y + offset[2],
+      z = current.z
+    }
+    positions[#positions + 1] = copyPosition(current)
+  end
+  return positions
+end
+
+local function setMageRunPlannedRoute(origin, path)
+  mageRunDecision.routeOrigin = copyPosition(origin)
+  mageRunDecision.route = buildMageRunRoutePositions(origin, path)
+end
+
+local function clearMageRunPlannedRoute()
+  mageRunDecision.route = nil
+  mageRunDecision.routeOrigin = nil
+end
+
+local function getMageRunPlannedStep(currentPos)
+  local route = mageRunDecision.route
+  if not route or #route == 0 then return nil, nil end
+
+  while route[1] and samePosition(route[1], currentPos) do
+    table.remove(route, 1)
+  end
+  if #route == 0 then return nil, nil end
+
+  local nextPos = route[1]
+  local dx = nextPos.x - currentPos.x
+  local dy = nextPos.y - currentPos.y
+  if math.abs(dx) > 1 or math.abs(dy) > 1 or (dx == 0 and dy == 0) then
+    clearMageRunPlannedRoute()
+    return nil, nil
+  end
+
+  return getDirectionFromOffset(dx, dy), copyPosition(nextPos)
+end
+
+local function isDiagonalOffset(offset)
+  return offset and offset[1] ~= 0 and offset[2] ~= 0
+end
+
+local function isDiagonalDirection(direction)
+  return isDiagonalOffset(directionOffsets[direction])
+end
+
+local function getMageRunDiagonalPenalty(count, length, emergency)
+  count = tonumber(count) or 0
+  if count <= 0 then return 0 end
+  length = math.max(1, tonumber(length) or count)
+  -- Pathfinding liked diagonal chains too much. Treat diagonals as a reserve:
+  -- one diagonal is acceptable when it really wins an escape, but a path made
+  -- mostly of diagonals should lose to any safe cardinal route.
+  local ratioPenalty = (count / length) * (emergency and 900 or 2400)
+  return count * (emergency and 950 or 3600) + ratioPenalty
+end
+
+-- Cardinal moves first. Diagonals stay available, but only as a reserve when
+-- straight steps cannot keep the player safe.
+local trapOffsets = {
+  {0, -1}, {1, 0}, {0, 1}, {-1, 0},
+  {1, -1}, {1, 1}, {-1, 1}, {-1, -1}
+}
+
+local cardinalOffsets = {
+  {0, -1}, {1, 0}, {0, 1}, {-1, 0}
+}
+
+local function positionKey(position)
+  return position.x .. ":" .. position.y .. ":" .. position.z
+end
+
+local function isMageRunDebugPathEnabled()
+  return CaveBot
+    and CaveBot.Config
+    and CaveBot.Config.values
+    and CaveBot.Config.values.lureMageRunDebugPath == true
+end
+
+local function clearMageRunDebugPath()
+  for key, data in pairs(mageRunDebugTiles) do
+    local tile = data.pos and g_map.getTile(data.pos) or nil
+    local thing = tile and (tile:getTopUseThing() or tile:getTopThing()) or nil
+    if thing then
+      thing:setMarked("")
+    end
+    mageRunDebugTiles[key] = nil
+  end
+end
+
+local function setMageRunDebugTile(position, color, duration)
+  local tile = position and g_map.getTile(position) or nil
+  if not tile then return end
+  local thing = tile:getTopUseThing() or tile:getTopThing()
+  if not thing then return end
+
+  local key = positionKey(position)
+  local previous = mageRunDebugTiles[key]
+  if previous and previous.color == color then
+    thing:setMarked(color)
+    previous.expiresAt = now + (duration or 850)
+  else
+    thing:setMarked(color)
+    mageRunDebugTiles[key] = {
+      pos=copyPosition(position),
+      color=color,
+      expiresAt=now + (duration or 850)
+    }
+  end
+
+  schedule(duration or 850, function()
+    local current = mageRunDebugTiles[key]
+    local currentTile = current and current.pos and g_map.getTile(current.pos) or nil
+    local currentThing = currentTile and (currentTile:getTopUseThing() or currentTile:getTopThing()) or nil
+    if current and current.expiresAt and current.expiresAt > now then
+      return
+    end
+    if currentThing then
+      currentThing:setMarked("")
+    end
+    if mageRunDebugTiles[key] == current then
+      mageRunDebugTiles[key] = nil
+    end
+  end)
+end
+
+local function getMageRunDebugDirectPath(fromPos, toPos)
+  local path = {}
+  if not fromPos or not toPos or fromPos.z ~= toPos.z then return path end
+
+  local current = copyPosition(fromPos)
+  while not samePosition(current, toPos) and #path < 8 do
+    local dx = toPos.x > current.x and 1 or (toPos.x < current.x and -1 or 0)
+    local dy = toPos.y > current.y and 1 or (toPos.y < current.y and -1 or 0)
+    current = {x=current.x + dx, y=current.y + dy, z=current.z}
+    path[#path + 1] = copyPosition(current)
+  end
+  return path
+end
+
+local function showMageRunDebugPath(fromPos, toPos, reason, maxDist, params, firstDirection)
+  if not isMageRunDebugPathEnabled() then
+    clearMageRunDebugPath()
+    mageRunDebugSignature = nil
+    return
+  end
+  if not fromPos or not toPos or fromPos.z ~= toPos.z then return end
+
+  local signature = positionKey(fromPos) .. ">" .. positionKey(toPos)
+    .. ":" .. tostring(reason or "")
+    .. ":" .. tostring(firstDirection or -1)
+    .. ":" .. tostring(mageRunDecision.reserveEscape and 1 or 0)
+  -- Debug marking is visual only; never rebuild it on every movement step.
+  if now - mageRunLastDebugAt < 550 then
+    return
+  end
+  mageRunDebugSignature = signature
+  mageRunLastDebugAt = now
+  clearMageRunDebugPath()
+
+  if mageRunDecision.route and #mageRunDecision.route > 0 then
+    for index, position in ipairs(mageRunDecision.route) do
+      if index > 8 then break end
+      local color = samePosition(position, toPos) and "#00FF66"
+        or (mageRunDecision.reserveEscape and "#FF66FF" or "#00CCFF")
+      setMageRunDebugTile(position, color, 900)
+    end
+    return
+  end
+
+  local current = copyPosition(fromPos)
+  local shown = 0
+  local path = nil
+
+  if firstDirection and directionOffsets[firstDirection] then
+    local offset = directionOffsets[firstDirection]
+    current = {
+      x = current.x + offset[1],
+      y = current.y + offset[2],
+      z = current.z
+    }
+    shown = shown + 1
+    local color = samePosition(current, toPos) and "#00FF66" or "#00CCFF"
+    setMageRunDebugTile(current, color, 900)
+
+    if not samePosition(current, toPos) then
+      path = getPath(current, toPos, math.max(1, (maxDist or 4) - 1), params or {})
+    else
+      path = {}
+    end
+  else
+    path = getPath(fromPos, toPos, maxDist or 4, params or {})
+  end
+
+  for index, direction in ipairs(path or {}) do
+    local offset = directionOffsets[direction]
+    if not offset then break end
+    current = {
+      x = current.x + offset[1],
+      y = current.y + offset[2],
+      z = current.z
+    }
+    shown = shown + 1
+    local color = samePosition(current, toPos) and "#00FF66" or "#00CCFF"
+    setMageRunDebugTile(current, color, 900)
+  end
+
+  if shown == 0 then
+    local directPath = getMageRunDebugDirectPath(fromPos, toPos)
+    for index, position in ipairs(directPath) do
+      shown = shown + 1
+      local color = samePosition(position, toPos) and "#00FF66" or "#00CCFF"
+      setMageRunDebugTile(position, color, 900)
+    end
+  end
+
+  if shown == 0 then
+    setMageRunDebugTile(toPos, "#00FF66", 900)
+  end
+end
+
+local function getMageRunEmergencyArenaRadius(arenaRadius)
+  return arenaRadius + 2
+end
+
+local function getDirectionToAdjacent(fromPos, toPos)
+  if not fromPos or not toPos or fromPos.z ~= toPos.z then return nil end
+  local dx = toPos.x - fromPos.x
+  local dy = toPos.y - fromPos.y
+  for direction, offset in pairs(directionOffsets) do
+    if offset[1] == dx and offset[2] == dy then
+      return direction
+    end
+  end
+  return nil
+end
+
+local function getMageRunFirstPathDirection(fromPos, toPos, path, maxDist, params)
+  local direction = path and path[1] or nil
+  if not direction then return nil, false end
+  return direction, isDiagonalDirection(direction)
+end
+
+local function shouldAvoidMageRunDiagonal()
+  mageRunDiagonalOpportunity = (mageRunDiagonalOpportunity % 5) + 1
+
+  -- v15: do not merely avoid 60% of diagonals. Always try to split a diagonal
+  -- into a straight step first; the caller falls back to the diagonal only when
+  -- both straight options are worse or blocked.
+  return true
+end
+
+
+local function buildMageRunTrapContext(center, hazards, playerPos, arenaRadius, emergency)
+  local outerAllowance = emergency and 2 or 0
+  local scanRadius = math.max(6, arenaRadius + outerAllowance)
+  local context = {
+    center = copyPosition(center),
+    hazards = hazards,
+    playerPos = copyPosition(playerPos),
+    playerKey = positionKey(playerPos),
+    -- The topology analyzer must obey the same boundary as candidate movement.
+    -- Only a real emergency may temporarily use two tiles outside the arena.
+    maxCenterDistance = math.max(
+      arenaRadius + outerAllowance, tileDistance(playerPos, center)
+    ),
+    minX = math.min(center.x - scanRadius, playerPos.x - 6),
+    maxX = math.max(center.x + scanRadius, playerPos.x + 6),
+    minY = math.min(center.y - scanRadius, playerPos.y - 6),
+    maxY = math.max(center.y + scanRadius, playerPos.y + 6),
+    z = playerPos.z,
+    walkable = {},
+    threat = {},
+    occupied = {},
+    mobilityCache = {},
+    topologyCache = {},
+    sightCache = {},
+    pathRiskCache = {}
+  }
+
+  local function addThreatRing(origin, centerLevel, adjacentLevel, outerLevel)
+    for dx = -2, 2 do
+      for dy = -2, 2 do
+        local dist = math.max(math.abs(dx), math.abs(dy))
+        local level = dist == 0 and centerLevel
+          or (dist == 1 and adjacentLevel or (dist == 2 and outerLevel or 0))
+        if level and level > 0 then
+          local key = (origin.x + dx) .. ":" .. (origin.y + dy) .. ":" .. origin.z
+          context.threat[key] = math.max(context.threat[key] or 0, level)
+        end
+      end
+    end
+  end
+
+  for _, creature in ipairs(hazards or {}) do
+    local cpos = safeCreaturePosition(creature, context.z)
+    if cpos then
+      context.occupied[positionKey(cpos)] = true
+      addThreatRing(cpos, 4, 3, 1)
+
+      -- Reserve where the creature is likely to move next. This prevents the
+      -- route planner from choosing a corridor that is open now but will close
+      -- before the player reaches it.
+      local stepX = context.playerPos.x > cpos.x and 1
+        or (context.playerPos.x < cpos.x and -1 or 0)
+      local stepY = context.playerPos.y > cpos.y and 1
+        or (context.playerPos.y < cpos.y and -1 or 0)
+      local projected = {
+        x = cpos.x + stepX,
+        y = cpos.y + stepY,
+        z = cpos.z
+      }
+      addThreatRing(projected, 3, 2, 1)
+    end
+  end
+
+  return context
+end
+
+local function trapContextContains(context, position)
+  return position
+    and position.z == context.z
+    and position.x >= context.minX
+    and position.x <= context.maxX
+    and position.y >= context.minY
+    and position.y <= context.maxY
+end
+
+local function isTrapStaticWalkable(context, position)
+  if not trapContextContains(context, position) then return false end
+  if tileDistance(position, context.center) > context.maxCenterDistance then return false end
+
+  local key = positionKey(position)
+  if context.walkable[key] ~= nil then
+    return context.walkable[key]
+  end
+
+  if context.occupied[key] then
+    context.walkable[key] = false
+    return false
+  end
+
+  local tile = g_map.getTile(position)
+  local walkable = tile and (key == context.playerKey or (tile:isWalkable()
+    and not tileHasCreature(tile)
+    and isStaticMageRunTileSafe(position))) or false
+  context.walkable[key] = walkable and true or false
+  return context.walkable[key]
+end
+
+local function isTrapEscapeTile(context, position, startKey, blockThreatLevel)
+  local key = positionKey(position)
+  if key == startKey then return true end
+  if not isTrapStaticWalkable(context, position) then return false end
+  return (context.threat[key] or 0) < blockThreatLevel
+end
+
+local function canTraverseTrapEdge(context, fromPos, toPos, startKey, blockThreatLevel)
+  if not isTrapEscapeTile(context, toPos, startKey, blockThreatLevel) then
+    return false
+  end
+
+  local dx = toPos.x - fromPos.x
+  local dy = toPos.y - fromPos.y
+  if dx ~= 0 and dy ~= 0 then
+    local sideA = {x=fromPos.x + dx, y=fromPos.y, z=fromPos.z}
+    local sideB = {x=fromPos.x, y=fromPos.y + dy, z=fromPos.z}
+    if not isTrapEscapeTile(context, sideA, startKey, blockThreatLevel)
+      and not isTrapEscapeTile(context, sideB, startKey, blockThreatLevel) then
+      return false
+    end
+  end
+
+  return true
+end
+
+local function addEscapeSectors(sectors, origin, position)
+  local dx = position.x - origin.x
+  local dy = position.y - origin.y
+  local absX = math.abs(dx)
+  local absY = math.abs(dy)
+
+  if absX >= absY and dx ~= 0 then
+    sectors[dx > 0 and "east" or "west"] = true
+  end
+  if absY >= absX and dy ~= 0 then
+    sectors[dy > 0 and "south" or "north"] = true
+  end
+end
+
+local function countKeys(values)
+  local count = 0
+  for _ in pairs(values) do
+    count = count + 1
+  end
+  return count
+end
+
+local function analyzeEscapeTopology(position, context, blockThreatLevel, lookahead)
+  lookahead = lookahead or 4
+  local startKey = positionKey(position)
+  local queue = {{pos=copyPosition(position), depth=0, branch=nil}}
+  local visited = {[startKey]=true}
+  local branchDepth = {}
+  local sectors = {}
+  local head = 1
+  local area = 0
+  local maxDepth = 0
+  local immediateSafe = 0
+  local threatExposure = 0
+
+  while head <= #queue do
+    local node = queue[head]
+    head = head + 1
+    area = area + 1
+    maxDepth = math.max(maxDepth, node.depth)
+
+    if node.branch then
+      branchDepth[node.branch] = math.max(branchDepth[node.branch] or 0, node.depth)
+    end
+
+    if node.depth >= lookahead - 1 then
+      addEscapeSectors(sectors, position, node.pos)
+    end
+
+    if node.depth < lookahead then
+      for _, offset in ipairs(trapOffsets) do
+        local nextPos = {
+          x = node.pos.x + offset[1],
+          y = node.pos.y + offset[2],
+          z = node.pos.z
+        }
+        local key = positionKey(nextPos)
+
+        if not visited[key]
+          and canTraverseTrapEdge(context, node.pos, nextPos, startKey, blockThreatLevel) then
+          visited[key] = true
+          local branch = node.branch or key
+          local depth = node.depth + 1
+          if depth == 1 then
+            immediateSafe = immediateSafe + 1
+          end
+          threatExposure = threatExposure + (context.threat[key] or 0)
+          table.insert(queue, {pos=nextPos, depth=depth, branch=branch})
+        end
+      end
+    end
+  end
+
+  local viableBranches = 0
+  local neededDepth = math.min(3, lookahead)
+  for _, depth in pairs(branchDepth) do
+    if depth >= neededDepth then
+      viableBranches = viableBranches + 1
+    end
+  end
+
+  return {
+    area = area,
+    maxDepth = maxDepth,
+    immediateSafe = immediateSafe,
+    viableBranches = viableBranches,
+    sectors = countKeys(sectors),
+    threatExposure = threatExposure
+  }
+end
+
+local function getTopologyPenalty(topology, future)
+  local multiplier = future and 1.25 or 1
+  local penalty = 0
+
+  if topology.immediateSafe <= 1 then
+    penalty = penalty + 1100
+  elseif topology.immediateSafe == 2 then
+    penalty = penalty + 260
+  end
+
+  if topology.area <= 4 then
+    penalty = penalty + 1900
+  elseif topology.area <= 7 then
+    penalty = penalty + 950
+  elseif topology.area <= 11 then
+    penalty = penalty + 360
+  end
+
+  if topology.maxDepth <= 1 then
+    penalty = penalty + 1500
+  elseif topology.maxDepth == 2 then
+    penalty = penalty + 720
+  elseif topology.maxDepth == 3 then
+    penalty = penalty + 160
+  end
+
+  if topology.viableBranches == 0 then
+    penalty = penalty + 1800
+  elseif topology.viableBranches == 1 then
+    penalty = penalty + 850
+  elseif topology.viableBranches == 2 then
+    penalty = penalty + 110
+  end
+
+  if topology.sectors == 0 then
+    penalty = penalty + 900
+  elseif topology.sectors == 1 then
+    penalty = penalty + 380
+  end
+
+  -- A route with only one future branch/sector is a trap waiting to close.
+  -- Make this effectively a hard rule unless every other position is worse.
+  if future then
+    if topology.viableBranches == 0 then
+      penalty = penalty + 6000
+    elseif topology.viableBranches == 1 then
+      penalty = penalty + 2400
+    elseif topology.viableBranches == 2 then
+      penalty = penalty + 320
+    end
+
+    if topology.sectors <= 1 then
+      penalty = penalty + 1800
+    elseif topology.sectors == 2 then
+      penalty = penalty + 220
+    end
+
+    if topology.area <= 5 then
+      penalty = penalty + 4500
+    elseif topology.area <= 9 then
+      penalty = penalty + 1100
+    end
+  end
+
+  penalty = penalty + math.min(topology.threatExposure, 20) * (future and 10 or 4)
+  return math.floor(penalty * multiplier)
+end
+
+local function analyzeMageRunTrap(position, context)
+  local cacheKey = positionKey(position)
+  if context.topologyCache[cacheKey] then
+    return context.topologyCache[cacheKey]
+  end
+
+  -- Hard projection: tiles a monster can occupy on its next movement.
+  local hard = analyzeEscapeTopology(position, context, 3, 2)
+  -- Future projection: also reserves the second ring to spot a closing corridor early.
+  local future = analyzeEscapeTopology(position, context, 1, 2)
+  local nearestHazard = nearestMonsterDistance(position, context.hazards)
+  local risk = getTopologyPenalty(hard, false) + getTopologyPenalty(future, true)
+
+  if nearestHazard <= 4 and future.viableBranches <= 1 then
+    risk = risk + 1400
+  end
+  if nearestHazard <= 3 and future.immediateSafe <= 2 then
+    risk = risk + 900
+  end
+  if hard.area > future.area + 8 then
+    risk = risk + math.min(900, (hard.area - future.area) * 45)
+  end
+
+  local result = {
+    risk = risk,
+    escapeArea = hard.area,
+    escapeDepth = hard.maxDepth,
+    escapeBranches = hard.viableBranches,
+    escapeSectors = hard.sectors,
+    futureEscapeArea = future.area,
+    futureEscapeDepth = future.maxDepth,
+    futureEscapeBranches = future.viableBranches,
+    futureEscapeSectors = future.sectors,
+    futureImmediateSafe = future.immediateSafe
+  }
+  context.topologyCache[cacheKey] = result
+  return result
+end
+
+
+local function getMageRunPathThreat(position, hazards, stepIndex)
+  local adjacent = 0
+  local nearTwo = 0
+  local projectedNearest = 99
+  local projectedAdjacent = 0
+  local projectedNearTwo = 0
+  local horizon = math.min(3, math.max(0, tonumber(stepIndex) or 0))
+
+  for _, creature in ipairs(hazards or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+      local distance = tileDistance(position, cpos)
+      if distance <= 1 then
+        adjacent = adjacent + 1
+      elseif distance == 2 then
+        nearTwo = nearTwo + 1
+      end
+
+      local projectedDistance = math.max(0, distance - horizon)
+      projectedNearest = math.min(projectedNearest, projectedDistance)
+      if projectedDistance <= 1 then
+        projectedAdjacent = projectedAdjacent + 1
+      elseif projectedDistance == 2 then
+        projectedNearTwo = projectedNearTwo + 1
+      end
+    end
+  end
+
+  return adjacent, nearTwo, projectedNearest, projectedAdjacent, projectedNearTwo
+end
+
+local function getMageRunCardinalEscapeQuality(position, center, hazards)
+  if not position then return 0, 0, 0, 0 end
+  local open = 0
+  local bestAdjacent = 99
+  local bestProjectedAdjacent = 99
+  local bestNearest = 0
+
+  for _, offset in ipairs(cardinalOffsets) do
+    local nextPos = {
+      x = position.x + offset[1],
+      y = position.y + offset[2],
+      z = position.z
+    }
+    if canStepTo(nextPos) then
+      open = open + 1
+      local adjacent, _, projectedNearest, projectedAdjacent =
+        getMageRunPathThreat(nextPos, hazards, 1)
+      if adjacent < bestAdjacent then bestAdjacent = adjacent end
+      if projectedAdjacent < bestProjectedAdjacent then
+        bestProjectedAdjacent = projectedAdjacent
+      end
+      if projectedNearest > bestNearest then bestNearest = projectedNearest end
+    end
+  end
+
+  if bestAdjacent == 99 then bestAdjacent = 0 end
+  if bestProjectedAdjacent == 99 then bestProjectedAdjacent = 0 end
+  return open, bestAdjacent, bestProjectedAdjacent, bestNearest
+end
+
+local function isMageRunDiagonalActuallyNeeded(fromPos, diagonalDirection, center,
+    walkLimit, hazards)
+  if not fromPos or not center then return false end
+  if not isDiagonalDirection(diagonalDirection) then return false end
+
+  local offset = directionOffsets[diagonalDirection]
+  if not offset then return false end
+
+  local diagonalPos = {
+    x = fromPos.x + offset[1],
+    y = fromPos.y + offset[2],
+    z = fromPos.z
+  }
+  if tileDistance(diagonalPos, center) > walkLimit or not canStepTo(diagonalPos) then
+    return false
+  end
+
+  local baseAdjacent, _, baseProjectedNearest, baseProjectedAdjacent =
+    getMageRunPathThreat(diagonalPos, hazards, 1)
+  local diagOpen, diagBestAdjacent, diagBestProjectedAdjacent =
+    getMageRunCardinalEscapeQuality(diagonalPos, center, hazards)
+
+  -- A diagonal that lands in a pocket with no straight exits is exactly what
+  -- causes the trap shown in the screenshot. Only allow it if it immediately
+  -- reduces direct contact in a real emergency.
+  if diagOpen <= 1
+    and not (mageRunRuntime.emergency
+      and (baseAdjacent < mageRunRuntime.adjacent
+        or baseProjectedAdjacent < mageRunRuntime.adjacent
+        or baseProjectedNearest > mageRunRuntime.nearestHazard)) then
+    return false
+  end
+
+  local alternatives = {
+    {x=fromPos.x + offset[1], y=fromPos.y, z=fromPos.z},
+    {x=fromPos.x, y=fromPos.y + offset[2], z=fromPos.z}
+  }
+
+  for _, stepPos in ipairs(alternatives) do
+    if tileDistance(stepPos, center) <= walkLimit and canStepTo(stepPos) then
+      local adjacent, _, projectedNearest, projectedAdjacent =
+        getMageRunPathThreat(stepPos, hazards, 1)
+      local open, bestAdjacent, bestProjectedAdjacent =
+        getMageRunCardinalEscapeQuality(stepPos, center, hazards)
+      local straightSafe = adjacent <= baseAdjacent
+        and projectedAdjacent <= baseProjectedAdjacent
+        and open >= 2
+        and bestAdjacent <= math.max(baseAdjacent, diagBestAdjacent)
+        and bestProjectedAdjacent <= math.max(baseProjectedAdjacent, diagBestProjectedAdjacent)
+      if straightSafe then
+        return false
+      end
+    end
+  end
+
+  return true
+end
+
+local function chooseMageRunOrthogonalSplit(fromPos, diagonalDirection, center,
+    walkLimit, hazards)
+  if not isDiagonalDirection(diagonalDirection) then return nil, nil end
+  if not shouldAvoidMageRunDiagonal() then return nil, nil end
+
+  local offset = directionOffsets[diagonalDirection]
+  if not offset then return nil, nil end
+
+  local diagonalPos = {
+    x=fromPos.x + offset[1],
+    y=fromPos.y + offset[2],
+    z=fromPos.z
+  }
+  local baseAdjacent, baseNear, _, baseProjectedAdjacent =
+    getMageRunPathThreat(diagonalPos, hazards, 1)
+
+  local alternatives = {
+    {x=fromPos.x + offset[1], y=fromPos.y, z=fromPos.z},
+    {x=fromPos.x, y=fromPos.y + offset[2], z=fromPos.z}
+  }
+  local best = nil
+  local currentCenterDistance = tileDistance(fromPos, center)
+
+  for _, stepPos in ipairs(alternatives) do
+    if tileDistance(stepPos, center) <= walkLimit and canStepTo(stepPos) then
+      local adjacent, near, projectedNearest, projectedAdjacent =
+        getMageRunPathThreat(stepPos, hazards, 1)
+
+      -- Do not trade a safe diagonal for an orthogonal step that enters contact.
+      local contactSafe = adjacent <= baseAdjacent
+        and projectedAdjacent <= baseProjectedAdjacent
+      if contactSafe then
+        local mobility = getTileMobility(stepPos)
+        local centerDistance = tileDistance(stepPos, center)
+        local escapeOpen, escapeBestAdjacent, escapeBestProjectedAdjacent =
+          getMageRunCardinalEscapeQuality(stepPos, center, hazards)
+        local score = adjacent * 6000
+          + projectedAdjacent * 3500
+          + near * 420
+          + math.max(0, 3 - projectedNearest) * 260
+          - (mobility.openTiles or 0) * 24
+          - (mobility.orthogonalOpen or 0) * 35
+          - escapeOpen * 110
+          + escapeBestAdjacent * 1800
+          + escapeBestProjectedAdjacent * 1100
+
+        if escapeOpen <= 1 then
+          score = score + (mageRunRuntime.emergency and 900 or 5200)
+        end
+
+        if hasMageRunMagicField(stepPos) then
+          score = score + (mageRunRuntime.emergency and 900 or 4200)
+        end
+        if mageRunDecision.centerRecovery
+          or mageRunDecision.reserveEscape
+          or currentCenterDistance > walkLimit - 1 then
+          score = score + (centerDistance - currentCenterDistance) * 700
+        end
+
+        local direction = getDirectionToAdjacent(fromPos, stepPos)
+        if direction and (not best or score < best.score) then
+          best = {direction=direction, pos=copyPosition(stepPos), score=score}
+        end
+      end
+    end
+  end
+
+  if best then return best.direction, best.pos end
+  return nil, nil
+end
+
+
+local function getPathRisk(fromPos, toPos, hazards, context, emergency, suppliedPath)
+  if samePosition(fromPos, toPos) then
+    return 0, 0
+  end
+
+  local cacheKey = positionKey(fromPos) .. ">" .. positionKey(toPos)
+    .. (emergency and ":e" or ":n")
+  if suppliedPath then
+    cacheKey = cacheKey .. ":p" .. #suppliedPath
+  end
+  if context and context.pathRiskCache[cacheKey] then
+    local cached = context.pathRiskCache[cacheKey]
+    return cached.risk, cached.length
+  end
+
+  local maxPathDistance = math.max(4, math.min(12, tileDistance(fromPos, toPos) + 5))
+  local path = suppliedPath or findPath(fromPos, toPos, maxPathDistance, {
+    ignoreCreatures = true,
+    ignoreNonPathable = true,
+    ignoreCost = true
+  })
+  if not path or #path == 0 then
+    return nil, nil
+  end
+
+  local current = copyPosition(fromPos)
+  local risk = 0
+  local diagonalCount = 0
+  local previousDirection = nil
+
+  for stepIndex, direction in ipairs(path) do
+    local offset = directionOffsets[direction]
+    if not offset then return nil, nil end
+    local directionDiagonal = isDiagonalDirection(direction)
+    if directionDiagonal then
+      diagonalCount = diagonalCount + 1
+    end
+
+    current.x = current.x + offset[1]
+    current.y = current.y + offset[2]
+
+    local tile = g_map.getTile(current)
+    if not tile or not tile:isWalkable() or tileHasCreature(tile)
+      or not isStaticMageRunTileSafe(current) then
+      return nil, nil
+    end
+
+    if context and tileDistance(current, context.center) > context.maxCenterDistance then
+      return nil, nil
+    end
+
+    local adjacent, near, projectedNearest, projectedAdjacent, projectedNearTwo =
+      getMageRunPathThreat(current, hazards, stepIndex)
+    risk = risk + adjacent * 900 + near * 135
+
+    if directionDiagonal then
+      local escapeOpen, escapeBestAdjacent, escapeBestProjectedAdjacent =
+        getMageRunCardinalEscapeQuality(current, context and context.center or current, hazards)
+      if escapeOpen <= 1 then
+        risk = risk + (emergency and 1600 or 7200)
+      end
+      risk = risk + escapeBestAdjacent * (emergency and 800 or 2200)
+      risk = risk + escapeBestProjectedAdjacent * (emergency and 500 or 1500)
+    end
+
+    risk = risk + projectedAdjacent * (emergency and 650 or 1250)
+    risk = risk + projectedNearTwo * (emergency and 120 or 260)
+    if projectedNearest <= 0 then
+      risk = risk + (emergency and 1800 or 4200)
+    elseif projectedNearest == 1 then
+      risk = risk + (emergency and 700 or 1600)
+    elseif projectedNearest == 2 then
+      risk = risk + (emergency and 120 or 320)
+    end
+
+    if context then
+      local threatLevel = context.threat[positionKey(current)] or 0
+      risk = risk + threatLevel * threatLevel * (emergency and 70 or 160)
+    end
+
+    if hasMageRunMagicField(current) then
+      -- Crossing a field is undesirable, but still preferable to being boxed.
+      risk = risk + (emergency and 650 or 2600)
+    end
+
+    if previousDirection and previousDirection ~= direction then
+      risk = risk + (emergency and 8 or 22)
+    end
+    previousDirection = direction
+  end
+
+  risk = risk + getMageRunDiagonalPenalty(diagonalCount, #path, emergency)
+
+  if context then
+    context.pathRiskCache[cacheKey] = {risk=risk, length=#path}
+  end
+  return risk, #path
+end
+
+local function evaluateMageRunTile(position, center, hazards, configured, targetPosition, playerPos, trapContext)
+  local mobility = getTileMobility(position, trapContext and trapContext.mobilityCache or nil)
+  local adjacent = 0
+  local orthogonalAdjacent = 0
+  local nearTwo = 0
+  local nearThree = 0
+  local nearestHazard = 99
+  local north = false
+  local south = false
+  local east = false
+  local west = false
+
+  for _, creature in ipairs(hazards or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+    local diffx = cpos.x - position.x
+    local diffy = cpos.y - position.y
+    local dist = math.max(math.abs(diffx), math.abs(diffy))
+    nearestHazard = math.min(nearestHazard, dist)
+
+    if dist <= 1 then
+      adjacent = adjacent + 1
+      if diffx == 0 or diffy == 0 then
+        orthogonalAdjacent = orthogonalAdjacent + 1
+      end
+    elseif dist == 2 then
+      nearTwo = nearTwo + 1
+    elseif dist == 3 then
+      nearThree = nearThree + 1
+    end
+
+    if dist <= 2 then
+      if diffy < 0 then north = true end
+      if diffy > 0 then south = true end
+      if diffx > 0 then east = true end
+      if diffx < 0 then west = true end
+    end
+    end
+  end
+
+  local sideCount = 0
+  if north then sideCount = sideCount + 1 end
+  if south then sideCount = sideCount + 1 end
+  if east then sideCount = sideCount + 1 end
+  if west then sideCount = sideCount + 1 end
+
+  local oppositePairs = 0
+  if north and south then oppositePairs = oppositePairs + 1 end
+  if east and west then oppositePairs = oppositePairs + 1 end
+
+  local packVisible = 0
+  local clusterX = 0
+  local clusterY = 0
+  local sightCache = trapContext and trapContext.sightCache or nil
+  local configuredCount = 0
+  local nearestConfigured = 99
+  for _, creature in ipairs(configured or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+    configuredCount = configuredCount + 1
+    nearestConfigured = math.min(nearestConfigured, tileDistance(position, cpos))
+    -- "Visible" now means both projected on the game screen and actually
+    -- shootable from the candidate tile; walls no longer count as keeping the
+    -- pack available for spells/runes.
+    if isProjectedOnScreen(position, cpos)
+      and hasLineOfSight(position, cpos, sightCache) then
+      packVisible = packVisible + 1
+    end
+    clusterX = clusterX + cpos.x
+    clusterY = clusterY + cpos.y
+    end
+  end
+
+  local clusterDistance = 99
+  if configuredCount > 0 then
+    clusterX = clusterX / configuredCount
+    clusterY = clusterY / configuredCount
+    clusterDistance = math.max(math.abs(clusterX - position.x), math.abs(clusterY - position.y))
+  end
+
+  local targetShootable = not targetPosition
+    or hasLineOfSight(position, targetPosition, sightCache)
+
+  if nearestConfigured == 99 and targetPosition then
+    nearestConfigured = tileDistance(position, targetPosition)
+  end
+
+  local trap = trapContext and analyzeMageRunTrap(position, trapContext) or {
+    risk = 0,
+    escapeArea = 99,
+    escapeDepth = 4,
+    escapeBranches = 8,
+    escapeSectors = 4,
+    futureEscapeArea = 99,
+    futureEscapeDepth = 4,
+    futureEscapeBranches = 8,
+    futureEscapeSectors = 4,
+    futureImmediateSafe = 8
+  }
+
+  return {
+    adjacent = adjacent,
+    orthogonalAdjacent = orthogonalAdjacent,
+    nearTwo = nearTwo,
+    nearThree = nearThree,
+    nearestHazard = nearestHazard,
+    nearestConfigured = nearestConfigured,
+    packVisible = packVisible,
+    packTotal = configuredCount,
+    clusterDistance = clusterDistance,
+    centerDistance = tileDistance(position, center),
+    playerDistance = tileDistance(position, playerPos),
+    targetDistance = targetPosition and tileDistance(position, targetPosition) or 99,
+    openTiles = mobility.openTiles,
+    orthogonalOpen = mobility.orthogonalOpen,
+    canShoot = mobility.canShoot,
+    targetShootable = targetShootable,
+    sideCount = sideCount,
+    oppositePairs = oppositePairs,
+    trapRisk = trap.risk,
+    escapeArea = trap.escapeArea,
+    escapeDepth = trap.escapeDepth,
+    escapeBranches = trap.escapeBranches,
+    escapeSectors = trap.escapeSectors,
+    futureEscapeArea = trap.futureEscapeArea,
+    futureEscapeDepth = trap.futureEscapeDepth,
+    futureEscapeBranches = trap.futureEscapeBranches,
+    futureEscapeSectors = trap.futureEscapeSectors,
+    futureImmediateSafe = trap.futureImmediateSafe,
+    magicField = hasMageRunMagicField(position),
+    magicFieldTiles = mobility.magicFieldTiles or 0
+  }
+end
+
+local function evaluateMageRunImmediate(position, center, hazards, configured, playerPos, context)
+  local mobilityCache = context and context.mobilityCache or nil
+  if not mobilityCache then
+    if mageRunFastMobilityCache.z ~= position.z
+      or mageRunFastMobilityCache.expiresAt <= now then
+      mageRunFastMobilityCache.z = position.z
+      mageRunFastMobilityCache.expiresAt = now + 120
+      mageRunFastMobilityCache.values = {}
+    end
+    mobilityCache = mageRunFastMobilityCache.values
+  end
+  local mobility = getTileMobility(position, mobilityCache)
+  local adjacent = 0
+  local orthogonalAdjacent = 0
+  local nearTwo = 0
+  local nearThree = 0
+  local nearestHazard = 99
+  local nearestConfigured = 99
+  local north, south, east, west = false, false, false, false
+
+  for _, creature in ipairs(hazards or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+    local dx = cpos.x - position.x
+    local dy = cpos.y - position.y
+    local dist = math.max(math.abs(dx), math.abs(dy))
+    nearestHazard = math.min(nearestHazard, dist)
+    if dist <= 1 then
+      adjacent = adjacent + 1
+      if dx == 0 or dy == 0 then orthogonalAdjacent = orthogonalAdjacent + 1 end
+    elseif dist == 2 then
+      nearTwo = nearTwo + 1
+    elseif dist == 3 then
+      nearThree = nearThree + 1
+    end
+    if dist <= 2 then
+      if dy < 0 then north = true elseif dy > 0 then south = true end
+      if dx < 0 then west = true elseif dx > 0 then east = true end
+    end
+    end
+  end
+
+  for _, creature in ipairs(configured or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+      nearestConfigured = math.min(nearestConfigured, tileDistance(position, cpos))
+    end
+  end
+
+  local sideCount = (north and 1 or 0) + (south and 1 or 0)
+    + (east and 1 or 0) + (west and 1 or 0)
+  local oppositePairs = (north and south and 1 or 0) + (east and west and 1 or 0)
+
+  return {
+    adjacent = adjacent,
+    orthogonalAdjacent = orthogonalAdjacent,
+    nearTwo = nearTwo,
+    nearThree = nearThree,
+    nearestHazard = nearestHazard,
+    nearestConfigured = nearestConfigured,
+    openTiles = mobility.openTiles,
+    orthogonalOpen = mobility.orthogonalOpen,
+    canShoot = mobility.canShoot,
+    sideCount = sideCount,
+    oppositePairs = oppositePairs,
+    centerDistance = tileDistance(position, center),
+    playerDistance = tileDistance(position, playerPos),
+    magicField = hasMageRunMagicField(position),
+    magicFieldTiles = mobility.magicFieldTiles or 0
+  }
+end
+
+-- Candidate graph scans only need distance/pressure information. Full tile
+-- mobility, magic-field and topology checks are reserved for the small final
+-- shortlist. This is the main CPU reduction on mobile/low-end clients.
+local function evaluateMageRunCheap(position, center, hazards, configured, playerPos)
+  local adjacent = 0
+  local orthogonalAdjacent = 0
+  local nearTwo = 0
+  local nearThree = 0
+  local nearestHazard = 99
+  local nearestConfigured = 99
+  local north, south, east, west = false, false, false, false
+
+  for _, creature in ipairs(hazards or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+      local dx = cpos.x - position.x
+      local dy = cpos.y - position.y
+      local dist = math.max(math.abs(dx), math.abs(dy))
+      nearestHazard = math.min(nearestHazard, dist)
+      if dist <= 1 then
+        adjacent = adjacent + 1
+        if dx == 0 or dy == 0 then orthogonalAdjacent = orthogonalAdjacent + 1 end
+      elseif dist == 2 then
+        nearTwo = nearTwo + 1
+      elseif dist == 3 then
+        nearThree = nearThree + 1
+      end
+      if dist <= 2 then
+        if dy < 0 then north = true elseif dy > 0 then south = true end
+        if dx < 0 then west = true elseif dx > 0 then east = true end
+      end
+    end
+  end
+
+  for _, creature in ipairs(configured or {}) do
+    local cpos = safeCreaturePosition(creature, position.z)
+    if cpos then
+      nearestConfigured = math.min(nearestConfigured, tileDistance(position, cpos))
+    end
+  end
+
+  return {
+    adjacent = adjacent,
+    orthogonalAdjacent = orthogonalAdjacent,
+    nearTwo = nearTwo,
+    nearThree = nearThree,
+    nearestHazard = nearestHazard,
+    nearestConfigured = nearestConfigured,
+    -- Neutral defaults: graph traversal already guarantees a walkable endpoint.
+    -- Real mobility/field values are calculated for shortlisted candidates.
+    openTiles = 5,
+    orthogonalOpen = 3,
+    canShoot = true,
+    sideCount = (north and 1 or 0) + (south and 1 or 0)
+      + (east and 1 or 0) + (west and 1 or 0),
+    oppositePairs = (north and south and 1 or 0) + (east and west and 1 or 0),
+    centerDistance = tileDistance(position, center),
+    playerDistance = tileDistance(position, playerPos),
+    magicField = false,
+    magicFieldTiles = 0
+  }
+end
+
+local function isMageRunBoundaryPressure(score, arenaRadius)
+  if not score or not arenaRadius then return false end
+  if score.centerDistance > arenaRadius then return true end
+  if score.centerDistance < arenaRadius - 1 then return false end
+
+  if score.centerDistance >= arenaRadius then
+    return score.nearestHazard <= 3
+      or score.nearTwo > 0
+      or score.nearThree >= 2
+      or score.sideCount >= 2
+      or score.openTiles <= 4
+  end
+
+  return score.nearestHazard <= 2
+    or score.nearTwo >= 2
+    or score.sideCount >= 3
+    or score.openTiles <= 3
+end
+
+local function isImmediateMageRunEmergency(score, minRange, arenaRadius)
+  return score.adjacent > 0
+    or score.orthogonalAdjacent > 0
+    or score.nearTwo >= 3
+    or score.nearestHazard <= 1
+    or score.nearestConfigured < minRange
+    or score.openTiles <= 2
+    or score.orthogonalOpen <= 1
+    or score.sideCount >= 3
+    or score.oppositePairs > 0
+    or isMageRunBoundaryPressure(score, arenaRadius)
+end
+
+local function getMageRunSoftArenaRadius(arenaRadius)
+  -- Arena radius is the hard outer limit. Normal kiting should happen inside
+  -- this working radius so the bot does not voluntarily ride the boundary.
+  return math.max(1, arenaRadius - 2)
+end
+
+local function getMageRunPreferredArenaRadius(arenaRadius)
+  -- Preferred orbit band. The next ring is still usable, but should not become
+  -- the bot's permanent running track.
+  return math.max(1, arenaRadius - 3)
+end
+
+local function updateMageRunCenterRecovery(centerDistance, arenaRadius)
+  local innerRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local releaseRadius = getMageRunPreferredArenaRadius(arenaRadius)
+
+  if centerDistance >= innerRadius then
+    mageRunDecision.centerRecovery = true
+  elseif mageRunDecision.centerRecovery and centerDistance <= releaseRadius then
+    mageRunDecision.centerRecovery = false
+  end
+
+  return mageRunDecision.centerRecovery
+end
+
+local function isMageRunApproachingPressure(score, minRange, arenaRadius)
+  if not score then return false end
+
+  return score.nearTwo > 0
+    or score.nearThree >= 2
+    or score.nearestHazard <= minRange + 1
+    or score.nearestConfigured <= minRange + 1
+    or score.sideCount >= 2
+    or score.openTiles <= 4
+    or score.orthogonalOpen <= 2
+    or score.centerDistance > getMageRunPreferredArenaRadius(arenaRadius)
+end
+
+local function isMageRunHardHoldBreak(score, minRange, arenaRadius)
+  if not score then return true end
+
+  return score.adjacent > 0
+    or score.orthogonalAdjacent > 0
+    or score.nearestHazard <= 1
+    or score.nearestConfigured < minRange
+    or score.openTiles <= 1
+    or score.orthogonalOpen <= 1
+    or score.oppositePairs > 0
+    or score.centerDistance > arenaRadius
+end
+
+local function getMageRunArenaPenalty(centerDistance, arenaRadius, emergency)
+  local preferredRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local softRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local emergencyRadius = getMageRunEmergencyArenaRadius(arenaRadius)
+  local hardLimit = emergency and emergencyRadius or arenaRadius
+
+  if centerDistance > hardLimit then
+    return 12000 + (centerDistance - hardLimit) * 2200
+  end
+
+  local total = centerDistance * (emergency and 3 or 20)
+
+  if emergency and centerDistance > arenaRadius then
+    local emergencyDepth = centerDistance - arenaRadius
+    total = total + 1800 + emergencyDepth * emergencyDepth * 650
+  end
+
+  if centerDistance > preferredRadius then
+    local edgeDepth = centerDistance - preferredRadius
+    total = total + edgeDepth * edgeDepth * (emergency and 70 or 380)
+  end
+
+  if centerDistance > softRadius then
+    local reserveDepth = centerDistance - softRadius
+    -- The outer reserve rings are for emergencies, not normal movement.
+    total = total + reserveDepth * reserveDepth * (emergency and 130 or 2200)
+  end
+
+  return total
+end
+
+local function getCheapCandidateScore(score, minRange, maxRange, preferredRange, arenaRadius, emergency)
+  local total = score.adjacent * 1500
+    + score.orthogonalAdjacent * 400
+    + score.nearTwo * 170
+    + score.nearThree * 30
+    + score.sideCount * 45
+    + score.oppositePairs * 220
+
+  if score.magicField then
+    total = total + (emergency and 420 or 2800)
+  end
+  if score.openTiles <= 2 then total = total + 700
+  elseif score.openTiles == 3 then total = total + 180 end
+  if score.orthogonalOpen <= 1 then total = total + 300 end
+  if not score.canShoot then total = total + 160 end
+  if score.nearestConfigured < minRange then
+    total = total + (minRange - score.nearestConfigured) * 350
+  elseif score.nearestConfigured > maxRange then
+    total = total + (score.nearestConfigured - maxRange)
+      * (emergency and 420 or 900) + (emergency and 240 or 1200)
+  else
+    total = total + math.abs(score.nearestConfigured - preferredRange) * 20
+  end
+  total = total + getMageRunArenaPenalty(
+    score.centerDistance, arenaRadius, emergency
+  )
+
+  local idealDistance = emergency
+    and math.min(6, arenaRadius + 1) or math.min(5, arenaRadius)
+  local moveDistance = tonumber(score.playerDistance) or 0
+  if moveDistance < idealDistance then
+    total = total + (idealDistance - moveDistance) * (emergency and 150 or 260)
+  elseif moveDistance > idealDistance + 2 then
+    total = total + (moveDistance - idealDistance - 2) * (emergency and 35 or 70)
+  end
+  return total
+end
+
+local function isMageRunEmergency(score, minRange, arenaRadius)
+  return score.adjacent > 0
+    or score.orthogonalAdjacent > 0
+    or score.nearTwo >= 3
+    or score.nearestHazard <= 1
+    or score.nearestConfigured < minRange
+    or score.openTiles <= 2
+    or score.orthogonalOpen <= 1
+    or score.sideCount >= 3
+    or score.oppositePairs > 0
+    or score.escapeArea <= 5
+    or score.futureEscapeArea <= 5
+    or (score.futureEscapeBranches <= 1 and score.nearestHazard <= 4)
+    or (score.futureImmediateSafe <= 1 and score.nearestHazard <= 4)
+    or isMageRunBoundaryPressure(score, arenaRadius)
+end
+
+local function getMageRunCompositeScore(score, currentScore, pathRisk, emergency, minRange, maxRange, preferredRange, arenaRadius, reverseMove)
+  local total = 0
+
+  total = total + score.adjacent * 1200
+  total = total + score.orthogonalAdjacent * 350
+  total = total + score.nearTwo * 140
+  total = total + score.nearThree * 28
+  total = total + score.sideCount * 40
+  total = total + score.oppositePairs * 180
+  total = total + (score.trapRisk or 0)
+
+  if score.magicField then
+    total = total + (emergency and 350 or 3200)
+  end
+
+  if score.openTiles <= 2 then
+    total = total + 500
+  elseif score.openTiles == 3 then
+    total = total + 160
+  elseif score.openTiles == 4 then
+    total = total + 45
+  end
+
+  if score.orthogonalOpen <= 1 then
+    total = total + 240
+  elseif score.orthogonalOpen == 2 then
+    total = total + 60
+  end
+
+  if not score.canShoot then
+    total = total + 180
+  end
+  if score.packTotal > 0 and score.packVisible == 0 then
+    total = total + (emergency and 220 or 1500)
+  end
+  if not score.targetShootable then
+    total = total + (emergency and 120 or 850)
+  end
+
+  if score.nearestConfigured < minRange then
+    total = total + (minRange - score.nearestConfigured) * 300
+  elseif score.nearestConfigured > maxRange then
+    total = total + (score.nearestConfigured - maxRange)
+      * (emergency and 450 or 1100) + (emergency and 250 or 1600)
+  else
+    total = total + math.abs(score.nearestConfigured - preferredRange) * 18
+  end
+
+  local lostPack = math.max(0, currentScore.packVisible - score.packVisible)
+  local missingPack = math.max(0, score.packTotal - score.packVisible)
+  total = total + lostPack * (emergency and 150 or 500)
+  total = total + missingPack * (emergency and 80 or 220)
+
+  if score.clusterDistance > maxRange then
+    total = total + (score.clusterDistance - maxRange)
+      * (emergency and 220 or 520)
+  elseif score.clusterDistance > 6 then
+    total = total + (score.clusterDistance - 6) * 90
+  elseif score.clusterDistance < minRange then
+    total = total + (minRange - score.clusterDistance) * 55
+  end
+
+  total = total + getMageRunArenaPenalty(
+    score.centerDistance, arenaRadius, emergency
+  )
+
+  local preferredArenaRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local centerDrift = score.centerDistance - currentScore.centerDistance
+  if not emergency then
+    if score.centerDistance > preferredArenaRadius and centerDrift > 0 then
+      total = total + centerDrift * 720
+    elseif currentScore.centerDistance > preferredArenaRadius and centerDrift < 0 then
+      total = total - math.abs(centerDrift) * 420
+    end
+  end
+
+  local idealDistance = emergency
+    and math.min(6, arenaRadius + 1) or math.min(5, arenaRadius)
+  local moveDistance = tonumber(score.playerDistance) or 0
+  if moveDistance < idealDistance then
+    total = total + (idealDistance - moveDistance) * (emergency and 180 or 320)
+  elseif moveDistance > idealDistance + 2 then
+    total = total + (moveDistance - idealDistance - 2) * (emergency and 40 or 80)
+  end
+  total = total + (pathRisk or 0)
+
+  if reverseMove and not emergency then
+    total = total + 180
+  elseif reverseMove then
+    total = total + 35
+  end
+
+  return total
+end
+
+local function isBetterMageRunCandidate(candidate, best)
+  if not best then return true end
+  if candidate.composite ~= best.composite then
+    return candidate.composite < best.composite
+  end
+  if candidate.score.adjacent ~= best.score.adjacent then
+    return candidate.score.adjacent < best.score.adjacent
+  end
+  if candidate.score.orthogonalAdjacent ~= best.score.orthogonalAdjacent then
+    return candidate.score.orthogonalAdjacent < best.score.orthogonalAdjacent
+  end
+  if candidate.score.trapRisk ~= best.score.trapRisk then
+    return candidate.score.trapRisk < best.score.trapRisk
+  end
+  if candidate.score.futureEscapeBranches ~= best.score.futureEscapeBranches then
+    return candidate.score.futureEscapeBranches > best.score.futureEscapeBranches
+  end
+  if candidate.score.futureEscapeArea ~= best.score.futureEscapeArea then
+    return candidate.score.futureEscapeArea > best.score.futureEscapeArea
+  end
+  if candidate.score.packVisible ~= best.score.packVisible then
+    return candidate.score.packVisible > best.score.packVisible
+  end
+  if candidate.score.nearestConfigured ~= best.score.nearestConfigured then
+    return candidate.score.nearestConfigured > best.score.nearestConfigured
+  end
+  if candidate.score.openTiles ~= best.score.openTiles then
+    return candidate.score.openTiles > best.score.openTiles
+  end
+  if candidate.score.orthogonalOpen ~= best.score.orthogonalOpen then
+    return candidate.score.orthogonalOpen > best.score.orthogonalOpen
+  end
+  if candidate.score.centerDistance ~= best.score.centerDistance then
+    return candidate.score.centerDistance < best.score.centerDistance
+  end
+  return candidate.score.playerDistance > best.score.playerDistance
+end
+
+local function isMageRunInRangeOption(candidate, currentScore, minRange, maxRange)
+  if not candidate or not candidate.score then return false end
+  local score = candidate.score
+
+  return score.nearestConfigured <= maxRange
+    and score.nearestConfigured >= math.max(1, minRange - 1)
+    and score.adjacent <= currentScore.adjacent
+    and score.orthogonalAdjacent <= currentScore.orthogonalAdjacent
+    and score.openTiles >= 2
+end
+
+local function isMageRunRangeBridge(candidate, maxRange, arenaRadius)
+  if not candidate or not candidate.score then return false end
+  return candidate.score.nearestConfigured > maxRange
+    and candidate.score.centerDistance <= arenaRadius
+end
+
+local function isMageRunRecoveryCandidate(candidate, currentScore, arenaRadius, edgeRecovery)
+  if not candidate or not candidate.score then return false end
+  local score = candidate.score
+
+  if score.centerDistance > arenaRadius then return false end
+  if score.adjacent > currentScore.adjacent then return false end
+  if score.orthogonalAdjacent > currentScore.orthogonalAdjacent then return false end
+  if edgeRecovery and score.centerDistance > currentScore.centerDistance then
+    return false
+  end
+
+  local improvesCenter = edgeRecovery
+    and score.centerDistance < currentScore.centerDistance
+  local improvesSpace = score.openTiles > currentScore.openTiles
+    or score.orthogonalOpen > currentScore.orthogonalOpen
+  local improvesEscape = score.futureEscapeArea > currentScore.futureEscapeArea + 2
+    or score.futureEscapeBranches > currentScore.futureEscapeBranches
+  local improvesRisk = score.trapRisk + 250 < currentScore.trapRisk
+
+  return improvesCenter or improvesSpace or improvesEscape or improvesRisk
+end
+
+local function canTraverseMageRunRoute(fromPos, toPos)
+  if not canStepTo(toPos) then return false end
+  local dx = toPos.x - fromPos.x
+  local dy = toPos.y - fromPos.y
+  if dx ~= 0 and dy ~= 0 then
+    local sideA = {x=fromPos.x + dx, y=fromPos.y, z=fromPos.z}
+    local sideB = {x=fromPos.x, y=fromPos.y + dy, z=fromPos.z}
+    if not canStepTo(sideA) and not canStepTo(sideB) then
+      return false
+    end
+  end
+  return true
+end
+
+local function buildMageRunCandidatePath(entry)
+  if not entry then return {} end
+  if entry.path then return copyDirectionPath(entry.path) end
+
+  local reversed = {}
+  local node = entry.node
+  while node and node.parent do
+    reversed[#reversed + 1] = node.direction
+    node = node.parent
+  end
+
+  local path = {}
+  for index = #reversed, 1, -1 do
+    path[#path + 1] = reversed[index]
+  end
+  return path
+end
+
+local function collectMageRunCandidates(pos, center, arenaRadius, includeWide,
+    emergency, allowReserve, centerRecovery)
+  local candidates = {}
+  local seen = {}
+  local currentCenterDistance = tileDistance(pos, center)
+  local innerRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local emergencyRadius = getMageRunEmergencyArenaRadius(arenaRadius)
+  local maxAllowed = allowReserve
+    and math.max(emergencyRadius, currentCenterDistance)
+    or math.max(innerRadius, currentCenterDistance)
+
+  -- Keep a useful strategic horizon without exploring almost the whole arena
+  -- on every decision. Emergency bypass still reaches farther than normal kite.
+  local maxDepth
+  if allowReserve then
+    maxDepth = math.min(7, math.max(5, arenaRadius))
+  elseif emergency then
+    maxDepth = math.min(6, math.max(4, arenaRadius - 1))
+  elseif includeWide then
+    maxDepth = math.min(5, math.max(4, arenaRadius - 2))
+  else
+    maxDepth = math.min(4, math.max(3, arenaRadius - 3))
+  end
+
+  local root = {
+    pos=copyPosition(pos),
+    depth=0,
+    parent=nil,
+    direction=nil,
+    leftArena=currentCenterDistance > arenaRadius,
+    outsideSteps=currentCenterDistance > arenaRadius and 1 or 0,
+    maxCenterDistance=currentCenterDistance,
+    firstDirection=nil,
+    diagonalCount=0
+  }
+  local queue = {root}
+  local head = 1
+  local startState = positionKey(pos) .. ":" .. ((currentCenterDistance > arenaRadius) and "1" or "0")
+  seen[startState] = true
+  local processed = 0
+  local maxNodes = allowReserve and 140 or 84
+
+  while head <= #queue and processed < maxNodes do
+    local node = queue[head]
+    head = head + 1
+    processed = processed + 1
+    candidates[#candidates + 1] = {
+      pos=node.pos,
+      depth=node.depth,
+      node=node,
+      leftArena=node.leftArena,
+      outsideSteps=node.outsideSteps,
+      maxCenterDistance=node.maxCenterDistance,
+      firstDirection=node.firstDirection,
+      diagonalCount=node.diagonalCount or 0
+    }
+
+    if node.depth < maxDepth then
+      for _, offset in ipairs(trapOffsets) do
+        local nextPos = {
+          x = node.pos.x + offset[1],
+          y = node.pos.y + offset[2],
+          z = node.pos.z
+        }
+        local centerDistance = tileDistance(nextPos, center)
+        local nextLeftArena = node.leftArena or centerDistance > arenaRadius
+        local direction = getDirectionFromOffset(offset[1], offset[2])
+        local nextFirstDirection = node.firstDirection or direction
+        local nextDiagonalCount = (node.diagonalCount or 0)
+          + (isDiagonalOffset(offset) and 1 or 0)
+        local stateKey = positionKey(nextPos) .. ":" .. (nextLeftArena and "1" or "0")
+        if allowReserve then
+          stateKey = stateKey .. ":" .. tostring(nextFirstDirection)
+        end
+        local arenaAllowed = false
+
+        if allowReserve then
+          arenaAllowed = centerDistance <= maxAllowed
+        elseif currentCenterDistance > innerRadius then
+          arenaAllowed = centerDistance <= currentCenterDistance
+        elseif centerRecovery then
+          arenaAllowed = centerDistance <= currentCenterDistance
+        else
+          arenaAllowed = centerDistance <= innerRadius
+        end
+
+        if not samePosition(nextPos, pos)
+          and not seen[stateKey]
+          and arenaAllowed
+          and canTraverseMageRunRoute(node.pos, nextPos) then
+          seen[stateKey] = true
+          queue[#queue + 1] = {
+            pos=nextPos,
+            depth=node.depth + 1,
+            parent=node,
+            direction=direction,
+            leftArena=nextLeftArena,
+            outsideSteps=node.outsideSteps + (centerDistance > arenaRadius and 1 or 0),
+            maxCenterDistance=math.max(node.maxCenterDistance, centerDistance),
+            firstDirection=nextFirstDirection,
+            diagonalCount=nextDiagonalCount
+          }
+        end
+      end
+    end
+  end
+
+  return candidates
+end
+
+local function isViableMageRunInternalEscape(candidate, currentScore, arenaRadius)
+  if not candidate or not candidate.score then return false end
+  local score = candidate.score
+  if score.centerDistance > arenaRadius then return false end
+  if score.adjacent > currentScore.adjacent then return false end
+  if score.orthogonalAdjacent > currentScore.orthogonalAdjacent then return false end
+  if (candidate.pathRisk or 0) > 9000 then return false end
+
+  local opensRoute = score.futureEscapeBranches >= 2
+    and score.futureEscapeArea >= 8
+    and score.openTiles >= 3
+  local breaksContact = score.adjacent < currentScore.adjacent
+    or score.orthogonalAdjacent < currentScore.orthogonalAdjacent
+    or score.nearestHazard > currentScore.nearestHazard
+  local improvesTopology = score.futureEscapeBranches > currentScore.futureEscapeBranches
+    or score.futureEscapeArea > currentScore.futureEscapeArea + 3
+    or score.trapRisk + 500 < currentScore.trapRisk
+  local safelyRecenters = score.centerDistance < currentScore.centerDistance
+    and score.openTiles >= 2
+    and score.futureEscapeArea >= 5
+    and (candidate.pathRisk or 0) <= 6500
+
+  return opensRoute or safelyRecenters or (breaksContact and improvesTopology)
+end
+
+local function chooseMageRunReserveRoute(pos, center, arenaRadius, hazards,
+    configured, targetPosition, currentScore, minRange, maxRange, preferredRange)
+  local reserveContext = buildMageRunTrapContext(
+    center, hazards, pos, arenaRadius, true
+  )
+  local currentCenterDistance = tileDistance(pos, center)
+  local softRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local preferredRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local emergencyRadius = getMageRunEmergencyArenaRadius(arenaRadius)
+  local reserveLimit = math.max(emergencyRadius, currentCenterDistance)
+  local alreadyOutside = currentCenterDistance > arenaRadius
+    or mageRunDecision.reserveEscape
+
+  -- Cheap pass over the larger emergency graph. Full topology analysis is
+  -- intentionally limited to a shortlist so a boxed situation does not freeze
+  -- the client while hundreds of paths are evaluated.
+  local cheapCandidates = {}
+  for _, entry in ipairs(collectMageRunCandidates(
+      pos, center, arenaRadius, true, true, true, true)) do
+    if entry.depth >= 2
+      and entry.maxCenterDistance <= reserveLimit
+      and (alreadyOutside or entry.leftArena) then
+      local quick = evaluateMageRunCheap(
+        entry.pos, center, hazards, configured, pos
+      )
+      quick.playerDistance = entry.depth
+      local endpointDepth = math.max(0, quick.centerDistance - arenaRadius)
+      local outsideDepth = math.max(0, entry.maxCenterDistance - arenaRadius)
+      local cheap = getCheapCandidateScore(
+        quick, minRange, maxRange, preferredRange, arenaRadius, true
+      ) + entry.outsideSteps * 120
+        + outsideDepth * outsideDepth * 650
+
+      if quick.centerDistance <= preferredRadius then
+        cheap = cheap - 6200
+      elseif quick.centerDistance <= softRadius then
+        cheap = cheap - 4300
+      elseif quick.centerDistance <= arenaRadius then
+        cheap = cheap - 2500
+      else
+        cheap = cheap + 1800 + endpointDepth * endpointDepth * 900
+        if alreadyOutside and quick.centerDistance > currentCenterDistance then
+          cheap = cheap + (quick.centerDistance - currentCenterDistance) * 3200
+        elseif quick.centerDistance < currentCenterDistance then
+          cheap = cheap - 500
+        end
+      end
+
+      cheapCandidates[#cheapCandidates + 1] = {
+        entry=entry,
+        quick=quick,
+        cheap=cheap,
+        category=quick.centerDistance <= preferredRadius and "preferred"
+          or (quick.centerDistance <= arenaRadius and "inside" or "outside")
+      }
+    end
+  end
+  table.sort(cheapCandidates, function(a, b) return a.cheap < b.cheap end)
+
+  local shortlist = {}
+  local added = {}
+  local function addCandidate(index)
+    local candidate = cheapCandidates[index]
+    if candidate and not added[index] then
+      added[index] = true
+      shortlist[#shortlist + 1] = candidate
+    end
+  end
+
+  for index = 1, math.min(4, #cheapCandidates) do
+    addCandidate(index)
+  end
+
+  local foundCategory = {}
+  local foundFirstDirection = {}
+  for index, candidate in ipairs(cheapCandidates) do
+    if not foundCategory[candidate.category] then
+      foundCategory[candidate.category] = true
+      addCandidate(index)
+    end
+    local firstDirection = candidate.entry.firstDirection
+    if firstDirection ~= nil and not foundFirstDirection[firstDirection] then
+      foundFirstDirection[firstDirection] = true
+      addCandidate(index)
+    end
+    if #shortlist >= 6 then break end
+  end
+
+  local bestReentry = nil
+  local bestInside = nil
+  local bestOutside = nil
+  local bestRelaxed = nil
+
+  for _, cheapCandidate in ipairs(shortlist) do
+    local entry = cheapCandidate.entry
+    local entryPath = buildMageRunCandidatePath(entry)
+    local pathRisk, pathLength = getPathRisk(
+      pos, entry.pos, hazards, reserveContext, true, entryPath
+    )
+    if pathRisk then
+      local score = evaluateMageRunTile(
+        entry.pos, center, hazards, configured, targetPosition,
+        pos, reserveContext
+      )
+      score.playerDistance = pathLength or entry.depth
+
+      local reverseMove = false
+      if mageRunDecision.lastDx ~= 0 or mageRunDecision.lastDy ~= 0 then
+        local dx = entry.pos.x - pos.x
+        local dy = entry.pos.y - pos.y
+        reverseMove = (dx * mageRunDecision.lastDx
+          + dy * mageRunDecision.lastDy) < 0
+      end
+
+      local composite = getMageRunCompositeScore(
+        score, currentScore, pathRisk, true,
+        minRange, maxRange, preferredRange, arenaRadius, reverseMove
+      )
+
+      local outsideDepth = math.max(0, entry.maxCenterDistance - arenaRadius)
+      composite = composite + entry.outsideSteps * 190
+        + outsideDepth * outsideDepth * 950
+
+      local endpointInside = score.centerDistance <= arenaRadius
+      local endpointSafeInside = score.centerDistance <= softRadius
+      local endpointPreferred = score.centerDistance <= preferredRadius
+      local improvesContact = score.adjacent < currentScore.adjacent
+        or score.orthogonalAdjacent < currentScore.orthogonalAdjacent
+        or score.nearTwo < currentScore.nearTwo
+        or score.nearestHazard > currentScore.nearestHazard
+      local routeUsable = score.adjacent <= currentScore.adjacent
+        and score.orthogonalAdjacent <= currentScore.orthogonalAdjacent
+        and score.openTiles >= 2
+
+      local candidate = {
+        pos=copyPosition(entry.pos),
+        score=score,
+        pathRisk=pathRisk,
+        composite=composite,
+        path=entryPath,
+        reserveEscape=true,
+        reentry=endpointInside,
+        reentryTarget=endpointInside and copyPosition(entry.pos) or nil,
+        escapePhase=endpointInside and "return" or "outside"
+      }
+
+      if endpointPreferred then
+        candidate.composite = candidate.composite - 9000
+        candidate.reason = "emergency re-entry"
+        if routeUsable and isBetterMageRunCandidate(candidate, bestReentry) then
+          bestReentry = candidate
+        elseif isBetterMageRunCandidate(candidate, bestRelaxed) then
+          bestRelaxed = candidate
+        end
+      elseif endpointSafeInside or endpointInside then
+        candidate.composite = candidate.composite
+          - (endpointSafeInside and 6200 or 3800)
+        candidate.reason = "returning inside"
+        if routeUsable and isBetterMageRunCandidate(candidate, bestInside) then
+          bestInside = candidate
+        elseif isBetterMageRunCandidate(candidate, bestRelaxed) then
+          bestRelaxed = candidate
+        end
+      else
+        local endpointDepth = score.centerDistance - arenaRadius
+        candidate.composite = candidate.composite
+          + 3200 + endpointDepth * endpointDepth * 1300
+        candidate.reason = "external emergency bypass"
+
+        -- Once outside, do not keep running farther away unless that is the
+        -- only way to reduce immediate contact.
+        if alreadyOutside and score.centerDistance > currentCenterDistance then
+          candidate.composite = candidate.composite
+            + (score.centerDistance - currentCenterDistance) * 5500
+        elseif score.centerDistance < currentCenterDistance then
+          candidate.composite = candidate.composite - 850
+        end
+
+        if (routeUsable or improvesContact)
+          and isBetterMageRunCandidate(candidate, bestOutside) then
+          bestOutside = candidate
+        elseif isBetterMageRunCandidate(candidate, bestRelaxed) then
+          bestRelaxed = candidate
+        end
+      end
+    end
+  end
+
+  local returnCandidate = bestReentry or bestInside
+  if returnCandidate and bestOutside
+    and returnCandidate.composite > bestOutside.composite + 1800 then
+    -- A return path exists, but crossing the pack now would be substantially
+    -- more dangerous than extending the bypass by one safe segment.
+    return bestOutside
+  end
+  return returnCandidate or bestOutside or bestRelaxed
+end
+
+local function getMageRunOrbitCenter(configured, fallbackCenter, expectedZ)
+  local totalX = 0
+  local totalY = 0
+  local count = 0
+
+  for _, creature in ipairs(configured or {}) do
+    local creaturePos = safeCreaturePosition(creature, expectedZ)
+    if creaturePos then
+      totalX = totalX + creaturePos.x
+      totalY = totalY + creaturePos.y
+      count = count + 1
+    end
+  end
+
+  if count == 0 then
+    return fallbackCenter
+  end
+
+  return {
+    x = totalX / count,
+    y = totalY / count,
+    z = expectedZ
+  }
+end
+
+-- When no tile is objectively safer, standing still is usually the worst choice
+-- for a mage. This fallback keeps a persistent clockwise/counter-clockwise orbit
+-- around the pack and only changes direction when that side is blocked or much
+-- more dangerous. It evaluates only the eight adjacent tiles, so it stays cheap.
+local function chooseMageRunOrbitFallback(pos, center, arenaRadius, hazards, configured,
+    minRange, maxRange, currentScore, trapContext, emergency, allowReserve)
+  local orbitCenter = getMageRunOrbitCenter(configured, center, pos.z)
+  if not orbitCenter then return nil end
+
+  local currentCenterDistance = tileDistance(pos, center)
+  local softArenaRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local preferredArenaRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local packCenterDistance = tileDistance(orbitCenter, center)
+
+  -- If the pack itself drifts toward the outer ring, orbiting only around the
+  -- pack pulls the player to the boundary. Blend the orbit center back toward
+  -- the End Lure center, preserving the rotation while keeping it internal.
+  if not emergency
+    and (currentCenterDistance > preferredArenaRadius
+      or packCenterDistance > preferredArenaRadius) then
+    local centerPull = currentCenterDistance >= arenaRadius - 1 and 0.55 or 0.35
+    orbitCenter = {
+      x = orbitCenter.x * (1 - centerPull) + center.x * centerPull,
+      y = orbitCenter.y * (1 - centerPull) + center.y * centerPull,
+      z = pos.z
+    }
+  end
+
+  local radialX = pos.x - orbitCenter.x
+  local radialY = pos.y - orbitCenter.y
+  if math.abs(radialX) < 0.01 and math.abs(radialY) < 0.01 then
+    radialX = pos.x - center.x
+    radialY = pos.y - center.y
+  end
+  if math.abs(radialX) < 0.01 and math.abs(radialY) < 0.01 then
+    radialX = 0
+    radialY = -1
+  end
+
+  local radialNorm = math.max(1, math.abs(radialX), math.abs(radialY))
+  local edgeX = pos.x - center.x
+  local edgeY = pos.y - center.y
+  local edgeNorm = math.max(1, math.abs(edgeX), math.abs(edgeY))
+  local emergencyRadius = getMageRunEmergencyArenaRadius(arenaRadius)
+  local maxAllowed = allowReserve and math.max(emergencyRadius, currentCenterDistance)
+    or math.max(softArenaRadius, currentCenterDistance)
+
+  local function bestForDirection(direction, requireProgress)
+    local tangentX
+    local tangentY
+    if direction == 1 then
+      -- Screen coordinates have Y growing downwards.
+      tangentX = -radialY
+      tangentY = radialX
+    else
+      tangentX = radialY
+      tangentY = -radialX
+    end
+    local tangentNorm = math.max(1, math.abs(tangentX), math.abs(tangentY))
+    local best = nil
+
+    for _, offset in ipairs(trapOffsets) do
+      local candidatePos = {
+        x = pos.x + offset[1],
+        y = pos.y + offset[2],
+        z = pos.z
+      }
+      local centerDistance = tileDistance(candidatePos, center)
+      local arenaAllowed
+      if allowReserve then
+        arenaAllowed = centerDistance <= maxAllowed
+          and (centerDistance <= emergencyRadius
+            or centerDistance < currentCenterDistance)
+      elseif currentCenterDistance > softArenaRadius
+        or mageRunDecision.centerRecovery then
+        -- At or outside the inner boundary, orbit may only move laterally or in.
+        arenaAllowed = centerDistance <= currentCenterDistance
+      else
+        arenaAllowed = centerDistance <= softArenaRadius
+      end
+
+      if arenaAllowed and canStepTo(candidatePos) then
+        local moveX = offset[1]
+        local moveY = offset[2]
+        local tangentProgress = (moveX * tangentX + moveY * tangentY) / tangentNorm
+
+        if not requireProgress or tangentProgress > 0.05 then
+          local quick = evaluateMageRunImmediate(
+            candidatePos, center, hazards, configured, pos, trapContext
+          )
+          local score = getCheapCandidateScore(
+            quick, minRange, maxRange, math.min(maxRange, minRange + 1),
+            arenaRadius, emergency
+          )
+
+          -- Never prefer walking deeper into contact merely to preserve rotation.
+          score = score + math.max(0, quick.adjacent - currentScore.adjacent) * 3200
+          score = score + math.max(0,
+            quick.orthogonalAdjacent - currentScore.orthogonalAdjacent) * 950
+          score = score + math.max(0, quick.nearTwo - currentScore.nearTwo) * 260
+          if quick.nearestHazard < currentScore.nearestHazard then
+            score = score + (currentScore.nearestHazard - quick.nearestHazard) * 700
+          end
+
+          -- Tangential movement is the core of continuous kiting.
+          score = score - tangentProgress * 360
+
+          local radialProgress = (moveX * radialX + moveY * radialY) / radialNorm
+          if currentScore.nearestConfigured < minRange then
+            -- Too close: drift away from the pack while orbiting.
+            score = score - radialProgress * 260
+          elseif currentScore.nearestConfigured > maxRange then
+            -- Too far: curve slightly back toward the pack.
+            score = score + radialProgress * 220
+          else
+            -- Inside the desired band, prefer a clean tangent.
+            score = score + math.abs(radialProgress) * 45
+          end
+
+          -- Start curving inward before the hard boundary. The outer two
+          -- rings are an escape reserve, not the normal orbit track.
+          local edgeProgress = (moveX * edgeX + moveY * edgeY) / edgeNorm
+          if currentCenterDistance >= preferredArenaRadius then
+            local edgeDepth = currentCenterDistance - preferredArenaRadius + 1
+            score = score + edgeProgress * edgeDepth
+              * (emergency and 150 or 520)
+
+            if centerDistance > currentCenterDistance then
+              score = score + edgeDepth * (emergency and 120 or 720)
+            elseif centerDistance < currentCenterDistance then
+              score = score - edgeDepth * (emergency and 35 or 260)
+            end
+          elseif centerDistance > currentCenterDistance then
+            score = score + (emergency and 8 or 45)
+          end
+
+          -- Keep momentum and avoid left-right jitter.
+          if mageRunDecision.lastDx ~= 0 or mageRunDecision.lastDy ~= 0 then
+            local momentum = moveX * mageRunDecision.lastDx
+              + moveY * mageRunDecision.lastDy
+            if momentum < 0 then
+              score = score + (emergency and 120 or 420)
+            elseif momentum > 0 then
+              score = score - 75
+            end
+          end
+
+          if moveX ~= 0 and moveY ~= 0 then
+            local diagonalDirection = getDirectionFromOffset(moveX, moveY)
+            if isMageRunDiagonalActuallyNeeded(
+                pos, diagonalDirection, center, maxAllowed, hazards) then
+              score = score + (emergency and 700 or 2600)
+            else
+              score = score + (emergency and 4200 or 16000)
+            end
+          end
+
+          score = score - quick.openTiles * 18
+          score = score - quick.orthogonalOpen * 14
+
+          local candidate = {
+            pos = candidatePos,
+            quick = quick,
+            score = score,
+            direction = direction,
+            tangentProgress = tangentProgress
+          }
+          if not best or candidate.score < best.score then
+            best = candidate
+          end
+        end
+      end
+    end
+
+    return best
+  end
+
+  local currentDirection = mageRunDecision.orbitDirection
+  if currentDirection ~= 1 and currentDirection ~= -1 then
+    currentDirection = 1
+  end
+
+  local primary = bestForDirection(currentDirection, true)
+  local opposite = bestForDirection(-currentDirection, true)
+  local chosen = nil
+
+  if mageRunDecision.orbitDirection == 0 then
+    if primary and opposite then
+      chosen = primary.score <= opposite.score and primary or opposite
+    else
+      chosen = primary or opposite
+    end
+  elseif now < mageRunDecision.orbitLockedUntil and primary then
+    local oppositeClearlySafer = opposite
+      and (opposite.quick.adjacent < primary.quick.adjacent
+        or opposite.quick.orthogonalAdjacent < primary.quick.orthogonalAdjacent
+        or opposite.score + 900 < primary.score)
+    chosen = oppositeClearlySafer and opposite or primary
+  else
+    if primary and opposite then
+      chosen = primary.score <= opposite.score + 180 and primary or opposite
+    else
+      chosen = primary or opposite
+    end
+  end
+
+  -- A narrow corridor may have no positive tangential step. Still keep moving
+  -- through the least-bad legal adjacent tile instead of freezing.
+  if not chosen then
+    local broadPrimary = bestForDirection(currentDirection, false)
+    local broadOpposite = bestForDirection(-currentDirection, false)
+    if broadPrimary and broadOpposite then
+      chosen = broadPrimary.score <= broadOpposite.score and broadPrimary or broadOpposite
+    else
+      chosen = broadPrimary or broadOpposite
+    end
+  end
+
+  if chosen then
+    chosen.reserveEscape = allowReserve and true or false
+    local decisionHold = getMageRunConfigNumber(
+      "lureMageRunDecisionDelay", 650, 200, 1500
+    )
+
+    if mageRunDecision.orbitDirection ~= chosen.direction then
+      mageRunDecision.orbitDirection = chosen.direction
+      mageRunDecision.orbitLockedUntil = now + decisionHold
+    elseif now >= mageRunDecision.orbitLockedUntil then
+      mageRunDecision.orbitLockedUntil = now + decisionHold
+    end
+  end
+
+  return chosen
+end
+
+local function commitMageRunOrbitDecision(orbit, pos, emergency, preserveUntil)
+  if not orbit or not orbit.pos then return nil end
+
+  local decisionHold = getMageRunConfigNumber(
+    "lureMageRunDecisionDelay", 650, 200, 1500
+  )
+  local holdDuration = emergency
+    and math.min(decisionHold, 400) or decisionHold
+  local preserved = tonumber(preserveUntil)
+  local expiresAt = preserved and preserved > now
+    and preserved or (now + holdDuration)
+
+  mageRunDecision.origin = copyPosition(pos)
+  mageRunDecision.target = copyPosition(orbit.pos)
+  if not preserved or preserved <= now then
+    mageRunDecision.chosenAt = now
+  end
+  mageRunDecision.escapeMode = emergency and true or false
+  mageRunDecision.orbitMode = true
+  mageRunDecision.reserveEscape = orbit.reserveEscape and true or false
+  mageRunDecision.escapePhase = mageRunDecision.reserveEscape and "outside" or "inside"
+  if mageRunDecision.reserveEscape and mageRunDecision.escapeStartedAt == 0 then
+    mageRunDecision.escapeStartedAt = now
+  end
+  mageRunDecision.reentryTarget = nil
+  setMageRunPlannedRoute(pos, {
+    getDirectionFromOffset(orbit.pos.x - pos.x, orbit.pos.y - pos.y)
+  })
+  mageRunDecision.expiresAt = expiresAt
+  mageRunDecision.orbitLockedUntil = math.max(
+    mageRunDecision.orbitLockedUntil, expiresAt
+  )
+  mageRunDecision.lastDx = orbit.pos.x - pos.x
+  mageRunDecision.lastDy = orbit.pos.y - pos.y
+  mageRunDecision.arrivedAt = 0
+  mageRunRuntime.reason = orbit.direction == 1
+    and "orbiting clockwise" or "orbiting counter-clockwise"
+  return copyPosition(orbit.pos)
+end
+
+local function clearMageRunDecision()
+  mageRunDecision.target = nil
+  mageRunDecision.chosenAt = 0
+  mageRunDecision.expiresAt = 0
+  mageRunDecision.escapeMode = false
+  mageRunDecision.orbitMode = false
+  mageRunDecision.reserveEscape = false
+  mageRunDecision.escapePhase = "inside"
+  mageRunDecision.escapeStartedAt = 0
+  mageRunDecision.reentryTarget = nil
+  clearMageRunPlannedRoute()
+end
+
+local function clearMageRunTargetPreserveEscape()
+  mageRunDecision.target = nil
+  mageRunDecision.chosenAt = 0
+  mageRunDecision.expiresAt = 0
+  mageRunDecision.orbitMode = false
+  mageRunDecision.reentryTarget = nil
+  clearMageRunPlannedRoute()
+end
+
+local function clearMageRunDirectStep()
+  mageRunDirectStepOrigin = nil
+  mageRunDirectStepTarget = nil
+  mageRunDirectStepAt = 0
+  mageRunDirectStepDirection = nil
+end
+
+local function stopMageRunClientMovement()
+  pcall(function()
+    player:stopAutoWalk()
+  end)
+  if g_game and g_game.stop then
+    pcall(function()
+      g_game.stop()
+    end)
+  end
+end
+
+local function getMageRunDirectStepTimeout()
+  local timeout = 650
+  if player and player.getStepDuration then
+    local ok, duration = pcall(function()
+      return tonumber(player:getStepDuration())
+    end)
+    if ok and duration and duration > 0 then
+      timeout = math.max(500, math.min(1500, duration + 250))
+    end
+  end
+  return timeout
+end
+
+local function checkMageRunDirectStepWatchdog(position)
+  if not mageRunDirectStepOrigin or mageRunDirectStepAt <= 0 then
+    return false
+  end
+
+  if not samePosition(position, mageRunDirectStepOrigin) then
+    clearMageRunDirectStep()
+    return false
+  end
+
+  if now - mageRunDirectStepAt < getMageRunDirectStepTimeout() then
+    return false
+  end
+
+  stopMageRunClientMovement()
+  clearMageRunDecision()
+  mageRunDecision.lastEvaluationAt = 0
+  mageRunRuntime.reason = "step retry"
+  mageRunRuntime.updatedAt = now
+  lastMageRunMove = 0
+  clearMageRunDirectStep()
+  return true
+end
+
+local function recordMageRunDirectStep(origin, target, direction)
+  mageRunDirectStepOrigin = copyPosition(origin)
+  mageRunDirectStepTarget = copyPosition(target)
+  mageRunDirectStepDirection = direction
+  mageRunDirectStepAt = now
+end
+
+local function resetMageRunDecisionState()
+  clearMageRunDecision()
+  clearMageRunDirectStep()
+  mageRunDecision.origin = nil
+  mageRunDecision.lastEvaluationAt = 0
+  mageRunDecision.arrivedAt = 0
+  mageRunDecision.lastDx = 0
+  mageRunDecision.lastDy = 0
+  mageRunDecision.centerKey = nil
+  mageRunDecision.escapeMode = false
+  mageRunDecision.orbitMode = false
+  mageRunDecision.orbitDirection = 0
+  mageRunDecision.orbitLockedUntil = 0
+  mageRunDecision.centerRecovery = false
+  mageRunDecision.reserveEscape = false
+  mageRunDecision.escapePhase = "inside"
+  mageRunDecision.escapeStartedAt = 0
+  mageRunDecision.reentryTarget = nil
+  clearMageRunPlannedRoute()
+  mageRunLastMoveDiagonal = false
+  mageRunDiagonalOpportunity = 0
+  mageRunLastDebugAt = 0
+  mageRunDebugSignature = nil
+  lastMageRunMove = 0
+  visibleMonsterCache.key = nil
+  visibleMonsterCache.expiresAt = 0
+  visibleMonsterCache.hazards = {}
+  visibleMonsterCache.configured = {}
+  staticTileSafetyCache.expiresAt = 0
+  staticTileSafetyCache.values = {}
+  mageRunCreaturePositionCache.expiresAt = 0
+  mageRunCreaturePositionCache.values = {}
+  mageRunFastMobilityCache.expiresAt = 0
+  mageRunFastMobilityCache.values = {}
+
+  mageRunRuntime.emergency = false
+  mageRunRuntime.pressure = false
+  mageRunRuntime.adjacent = 0
+  mageRunRuntime.nearTwo = 0
+  mageRunRuntime.nearestHazard = 99
+  mageRunRuntime.reason = "idle"
+  mageRunRuntime.updatedAt = now
+  mageRunRuntime.hazards = {}
+end
+
+TargetBot.resetMageRunMovement = function()
+  resetMageRunDecisionState()
+  if TargetBot.stopWalk then
+    TargetBot.stopWalk()
+  end
+  stopMageRunClientMovement()
+end
+
+-- Called by the walking layer when a creature has just blocked the selected
+-- route. Re-evaluate immediately instead of waiting for the decision hold time.
+TargetBot.invalidateMageRunDestination = function()
+  clearMageRunDecision()
+  clearMageRunDirectStep()
+  mageRunDecision.lastEvaluationAt = 0
+  mageRunRuntime.reason = "path blocked"
+  mageRunRuntime.updatedAt = now
+end
+
+TargetBot.isMageRunEmergencyMovement = function()
+  return mageRunRuntime.emergency
+    and mageRunRuntime.updatedAt + 500 >= now
+end
+
+TargetBot.getMageRunMovementState = function()
+  return {
+    emergency = mageRunRuntime.emergency,
+    pressure = mageRunRuntime.pressure,
+    adjacent = mageRunRuntime.adjacent,
+    nearTwo = mageRunRuntime.nearTwo,
+    nearestHazard = mageRunRuntime.nearestHazard,
+    reason = mageRunRuntime.reason,
+    updatedAt = mageRunRuntime.updatedAt
+  }
+end
+
+local function markMageRunNoPack()
+  clearMageRunDecision()
+  clearMageRunDebugPath()
+  mageRunDecision.lastEvaluationAt = now
+  mageRunDecision.centerRecovery = false
+  mageRunRuntime.emergency = false
+  mageRunRuntime.pressure = false
+  mageRunRuntime.adjacent = 0
+  mageRunRuntime.nearTwo = 0
+  mageRunRuntime.nearestHazard = 99
+  mageRunRuntime.reason = "no pack"
+  mageRunRuntime.updatedAt = now
+  mageRunRuntime.hazards = {}
+end
+
+local function hasMageRunConfiguredPack(snapshot)
+  return snapshot and #(snapshot.configured or {}) > 0
+end
+
+local function getMageRunStepReason(candidate, currentScore, emergency, minRange, maxRange, arenaRadius)
+  local score = candidate.score
+  if emergency then return "escaping" end
+  if score.centerDistance < currentScore.centerDistance
+    and currentScore.centerDistance >= getMageRunPreferredArenaRadius(arenaRadius) then
+    return "recovery move"
+  end
+  if score.nearestConfigured > maxRange then
+    return "range bridge"
+  end
+  if score.nearestConfigured < minRange then
+    return "spacing"
+  end
+  return "kiting"
+end
+
+local function getMageRunStepScore(candidate, currentScore, minRange, maxRange,
+    preferredRange, arenaRadius, emergency, edgeRecovery, originPos, center, hazards)
+  local score = candidate.score
+  local total = 0
+
+  total = total + score.adjacent * 6500
+  total = total + score.orthogonalAdjacent * 2400
+  total = total + score.nearTwo * 520
+  total = total + score.nearThree * 110
+  total = total + score.sideCount * 90
+  total = total + score.oppositePairs * 900
+  total = total + (score.trapRisk or 0)
+
+  if score.magicField then
+    total = total + (emergency and 900 or 9000)
+  end
+
+  if score.openTiles <= 1 then
+    total = total + 5000
+  elseif score.openTiles == 2 then
+    total = total + 1600
+  elseif score.openTiles == 3 then
+    total = total + 450
+  end
+
+  if score.orthogonalOpen <= 1 then
+    total = total + 1200
+  elseif score.orthogonalOpen == 2 then
+    total = total + 320
+  end
+
+  if score.packTotal > 0 and score.packVisible == 0 then
+    total = total + (emergency and 350 or 1800)
+  end
+  if not score.targetShootable then
+    total = total + (emergency and 160 or 850)
+  end
+
+  if score.nearestConfigured < minRange then
+    total = total + (minRange - score.nearestConfigured) * 1700
+  elseif score.nearestConfigured > maxRange then
+    total = total + (score.nearestConfigured - maxRange)
+      * (emergency and 450 or 1350) + (emergency and 250 or 1600)
+  else
+    total = total + math.abs(score.nearestConfigured - preferredRange) * 55
+  end
+
+  local preferredArenaRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local centerDrift = score.centerDistance - currentScore.centerDistance
+  if score.centerDistance > arenaRadius then
+    total = total + 25000 + (score.centerDistance - arenaRadius) * 4500
+  elseif score.centerDistance > preferredArenaRadius then
+    local edgeDepth = score.centerDistance - preferredArenaRadius
+    total = total + edgeDepth * edgeDepth * (emergency and 180 or 950)
+  end
+
+  if edgeRecovery or currentScore.centerDistance >= preferredArenaRadius then
+    if centerDrift < 0 then
+      total = total - math.abs(centerDrift) * (emergency and 800 or 1600)
+    elseif centerDrift > 0 then
+      total = total + centerDrift * (emergency and 700 or 3600)
+    end
+  end
+
+  if score.clusterDistance > maxRange then
+    total = total + (score.clusterDistance - maxRange) * 380
+  end
+
+  total = total - score.openTiles * 85
+  total = total - score.orthogonalOpen * 70
+  total = total - math.min(score.futureEscapeArea or 0, 20) * 18
+  total = total - math.min(score.futureEscapeBranches or 0, 6) * 55
+
+  if mageRunDecision.lastDx ~= 0 or mageRunDecision.lastDy ~= 0 then
+    local momentum = candidate.dx * mageRunDecision.lastDx
+      + candidate.dy * mageRunDecision.lastDy
+    if momentum > 0 then
+      total = total - 420
+    elseif momentum < 0 then
+      total = total + (emergency and 450 or 1500)
+    end
+  end
+
+  if candidate.dx ~= 0 and candidate.dy ~= 0 then
+    local diagonalDirection = getDirectionFromOffset(candidate.dx, candidate.dy)
+    local walkLimit = arenaRadius + (emergency and 2 or 0)
+    if isMageRunDiagonalActuallyNeeded(
+        originPos, diagonalDirection, center or originPos, walkLimit,
+        hazards or mageRunRuntime.hazards) then
+      total = total + (emergency and 900 or 4200)
+    else
+      total = total + (emergency and 5200 or 18000)
+    end
+  end
+
+  candidate.composite = total
+  candidate.inRange = score.nearestConfigured <= maxRange
+  candidate.bridge = score.nearestConfigured > maxRange
+    and score.centerDistance <= arenaRadius
+  candidate.recovery = score.centerDistance < currentScore.centerDistance
+    or score.openTiles > currentScore.openTiles
+    or score.orthogonalOpen > currentScore.orthogonalOpen
+  candidate.reason = getMageRunStepReason(
+    candidate, currentScore, emergency, minRange, maxRange, arenaRadius
+  )
+  return total
+end
+
+local function isBetterMageRunStep(candidate, best)
+  if not candidate then return false end
+  if not best then return true end
+  if candidate.composite ~= best.composite then
+    return candidate.composite < best.composite
+  end
+  if candidate.score.adjacent ~= best.score.adjacent then
+    return candidate.score.adjacent < best.score.adjacent
+  end
+  if candidate.score.orthogonalAdjacent ~= best.score.orthogonalAdjacent then
+    return candidate.score.orthogonalAdjacent < best.score.orthogonalAdjacent
+  end
+  if candidate.score.centerDistance ~= best.score.centerDistance then
+    return candidate.score.centerDistance < best.score.centerDistance
+  end
+  return candidate.score.openTiles > best.score.openTiles
+end
+
+local function isMageRunStepAllowed(score, currentScore, arenaRadius, emergency, edgeRecovery, relaxed)
+  if not score then return false end
+
+  local hardArena = emergency and getMageRunEmergencyArenaRadius(arenaRadius)
+    or arenaRadius
+  if score.centerDistance > hardArena then return false end
+
+  if relaxed then
+    if edgeRecovery and not emergency
+      and score.centerDistance > currentScore.centerDistance
+      and score.openTiles <= currentScore.openTiles then
+      return false
+    end
+    return score.openTiles >= 1
+      or score.centerDistance < currentScore.centerDistance
+      or emergency
+  end
+
+  if edgeRecovery and not emergency
+    and score.centerDistance > currentScore.centerDistance then
+    return false
+  end
+  if not emergency
+    and score.adjacent > currentScore.adjacent
+    and currentScore.adjacent == 0 then
+    return false
+  end
+  if not emergency
+    and score.orthogonalAdjacent > currentScore.orthogonalAdjacent
+    and currentScore.orthogonalAdjacent == 0 then
+    return false
+  end
+  return true
+end
+
+local function buildMageRunStepCandidate(candidatePos, pos, center, hazards,
+    configured, targetPosition, currentScore, minRange, maxRange,
+    preferredRange, arenaRadius, emergency, edgeRecovery, trapContext, relaxed)
+  local score = evaluateMageRunTile(
+    candidatePos, center, hazards, configured, targetPosition, pos, trapContext
+  )
+  if not isMageRunStepAllowed(score, currentScore, arenaRadius, emergency, edgeRecovery, relaxed) then
+    return nil
+  end
+
+  local candidate = {
+    pos = copyPosition(candidatePos),
+    score = score,
+    dx = candidatePos.x - pos.x,
+    dy = candidatePos.y - pos.y,
+    reserveEscape = score.centerDistance > arenaRadius,
+    relaxed = relaxed and true or false
+  }
+  getMageRunStepScore(
+    candidate, currentScore, minRange, maxRange, preferredRange,
+    arenaRadius, emergency, edgeRecovery, pos, center, hazards
+  )
+  if relaxed then
+    candidate.composite = candidate.composite + (emergency and 1800 or 4500)
+    candidate.reason = emergency and "forced escape" or "forced step"
+  end
+  return candidate
+end
+
+local function commitMageRunStepDecision(pos, candidate, emergency, decisionDelay, preserveUntil)
+  if not candidate or not candidate.pos then return nil end
+
+  local preserved = tonumber(preserveUntil)
+  local expiresAt = preserved and preserved > now
+    and preserved
+    or now + (emergency and math.min(decisionDelay, 400) or decisionDelay)
+
+  mageRunDecision.origin = copyPosition(pos)
+  mageRunDecision.target = copyPosition(candidate.pos)
+  mageRunDecision.chosenAt = preserved and preserved > now
+    and mageRunDecision.chosenAt or now
+  mageRunDecision.escapeMode = emergency and true or false
+  mageRunDecision.orbitMode = false
+  mageRunDecision.reserveEscape = candidate.reserveEscape and true or false
+  mageRunDecision.escapePhase = mageRunDecision.reserveEscape and "outside" or "inside"
+  mageRunDecision.escapeStartedAt = mageRunDecision.reserveEscape
+    and (mageRunDecision.escapeStartedAt > 0 and mageRunDecision.escapeStartedAt or now) or 0
+  mageRunDecision.reentryTarget = nil
+  setMageRunPlannedRoute(pos, {
+    getDirectionFromOffset(candidate.pos.x - pos.x, candidate.pos.y - pos.y)
+  })
+  mageRunDecision.expiresAt = expiresAt
+  mageRunDecision.lastDx = candidate.dx
+  mageRunDecision.lastDy = candidate.dy
+  mageRunDecision.arrivedAt = 0
+  mageRunRuntime.reason = candidate.reason or (emergency and "escaping" or "kiting")
+  return copyPosition(candidate.pos)
+end
+
+local function chooseMageRunAdjacentStep(pos, center, hazards, configured,
+    targetPosition, minRange, maxRange, preferredRange, arenaRadius,
+    decisionDelay)
+  local trapContext = buildMageRunTrapContext(center, hazards, pos, arenaRadius, true)
+  local currentScore = evaluateMageRunTile(
+    pos, center, hazards, configured, targetPosition, pos, trapContext
+  )
+  local emergency = isMageRunEmergency(currentScore, minRange, arenaRadius)
+  local approachingPressure = emergency
+    or isMageRunApproachingPressure(currentScore, minRange, arenaRadius)
+  local edgeRecovery = updateMageRunCenterRecovery(
+    currentScore.centerDistance, arenaRadius
+  )
+
+  mageRunRuntime.emergency = emergency and true or false
+  mageRunRuntime.pressure = approachingPressure and true or false
+  mageRunRuntime.adjacent = currentScore.adjacent
+  mageRunRuntime.nearTwo = currentScore.nearTwo
+  mageRunRuntime.nearestHazard = currentScore.nearestHazard
+  mageRunRuntime.updatedAt = now
+
+  local preferredArenaRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local shouldMove = emergency
+    or approachingPressure
+    or edgeRecovery
+    or currentScore.nearestConfigured < preferredRange
+    or currentScore.nearestConfigured > maxRange
+    or currentScore.centerDistance > preferredArenaRadius
+    or currentScore.openTiles <= 4
+    or currentScore.orthogonalOpen <= 2
+    or currentScore.packVisible < currentScore.packTotal
+
+  if not shouldMove then
+    clearMageRunDecision()
+    mageRunRuntime.reason = "stable"
+    return nil
+  end
+
+  local function candidateForOffset(offset, relaxed)
+    local candidatePos = {
+      x = pos.x + offset[1],
+      y = pos.y + offset[2],
+      z = pos.z
+    }
+    if not canStepTo(candidatePos) then return nil end
+    if offset[1] ~= 0 and offset[2] ~= 0 then
+      local sideA = {x=pos.x + offset[1], y=pos.y, z=pos.z}
+      local sideB = {x=pos.x, y=pos.y + offset[2], z=pos.z}
+      if not canStepTo(sideA) and not canStepTo(sideB) then
+        return nil
+      end
+    end
+    return buildMageRunStepCandidate(
+      candidatePos, pos, center, hazards, configured, targetPosition,
+      currentScore, minRange, maxRange, preferredRange, arenaRadius,
+      emergency, edgeRecovery, trapContext, relaxed
+    )
+  end
+
+  if mageRunDecision.expiresAt > now
+    and (mageRunDecision.lastDx ~= 0 or mageRunDecision.lastDy ~= 0) then
+    local held = candidateForOffset({mageRunDecision.lastDx, mageRunDecision.lastDy}, false)
+    if held and (not isMageRunHardHoldBreak(currentScore, minRange, arenaRadius)
+        or held.score.adjacent < currentScore.adjacent
+        or held.score.nearestHazard > currentScore.nearestHazard) then
+      held.reason = "decision hold"
+      return commitMageRunStepDecision(
+        pos, held, emergency, decisionDelay, mageRunDecision.expiresAt
+      )
+    end
+  end
+
+  local bestInRange = nil
+  local bestRecovery = nil
+  local bestBridge = nil
+  local bestAny = nil
+  local bestRelaxed = nil
+
+  for _, offset in ipairs(trapOffsets) do
+    local candidate = candidateForOffset(offset, false)
+    if candidate then
+      if isBetterMageRunStep(candidate, bestAny) then
+        bestAny = candidate
+      end
+      if candidate.recovery and isBetterMageRunStep(candidate, bestRecovery) then
+        bestRecovery = candidate
+      end
+      if candidate.inRange and isBetterMageRunStep(candidate, bestInRange) then
+        bestInRange = candidate
+      elseif candidate.bridge and isBetterMageRunStep(candidate, bestBridge) then
+        bestBridge = candidate
+      end
+    end
+  end
+
+  if not bestAny then
+    for _, offset in ipairs(trapOffsets) do
+      local candidate = candidateForOffset(offset, true)
+      if candidate and isBetterMageRunStep(candidate, bestRelaxed) then
+        bestRelaxed = candidate
+      end
+    end
+  end
+
+  local chosen = nil
+  if emergency then
+    chosen = bestAny or bestRelaxed
+  elseif edgeRecovery and bestRecovery then
+    chosen = bestRecovery
+  elseif bestInRange then
+    chosen = bestInRange
+  elseif bestBridge then
+    chosen = bestBridge
+  else
+    chosen = bestAny or bestRelaxed
+  end
+
+  if not chosen then
+    clearMageRunDecision()
+    mageRunRuntime.reason = emergency and "no legal escape" or "no legal move"
+    return nil
+  end
+
+  return commitMageRunStepDecision(pos, chosen, emergency, decisionDelay)
+end
+
+local function commitMageRunStrategicDecision(pos, candidate, emergency, decisionDelay)
+  if not candidate or not candidate.pos then return nil end
+
+  mageRunDecision.origin = copyPosition(pos)
+  mageRunDecision.target = copyPosition(candidate.pos)
+  mageRunDecision.chosenAt = now
+  mageRunDecision.escapeMode = emergency and true or false
+  mageRunDecision.orbitMode = false
+  mageRunDecision.reserveEscape = candidate.reserveEscape and true or false
+  mageRunDecision.escapePhase = candidate.escapePhase
+    or (mageRunDecision.reserveEscape and "outside" or "inside")
+  if mageRunDecision.reserveEscape and mageRunDecision.escapeStartedAt == 0 then
+    mageRunDecision.escapeStartedAt = now
+  elseif not mageRunDecision.reserveEscape then
+    mageRunDecision.escapeStartedAt = 0
+  end
+  mageRunDecision.reentryTarget = candidate.reentryTarget
+    and copyPosition(candidate.reentryTarget) or nil
+  mageRunDecision.expiresAt = now + (mageRunDecision.reserveEscape
+    and math.max(1400, decisionDelay * 2)
+    or (emergency and math.min(decisionDelay, 500) or decisionDelay))
+  mageRunDecision.lastDx = candidate.pos.x - pos.x
+  mageRunDecision.lastDy = candidate.pos.y - pos.y
+  mageRunDecision.arrivedAt = 0
+  setMageRunPlannedRoute(pos, candidate.path or {})
+  mageRunRuntime.reason = candidate.reason
+    or (mageRunDecision.reserveEscape and "external emergency bypass"
+      or (emergency and "escaping" or "kiting"))
+  return copyPosition(candidate.pos)
+end
+
+local function findMageRunTile(creature, snapshot)
+  local center = TargetBot.getMageRunCenter and TargetBot.getMageRunCenter() or player:getPosition()
+  if not center then return nil end
+
+  local pos = player:getPosition()
+  if pos.z ~= center.z then
+    resetMageRunDecisionState()
+    return nil
+  end
+
+  local centerKey = center.x .. ":" .. center.y .. ":" .. center.z
+  if mageRunDecision.centerKey ~= centerKey then
+    resetMageRunDecisionState()
+    mageRunDecision.centerKey = centerKey
+  end
+
+  local hazards, configured = getVisibleMonsters(snapshot)
+  mageRunRuntime.hazards = hazards
+  if #configured == 0 then
+    markMageRunNoPack()
+    return nil
+  end
+
+  local targetPosition = safeCreaturePosition(creature, pos.z)
+  local minRange = getMageRunConfigNumber("lureMageRunMinRange", 3, 1, 6)
+  local maxRange = getMageRunConfigNumber("lureMageRunMaxRange", 6, minRange, 8)
+  local preferredRange = math.min(maxRange, minRange + 1)
+  local arenaRadius = getMageRunConfigNumber("lureMageRunArenaRadius", 5, 3, 15)
+  local decisionDelay = getMageRunConfigNumber("lureMageRunDecisionDelay", 650, 200, 1500)
+
+  -- Fast layer: immediate contact/mobility only. No pathfinding, line-of-sight or
+  -- corridor flood fill is performed on every 100-ms TargetBot cycle.
+  local immediate = evaluateMageRunImmediate(pos, center, hazards, configured, pos)
+  local emergency = isImmediateMageRunEmergency(immediate, minRange, arenaRadius)
+  local approachingPressure = isMageRunApproachingPressure(immediate, minRange, arenaRadius)
+  mageRunRuntime.emergency = emergency and true or false
+  mageRunRuntime.pressure = approachingPressure and true or false
+  mageRunRuntime.adjacent = immediate.adjacent
+  mageRunRuntime.nearTwo = immediate.nearTwo
+  mageRunRuntime.nearestHazard = immediate.nearestHazard
+  mageRunRuntime.reason = emergency and "danger" or "stable"
+  mageRunRuntime.updatedAt = now
+  local softArenaRadius = getMageRunSoftArenaRadius(arenaRadius)
+  local preferredArenaRadius = getMageRunPreferredArenaRadius(arenaRadius)
+  local edgeRecovery = updateMageRunCenterRecovery(
+    immediate.centerDistance, arenaRadius
+  )
+  local hardHoldBreak = isMageRunHardHoldBreak(
+    immediate, minRange, arenaRadius
+  )
+
+  local reserveActive = mageRunDecision.reserveEscape
+    or immediate.centerDistance > arenaRadius
+  if reserveActive
+    and immediate.centerDistance <= preferredArenaRadius
+    and not emergency then
+    mageRunDecision.reserveEscape = false
+    mageRunDecision.escapePhase = "inside"
+    mageRunDecision.escapeStartedAt = 0
+    mageRunDecision.reentryTarget = nil
+    reserveActive = false
+  end
+
+  local arrivedDecision = false
+  if mageRunDecision.target and samePosition(pos, mageRunDecision.target) then
+    mageRunDecision.arrivedAt = now
+    arrivedDecision = true
+    if mageRunDecision.reserveEscape then
+      -- Reaching an external waypoint is not a place to wait. Re-plan
+      -- immediately so the next destination bends back into the arena.
+      clearMageRunTargetPreserveEscape()
+    else
+      mageRunDecision.target = nil
+      clearMageRunPlannedRoute()
+    end
+  end
+
+  -- Decision Hold must survive an adjacent one-SQM step. External escape
+  -- waypoints are the exception: they always trigger immediate re-entry work.
+  if arrivedDecision and mageRunDecision.reserveEscape then
+    mageRunRuntime.reason = "planning re-entry"
+  elseif arrivedDecision and now < mageRunDecision.expiresAt and not hardHoldBreak then
+    mageRunRuntime.reason = "decision hold"
+    return nil
+  elseif arrivedDecision then
+    clearMageRunDecision()
+  end
+
+  if mageRunDecision.target then
+    local heldImmediate = evaluateMageRunImmediate(
+      mageRunDecision.target, center, hazards, configured, pos
+    )
+    local holdActive = now < mageRunDecision.expiresAt
+    local heldLimit = mageRunDecision.reserveEscape
+      and getMageRunEmergencyArenaRadius(arenaRadius)
+      or math.max(softArenaRadius, immediate.centerDistance)
+    local _, plannedStep = getMageRunPlannedStep(pos)
+    local plannedImmediate = plannedStep and evaluateMageRunImmediate(
+      plannedStep, center, hazards, configured, pos
+    ) or nil
+    local plannedUnsafe = plannedStep and (
+      not canStepTo(plannedStep)
+      or plannedImmediate.centerDistance > heldLimit
+      or plannedImmediate.adjacent > immediate.adjacent
+      or plannedImmediate.orthogonalAdjacent > immediate.orthogonalAdjacent
+      or (plannedImmediate.openTiles <= 1
+        and plannedImmediate.adjacent >= immediate.adjacent)
+      or (plannedImmediate.futureEscapeBranches
+        and plannedImmediate.futureEscapeBranches <= 1
+        and plannedImmediate.nearTwo >= immediate.nearTwo)
+      or (plannedImmediate.nearestHazard < immediate.nearestHazard
+        and plannedImmediate.nearestHazard <= 1)
+      or (hasMageRunMagicField(plannedStep)
+        and not emergency and not approachingPressure)
+    )
+    local heldUnsafe = not canStepTo(mageRunDecision.target)
+      or plannedUnsafe
+      or (hasMageRunMagicField(mageRunDecision.target)
+        and not emergency and not approachingPressure)
+      or heldImmediate.centerDistance > heldLimit
+      or heldImmediate.adjacent > immediate.adjacent
+      or heldImmediate.orthogonalAdjacent > immediate.orthogonalAdjacent
+      or (heldImmediate.openTiles <= 1
+        and not (heldImmediate.adjacent < immediate.adjacent
+          or heldImmediate.nearestHazard > immediate.nearestHazard))
+      or (heldImmediate.futureEscapeBranches
+        and heldImmediate.futureEscapeBranches <= 1
+        and heldImmediate.adjacent >= immediate.adjacent)
+      or heldImmediate.nearestConfigured < math.max(1, minRange - 1)
+      or (not holdActive and edgeRecovery and not emergency
+        and heldImmediate.centerDistance > immediate.centerDistance)
+
+    local heldImprovesEmergency = heldImmediate.adjacent < immediate.adjacent
+      or heldImmediate.orthogonalAdjacent < immediate.orthogonalAdjacent
+      or heldImmediate.nearestHazard > immediate.nearestHazard
+      or heldImmediate.openTiles > immediate.openTiles
+
+    local routeActive = mageRunDecision.route
+      and #mageRunDecision.route > 0
+    if (holdActive or (mageRunDecision.reserveEscape and routeActive))
+      and not heldUnsafe
+      and (not hardHoldBreak
+        or mageRunDecision.escapeMode
+        or mageRunDecision.reserveEscape
+        or heldImprovesEmergency) then
+      if mageRunDecision.orbitMode then
+        mageRunRuntime.reason = mageRunDecision.orbitDirection == 1
+          and "orbiting clockwise" or "orbiting counter-clockwise"
+      else
+        mageRunRuntime.reason = mageRunDecision.reserveEscape
+          and (mageRunDecision.escapePhase == "return"
+            and "returning inside" or "external emergency bypass")
+          or (hardHoldBreak and "escaping" or "decision hold")
+      end
+      return copyPosition(mageRunDecision.target)
+    end
+
+    if heldUnsafe then clearMageRunDecision() end
+  end
+
+  -- Strategic work is adaptive. Approaching pressure gets a much shorter
+  -- interval even before it reaches the full emergency threshold.
+  reserveActive = mageRunDecision.reserveEscape
+    or immediate.centerDistance > arenaRadius
+  local evaluationDelay = reserveActive and 260
+    or (emergency and 320 or (approachingPressure and 480 or 850))
+  if now - mageRunDecision.lastEvaluationAt < evaluationDelay then
+    if mageRunDecision.target and canStepTo(mageRunDecision.target) then
+      if mageRunDecision.orbitMode then
+        mageRunRuntime.reason = mageRunDecision.orbitDirection == 1
+          and "orbiting clockwise" or "orbiting counter-clockwise"
+      else
+        mageRunRuntime.reason = mageRunDecision.escapeMode and "escaping" or "moving"
+      end
+      return copyPosition(mageRunDecision.target)
+    end
+
+    -- Never spend the waiting window standing still while the pack is closing.
+    -- The orbit fallback is cheap and uses only adjacent tiles.
+    if approachingPressure and not reserveActive then
+      local orbit = chooseMageRunOrbitFallback(
+        pos, center, arenaRadius, hazards, configured,
+        minRange, maxRange, immediate, nil, emergency, false
+      )
+      if orbit then
+        return commitMageRunOrbitDecision(orbit, pos, emergency)
+      end
+    end
+
+    mageRunRuntime.reason = emergency and "recalculating escape" or "holding"
+    return nil
+  end
+  mageRunDecision.lastEvaluationAt = now
+
+  if not emergency and not approachingPressure and not reserveActive
+    and mageRunDecision.arrivedAt > 0
+    and (now < mageRunDecision.expiresAt
+      or now - mageRunDecision.arrivedAt < 180) then
+    mageRunRuntime.reason = now < mageRunDecision.expiresAt
+      and "decision hold" or "holding after step"
+    return nil
+  end
+
+  -- Internal planning must evaluate the arena as a closed boundary. The
+  -- external allowance is evaluated separately only after no safe inner route
+  -- exists. While already outside, keep the larger context for re-entry.
+  local planningEmergency = reserveActive
+  local trapContext = buildMageRunTrapContext(
+    center, hazards, pos, arenaRadius, planningEmergency
+  )
+  local currentScore = evaluateMageRunTile(pos, center, hazards, configured, targetPosition, pos, trapContext)
+  emergency = isMageRunEmergency(currentScore, minRange, arenaRadius)
+  approachingPressure = emergency
+    or isMageRunApproachingPressure(currentScore, minRange, arenaRadius)
+  mageRunRuntime.emergency = emergency and true or false
+  mageRunRuntime.pressure = approachingPressure and true or false
+  mageRunRuntime.adjacent = currentScore.adjacent
+  mageRunRuntime.nearTwo = currentScore.nearTwo
+  mageRunRuntime.nearestHazard = currentScore.nearestHazard
+  mageRunRuntime.updatedAt = now
+
+  reserveActive = mageRunDecision.reserveEscape
+    or currentScore.centerDistance > arenaRadius
+  if reserveActive then
+    local reserveCandidate = chooseMageRunReserveRoute(
+      pos, center, arenaRadius, hazards, configured, targetPosition,
+      currentScore, minRange, maxRange, preferredRange
+    )
+    if reserveCandidate then
+      return commitMageRunStrategicDecision(
+        pos, reserveCandidate, true, decisionDelay
+      )
+    end
+
+    -- Do not discard the external state simply because a single scan failed.
+    -- The next fast tick may reveal the re-entry corridor after the pack moves.
+    mageRunRuntime.emergency = true
+    mageRunRuntime.pressure = true
+    mageRunRuntime.reason = "searching re-entry"
+    return nil
+  end
+
+  local currentComposite = getMageRunCompositeScore(
+    currentScore, currentScore, 0, emergency,
+    minRange, maxRange, preferredRange, arenaRadius, false
+  )
+  local best = {
+    pos = copyPosition(pos), score = currentScore,
+    composite = currentComposite, pathRisk = 0
+  }
+  local bestMoving = nil
+  local forcedEmergencyMove = false
+  local forcedRangeBridge = false
+  local forcedRecoveryMove = false
+  local includeWide = emergency
+    or approachingPressure
+    or currentScore.openTiles <= 4
+    or currentScore.nearestConfigured < minRange
+    or currentScore.centerDistance > preferredArenaRadius
+    or currentScore.packVisible < currentScore.packTotal
+    or currentScore.futureEscapeArea <= 10
+    or currentScore.futureEscapeBranches <= 2
+
+  -- Stage 1: score all reachable candidates using only cheap local geometry.
+  local cheapCandidates = {}
+  for _, entry in ipairs(collectMageRunCandidates(
+      pos, center, arenaRadius, includeWide, emergency, false, edgeRecovery)) do
+    local candidatePos = entry.pos
+    if not samePosition(candidatePos, pos) then
+      local quick = evaluateMageRunCheap(
+        candidatePos, center, hazards, configured, pos
+      )
+      quick.playerDistance = entry.depth
+      cheapCandidates[#cheapCandidates + 1] = {
+        pos = copyPosition(candidatePos),
+        entry = entry,
+        depth = entry.depth,
+        quick = quick,
+        cheap = getCheapCandidateScore(
+          quick, minRange, maxRange, preferredRange, arenaRadius, emergency
+        ) + ((entry.diagonalCount or 0) * (emergency and 850 or 4200))
+      }
+    end
+  end
+  table.sort(cheapCandidates, function(a, b) return a.cheap < b.cheap end)
+
+  -- Stage 2: expensive path/LOS/corridor analysis only for the best shortlist.
+  local shortlist = emergency and 3 or 2
+  local maxStrategicCandidates = emergency and 4 or 3
+  local evaluatedCandidates = {}
+  local strategicShortlist = {}
+  local addedCheapCandidate = {}
+  local function addCheapCandidate(index)
+    if #strategicShortlist >= maxStrategicCandidates then return end
+    local candidate = cheapCandidates[index]
+    if candidate and not addedCheapCandidate[index] then
+      addedCheapCandidate[index] = true
+      strategicShortlist[#strategicShortlist + 1] = candidate
+    end
+  end
+
+  for index = 1, math.min(shortlist, #cheapCandidates) do
+    addCheapCandidate(index)
+  end
+  for index, candidate in ipairs(cheapCandidates) do
+    if candidate.quick.nearestConfigured <= maxRange then
+      addCheapCandidate(index)
+      break
+    end
+  end
+  for index, candidate in ipairs(cheapCandidates) do
+    if candidate.quick.nearestConfigured > maxRange
+      and candidate.quick.centerDistance <= arenaRadius then
+      addCheapCandidate(index)
+      break
+    end
+  end
+  for index, candidate in ipairs(cheapCandidates) do
+    if candidate.quick.centerDistance < currentScore.centerDistance
+      and candidate.quick.centerDistance <= arenaRadius then
+      addCheapCandidate(index)
+      break
+    end
+  end
+  for index, candidate in ipairs(cheapCandidates) do
+    if candidate.quick.centerDistance <= arenaRadius
+      and (candidate.quick.openTiles > currentScore.openTiles
+        or candidate.quick.orthogonalOpen > currentScore.orthogonalOpen) then
+      addCheapCandidate(index)
+      break
+    end
+  end
+
+  for _, cheapCandidate in ipairs(strategicShortlist) do
+    local candidatePos = cheapCandidate.pos
+    local candidatePath = buildMageRunCandidatePath(cheapCandidate.entry)
+    local pathRisk, pathLength = getPathRisk(
+      pos, candidatePos, hazards, trapContext, emergency, candidatePath
+    )
+    if pathRisk then
+      local score = evaluateMageRunTile(candidatePos, center, hazards, configured, targetPosition, pos, trapContext)
+      score.playerDistance = pathLength or score.playerDistance
+      local dx = candidatePos.x - pos.x
+      local dy = candidatePos.y - pos.y
+      local reverseMove = mageRunDecision.lastDx ~= 0 or mageRunDecision.lastDy ~= 0
+      if reverseMove then
+        reverseMove = (dx * mageRunDecision.lastDx + dy * mageRunDecision.lastDy) < 0
+      end
+      if mageRunDecision.origin and samePosition(candidatePos, mageRunDecision.origin) then
+        reverseMove = true
+      end
+
+      local composite = getMageRunCompositeScore(
+        score, currentScore, pathRisk, emergency,
+        minRange, maxRange, preferredRange, arenaRadius, reverseMove
+      )
+      if edgeRecovery then
+        local inwardGain = currentScore.centerDistance - score.centerDistance
+        if inwardGain > 0 then
+          composite = composite - inwardGain * (emergency and 700 or 950)
+        elseif inwardGain < 0 then
+          composite = composite + math.abs(inwardGain) * 5000
+        else
+          composite = composite + (emergency and 40 or 180)
+        end
+      end
+
+      local candidate = {
+        pos = copyPosition(candidatePos),
+        score = score,
+        pathRisk = pathRisk,
+        composite = composite,
+        path = candidatePath
+      }
+      evaluatedCandidates[#evaluatedCandidates + 1] = candidate
+      if isBetterMageRunCandidate(candidate, bestMoving) then bestMoving = candidate end
+    end
+  end
+
+  local bestInRange = nil
+  local bestRangeBridge = nil
+  local bestAnyMoving = nil
+  local bestRecovery = nil
+  local hasViableInternalEscape = false
+  local needsRecovery = edgeRecovery
+    or currentScore.openTiles <= 4
+    or currentScore.orthogonalOpen <= 2
+    or currentScore.futureEscapeArea <= 10
+    or currentScore.futureEscapeBranches <= 1
+  for _, candidate in ipairs(evaluatedCandidates) do
+    if isViableMageRunInternalEscape(candidate, currentScore, arenaRadius) then
+      hasViableInternalEscape = true
+    end
+    if isBetterMageRunCandidate(candidate, bestAnyMoving) then
+      bestAnyMoving = candidate
+    end
+    if needsRecovery
+      and isMageRunRecoveryCandidate(
+        candidate, currentScore, arenaRadius, edgeRecovery
+      ) then
+      if isBetterMageRunCandidate(candidate, bestRecovery) then
+        bestRecovery = candidate
+      end
+    end
+    if isMageRunInRangeOption(candidate, currentScore, minRange, maxRange) then
+      if isBetterMageRunCandidate(candidate, bestInRange) then
+        bestInRange = candidate
+      end
+    elseif isMageRunRangeBridge(candidate, maxRange, arenaRadius) then
+      if isBetterMageRunCandidate(candidate, bestRangeBridge) then
+        bestRangeBridge = candidate
+      end
+    end
+  end
+
+  if emergency and not hasViableInternalEscape then
+    local reserveCandidate = chooseMageRunReserveRoute(
+      pos, center, arenaRadius, hazards, configured, targetPosition,
+      currentScore, minRange, maxRange, preferredRange
+    )
+    if reserveCandidate then
+      return commitMageRunStrategicDecision(
+        pos, reserveCandidate, true, decisionDelay
+      )
+    end
+  end
+
+  if bestRecovery
+    and (not bestInRange
+      or not isMageRunRecoveryCandidate(
+        bestInRange, currentScore, arenaRadius, edgeRecovery
+      )
+      or isBetterMageRunCandidate(bestRecovery, bestInRange)) then
+    best = bestRecovery
+    forcedRecoveryMove = true
+    forcedRangeBridge = isMageRunRangeBridge(bestRecovery, maxRange, arenaRadius)
+  elseif bestInRange then
+    best = bestInRange
+  elseif bestRangeBridge then
+    best = bestRangeBridge
+    forcedRangeBridge = true
+  elseif bestAnyMoving and isBetterMageRunCandidate(bestAnyMoving, best) then
+    best = bestAnyMoving
+  end
+
+  if emergency and bestMoving and (not best or samePosition(best.pos, pos)) then
+    local reducesContact = bestMoving.score.adjacent < currentScore.adjacent
+      or bestMoving.score.orthogonalAdjacent < currentScore.orthogonalAdjacent
+      or bestMoving.score.nearestHazard > currentScore.nearestHazard
+      or bestMoving.score.nearestConfigured > currentScore.nearestConfigured
+    local improvesEscape = bestMoving.score.futureEscapeBranches > currentScore.futureEscapeBranches
+      or bestMoving.score.futureEscapeArea > currentScore.futureEscapeArea + 2
+      or bestMoving.score.openTiles > currentScore.openTiles
+      or bestMoving.score.trapRisk + 250 < currentScore.trapRisk
+    local acceptableFallback = bestMoving.score.adjacent <= currentScore.adjacent
+      and bestMoving.score.orthogonalAdjacent <= currentScore.orthogonalAdjacent
+      and bestMoving.score.futureEscapeBranches >= math.max(1, currentScore.futureEscapeBranches - 1)
+      and bestMoving.score.futureEscapeArea >= math.max(3, currentScore.futureEscapeArea - 3)
+      and bestMoving.score.trapRisk <= currentScore.trapRisk + 1400
+    if reducesContact or improvesEscape or acceptableFallback then
+      best = bestMoving
+      forcedEmergencyMove = true
+    end
+  end
+
+  if not best or samePosition(best.pos, pos) then
+    local orbit = chooseMageRunOrbitFallback(
+      pos, center, arenaRadius, hazards, configured,
+      minRange, maxRange, currentScore, trapContext, emergency, false
+    )
+    if orbit then
+      return commitMageRunOrbitDecision(orbit, pos, emergency)
+    end
+
+    -- Only after every inner/lateral option failed may a real emergency use the
+    -- reserve ring. Even then it cannot exceed Arena radius + 2.
+    if emergency then
+      local reserveOrbit = chooseMageRunOrbitFallback(
+        pos, center, arenaRadius, hazards, configured,
+        minRange, maxRange, currentScore, trapContext, true, true
+      )
+      if reserveOrbit then
+        local quick = reserveOrbit.quick
+        local improvesContact = quick
+          and (quick.adjacent < currentScore.adjacent
+            or quick.orthogonalAdjacent < currentScore.orthogonalAdjacent
+            or quick.nearTwo < currentScore.nearTwo
+            or quick.nearestHazard > currentScore.nearestHazard)
+        if improvesContact then
+          return commitMageRunOrbitDecision(reserveOrbit, pos, true)
+        end
+      end
+    end
+
+    clearMageRunDecision()
+    mageRunRuntime.reason = emergency and "no legal escape" or "blocked hold"
+    return nil
+  end
+
+  local improvement = currentComposite - best.composite
+  local currentUnsafe = emergency
+    or needsRecovery
+    or currentScore.nearestConfigured > maxRange
+    or currentScore.packVisible < currentScore.packTotal
+    or currentScore.centerDistance > preferredArenaRadius
+    or currentScore.openTiles <= 3
+    or currentScore.trapRisk >= 1200
+    or currentScore.futureEscapeArea <= 10
+    or currentScore.futureEscapeBranches <= 1
+  local safetyImproved = best.score.adjacent < currentScore.adjacent
+    or best.score.orthogonalAdjacent < currentScore.orthogonalAdjacent
+    or best.score.nearTwo < currentScore.nearTwo
+    or best.score.packVisible > currentScore.packVisible
+    or best.score.openTiles > currentScore.openTiles
+    or best.score.orthogonalOpen > currentScore.orthogonalOpen
+    or best.score.centerDistance < currentScore.centerDistance
+    or best.score.trapRisk + 250 < currentScore.trapRisk
+    or best.score.futureEscapeArea > currentScore.futureEscapeArea + 3
+    or best.score.futureEscapeBranches > currentScore.futureEscapeBranches
+  local rangeBridgeProgress = forcedRangeBridge
+    and best.score.centerDistance <= arenaRadius
+    and (best.score.centerDistance < currentScore.centerDistance
+      or best.score.nearestConfigured < currentScore.nearestConfigured
+      or (currentScore.nearestConfigured < minRange
+        and best.score.nearestConfigured > currentScore.nearestConfigured)
+      or best.score.openTiles > currentScore.openTiles
+      or best.score.futureEscapeArea > currentScore.futureEscapeArea + 2)
+
+  if not currentUnsafe and improvement < 40 then
+    if approachingPressure then
+      local orbit = chooseMageRunOrbitFallback(
+        pos, center, arenaRadius, hazards, configured,
+        minRange, maxRange, currentScore, trapContext, false, false
+      )
+      if orbit then
+        return commitMageRunOrbitDecision(orbit, pos, false)
+      end
+    end
+
+    clearMageRunDecision()
+    mageRunRuntime.reason = "safe hold"
+    return nil
+  end
+  if currentUnsafe
+    and improvement < 6
+    and not safetyImproved
+    and not forcedEmergencyMove
+    and not forcedRecoveryMove
+    and not rangeBridgeProgress then
+    local orbit = chooseMageRunOrbitFallback(
+      pos, center, arenaRadius, hazards, configured,
+      minRange, maxRange, currentScore, trapContext, emergency, false
+    )
+    if orbit then
+      return commitMageRunOrbitDecision(orbit, pos, emergency)
+    end
+
+    clearMageRunDecision()
+    mageRunRuntime.reason = "no legal move"
+    return nil
+  end
+
+  best.reason = forcedRecoveryMove
+    and "recovery move"
+    or (forcedRangeBridge and "range bridge"
+      or (emergency and "escaping" or "kiting"))
+  best.reserveEscape = false
+  best.escapePhase = "inside"
+  return commitMageRunStrategicDecision(
+    pos, best, emergency, decisionDelay
+  )
+end
+
+local function mageRunWalk(creature, snapshot)
+  local currentPos = player:getPosition()
+  local watchdogRetry = checkMageRunDirectStepWatchdog(currentPos)
+
+  local moveInterval = mageRunRuntime.emergency and 40
+    or (mageRunRuntime.pressure and 55 or 70)
+  if now - lastMageRunMove < moveInterval then return false end
+
+  local targetTile = findMageRunTile(creature, snapshot)
+  if not targetTile then
+    -- A temporary analysis hold must not cancel a previously issued movement.
+    -- Hard blocked/no-escape states still clear the destination.
+    local reason = mageRunRuntime.reason
+    local temporaryHold = reason == "holding"
+      or reason == "holding after step"
+      or reason == "decision hold"
+      or reason == "recalculating escape"
+      or reason == "planning re-entry"
+      or reason == "searching re-entry"
+    local pressureFallback = mageRunRuntime.pressure
+      and (reason == "no legal escape"
+        or reason == "no legal move"
+        or reason == "blocked hold")
+
+    -- Never actively freeze while the pack is closing. Keep the last legal
+    -- movement alive until the next fast cycle finds a least-bad route.
+    if not temporaryHold and not pressureFallback and TargetBot.stopWalk then
+      TargetBot.stopWalk()
+    end
+    return false
+  end
+
+  local center = TargetBot.getMageRunCenter and TargetBot.getMageRunCenter() or player:getPosition()
+  local arenaRadius = getMageRunConfigNumber("lureMageRunArenaRadius", 5, 3, 15)
+  local currentCenterDistance = tileDistance(currentPos, center)
+  local normalLimit = getMageRunSoftArenaRadius(arenaRadius)
+  local walkLimit = math.max(normalLimit, currentCenterDistance)
+  if mageRunDecision.reserveEscape then
+    walkLimit = math.max(
+      walkLimit, getMageRunEmergencyArenaRadius(arenaRadius)
+    )
+  end
+
+  local walkParams = {
+    ignoreNonPathable = false,
+    precision = 0,
+    maxDistanceFrom = {center, walkLimit}
+  }
+
+  local pathMaxDistance = math.max(
+    1, math.min(12, tileDistance(currentPos, targetTile) + 4)
+  )
+  local path = nil
+  local direction = nil
+  local directionIsDiagonal = false
+  local hadPlannedRoute = mageRunDecision.route
+    and #mageRunDecision.route > 0
+  local plannedDirection, plannedStep = getMageRunPlannedStep(currentPos)
+
+  if plannedDirection and plannedStep then
+    if tileDistance(plannedStep, center) > walkLimit
+      or not canStepTo(plannedStep) then
+      TargetBot.invalidateMageRunDestination()
+      return false
+    end
+    direction = plannedDirection
+    directionIsDiagonal = isDiagonalDirection(direction)
+    path = {direction}
+  elseif hadPlannedRoute then
+    TargetBot.invalidateMageRunDestination()
+    return false
+  else
+    path = getPath(currentPos, targetTile, pathMaxDistance, walkParams)
+    if not path or not path[1] then
+      TargetBot.invalidateMageRunDestination()
+      return false
+    end
+
+    direction, directionIsDiagonal = getMageRunFirstPathDirection(
+      currentPos, targetTile, path, pathMaxDistance, walkParams
+    )
+    if not direction then
+      TargetBot.invalidateMageRunDestination()
+      return false
+    end
+  end
+  local stepOffset = directionOffsets[direction]
+  if not stepOffset then
+    TargetBot.invalidateMageRunDestination()
+    return false
+  end
+  local stepTarget = {
+    x = currentPos.x + stepOffset[1],
+    y = currentPos.y + stepOffset[2],
+    z = currentPos.z
+  }
+
+  if directionIsDiagonal then
+    local orthogonalDirection, orthogonalStep = chooseMageRunOrthogonalSplit(
+      currentPos, direction, center, walkLimit, mageRunRuntime.hazards
+    )
+    if orthogonalDirection and orthogonalStep then
+      direction = orthogonalDirection
+      directionIsDiagonal = false
+      stepTarget = orthogonalStep
+      stepOffset = directionOffsets[direction]
+      path = {direction}
+    elseif not isMageRunDiagonalActuallyNeeded(
+        currentPos, direction, center, walkLimit, mageRunRuntime.hazards) then
+      TargetBot.invalidateMageRunDestination()
+      return false
+    end
+  end
+
+  if not canStepTo(stepTarget) then
+    TargetBot.invalidateMageRunDestination()
+    return false
+  end
+
+  -- Last guard before sending the walk command. This catches the common trap
+  -- case where the route is technically walkable but the next tile has only one
+  -- straight exit and the pack is already closing.
+  local stepImmediate = evaluateMageRunImmediate(
+    stepTarget, center, mageRunRuntime.hazards, mageRunRuntime.hazards, currentPos
+  )
+  local stepImprovesContact = stepImmediate.adjacent < mageRunRuntime.adjacent
+    or stepImmediate.nearestHazard > mageRunRuntime.nearestHazard
+  local stepEntersPocket = stepImmediate.openTiles <= 1
+    and stepImmediate.nearTwo >= mageRunRuntime.nearTwo
+    and not stepImprovesContact
+  if stepEntersPocket then
+    TargetBot.invalidateMageRunDestination()
+    return false
+  end
+
+  showMageRunDebugPath(
+    currentPos, targetTile, mageRunRuntime.reason,
+    pathMaxDistance, walkParams, direction
+  )
+
+  if TargetBot.stopWalk then
+    TargetBot.stopWalk()
+  end
+
+  if player:isWalking() then
+    if watchdogRetry then
+      stopMageRunClientMovement()
+    elseif mageRunDirectStepOrigin
+      and samePosition(currentPos, mageRunDirectStepOrigin)
+      and now - mageRunDirectStepAt >= getMageRunDirectStepTimeout() then
+      stopMageRunClientMovement()
+    else
+      return true
+    end
+  end
+
+  lastMageRunMove = now
+  walk(direction)
+  mageRunLastMoveDiagonal = directionIsDiagonal and true or false
+  recordMageRunDirectStep(currentPos, stepTarget, direction)
+  return true
+end
+
+TargetBot.Creature.mageRunTick = function(creature, snapshot)
+  if not (TargetBot.isMageRunActive and TargetBot.isMageRunActive()) then
+    return false
+  end
+
+  if CaveBot
+    and CaveBot.isLureIgnoreExitAllowed
+    and CaveBot.isLureIgnoreExitAllowed() then
+    clearMageRunDecision()
+    clearMageRunDirectStep()
+    if TargetBot.stopWalk then
+      TargetBot.stopWalk()
+    end
+    stopMageRunClientMovement()
+    if TargetBot.allowCaveBot then
+      TargetBot.allowCaveBot(650)
+    end
+    mageRunRuntime.reason = "ignore remaining"
+    mageRunRuntime.updatedAt = now
+    return false
+  end
+
+  snapshot = snapshot or (TargetBot.getMageRunSnapshot
+    and TargetBot.getMageRunSnapshot(900) or nil)
+  if snapshot and not hasMageRunConfiguredPack(snapshot) then
+    markMageRunNoPack()
+    if TargetBot.stopWalk then
+      TargetBot.stopWalk()
+    end
+    return false
+  end
+
+  if TargetBot.disallowCaveBot then
+    TargetBot.disallowCaveBot()
+  end
+  anchorPosition = nil
+  return mageRunWalk(creature, snapshot)
+end
+
+
+-- Fast movement is intentionally outside target.lua's 100-ms attack macro.
+-- Most ticks perform only immediate local checks; the strategic evaluator keeps
+-- its own adaptive delay inside findMageRunTile.
+if not TargetBot._mageRunMovementMacro then
+  TargetBot._mageRunMovementMacro = macro(150, function()
+    if not TargetBot.isOn or not TargetBot.isOn() then return end
+    if not (TargetBot.isMageRunActive and TargetBot.isMageRunActive()) then return end
+    if isInPz() then return end
+
+    local snapshot = TargetBot.getMageRunSnapshot
+      and TargetBot.getMageRunSnapshot(900) or nil
+    local selected = snapshot and snapshot.selected or nil
+    local creature = selected and selected.creature or nil
+
+    if snapshot and not hasMageRunConfiguredPack(snapshot) then
+      markMageRunNoPack()
+      if TargetBot.stopWalk then
+        TargetBot.stopWalk()
+      end
+      return
+    end
+
+    TargetBot.Creature.mageRunTick(creature, snapshot)
+    if TargetBot.walk then
+      TargetBot.walk(true)
+    end
+  end)
+end
+
+local function avoidWaveAttack(creature)
+  local cpos = creature:getPosition()
+  local pos = player:getPosition()
+  if cpos.z ~= pos.z then return false end
+
+  local diffx = cpos.x - pos.x
+  local diffy = cpos.y - pos.y
+  local distance = math.max(math.abs(diffx), math.abs(diffy))
+  if distance < 1 or distance > 4 then return false end
+
+  local candidates = {}
+  if diffx == 0 then
+    candidates = {
+      {x=pos.x+1, y=pos.y, z=pos.z},
+      {x=pos.x-1, y=pos.y, z=pos.z},
+      {x=pos.x+1, y=pos.y + (diffy > 0 and -1 or 1), z=pos.z},
+      {x=pos.x-1, y=pos.y + (diffy > 0 and -1 or 1), z=pos.z}
+    }
+  elseif diffy == 0 then
+    candidates = {
+      {x=pos.x, y=pos.y+1, z=pos.z},
+      {x=pos.x, y=pos.y-1, z=pos.z},
+      {x=pos.x + (diffx > 0 and -1 or 1), y=pos.y+1, z=pos.z},
+      {x=pos.x + (diffx > 0 and -1 or 1), y=pos.y-1, z=pos.z}
+    }
+  else
+    return false
+  end
+
+  for _, candidate in ipairs(candidates) do
+    if canStepTo(candidate) and not hasMageRunMagicField(candidate) then
+      TargetBot.walkTo(candidate, 2, {ignoreNonPathable=true, precision=0})
+      return true
+    end
+  end
+
+  return false
+end
+
+TargetBot.Creature.attack = function(params, targets, isLooting) -- params {config, creature, danger, priority}
+  if player:isWalking() then
+    lastWalk = now
+  end
+
+  local config = params.config
+  local creature = params.creature
+  
+  if g_game.getAttackingCreature() ~= creature then
+    g_game.attack(creature)
+  end
+
+  if not isLooting then -- walk only when not looting
+    TargetBot.Creature.walk(creature, config, targets)
+  end
+
+  -- attacks
+  local mana = player:getMana()
+  if config.useGroupAttack and config.groupAttackSpell:len() > 1 and mana > config.minManaGroup then
+    local creatures = g_map.getSpectatorsInRange(player:getPosition(), false, config.groupAttackRadius, config.groupAttackRadius)
+    local playersAround = false
+    local monsters = 0
+    for _, creature in ipairs(creatures) do
+      if not creature:isLocalPlayer() and creature:isPlayer() and (not config.groupAttackIgnoreParty or creature:getShield() <= 2) then
+        playersAround = true
+      elseif creature:isMonster() then
+        monsters = monsters + 1
+      end
+    end
+    if monsters >= config.groupAttackTargets and (not playersAround or config.groupAttackIgnorePlayers) then
+      if TargetBot.sayAttackSpell(config.groupAttackSpell, config.groupAttackDelay) then
+        return
+      end
+    end
+  end
+
+  if config.useGroupAttackRune and config.groupAttackRune > 100 then
+    local creatures = g_map.getSpectatorsInRange(creature:getPosition(), false, config.groupRuneAttackRadius, config.groupRuneAttackRadius)
+    local playersAround = false
+    local monsters = 0
+    for _, creature in ipairs(creatures) do
+      if not creature:isLocalPlayer() and creature:isPlayer() and (not config.groupAttackIgnoreParty or creature:getShield() <= 2) then
+        playersAround = true
+      elseif creature:isMonster() then
+        monsters = monsters + 1
+      end
+    end
+    if monsters >= config.groupRuneAttackTargets and (not playersAround or config.groupAttackIgnorePlayers) then
+      if TargetBot.useAttackItem(config.groupAttackRune, 0, creature, config.groupRuneAttackDelay) then
+        return
+      end
+    end
+  end
+  if config.useSpellAttack and config.attackSpell:len() > 1 and mana > config.minMana then
+    if TargetBot.sayAttackSpell(config.attackSpell, config.attackSpellDelay) then
+      return
+    end
+  end
+  if config.useRuneAttack and config.attackRune > 100 then
+    if TargetBot.useAttackItem(config.attackRune, 0, creature, config.attackRuneDelay) then
+      return
+    end
+  end
+end
+
+TargetBot.Creature.walk = function(creature, config, targets)
+  local cpos = creature:getPosition()
+  local pos = player:getPosition()
+
+  if TargetBot.isMageRunActive and TargetBot.isMageRunActive() then
+    -- Movement is owned by the independent 50-ms Mage Run macro below.
+    return
+  end
+
+  if config.stop then
+    if TargetBot.disallowCaveBot then
+      TargetBot.disallowCaveBot()
+    end
+    if TargetBot.stopWalk then
+      TargetBot.stopWalk()
+    end
+    pcall(function()
+      player:stopAutoWalk()
+    end)
+    pcall(function()
+      g_game.stop()
+    end)
+    anchorPosition = nil
+    return
+  end
+
+  if config.avoidAttacks and avoidWaveAttack(creature) then
+    if TargetBot.disallowCaveBot then
+      TargetBot.disallowCaveBot()
+    end
+    return
+  end
+
+  if not config.chase and not config.keepDistance then
+    anchorPosition = nil
+    return TargetBot.allowCaveBot(150)
+  end
+
+  if TargetBot.disallowCaveBot then
+    TargetBot.disallowCaveBot()
+  end
+
+  local _, currentDistance = getTargetDistanceInfo(pos, cpos)
+  if (not config.chase or currentDistance == 1) and not config.avoidAttacks and not config.keepDistance and config.rePosition and (creature:getHealthPercent() >= storage.coreSettings.killUnder) then
+    return rePosition(config.rePositionAmount or 6)
+  end
+  if ((storage.coreSettings.killUnder > 1 and (creature:getHealthPercent() < storage.coreSettings.killUnder)) or config.chase) and not config.keepDistance then
+    if currentDistance > 1 then
+      return TargetBot.walkTo(cpos, 10, {ignoreNonPathable=true, precision=1})
+    end
+  elseif config.keepDistance then
+    if not anchorPosition or distanceFromPlayer(anchorPosition) > config.anchorRange then
+      anchorPosition = pos
+    end
+    if currentDistance ~= config.keepDistanceRange and currentDistance ~= config.keepDistanceRange + 1 then
+      if config.anchor and anchorPosition and getDistanceBetween(pos, anchorPosition) <= config.anchorRange*2 then
+        return TargetBot.walkTo(cpos, 10, {ignoreNonPathable=true, marginMin=config.keepDistanceRange, marginMax=config.keepDistanceRange + 1, maxDistanceFrom={anchorPosition, config.anchorRange}})
+      else
+        return TargetBot.walkTo(cpos, 10, {ignoreNonPathable=true, marginMin=config.keepDistanceRange, marginMax=config.keepDistanceRange + 1})
+      end
+    end
+  end
+
+  --target only movement
+  if config.faceMonster then
+    local diffx = cpos.x - pos.x
+    local diffy = cpos.y - pos.y
+    local candidates = {}
+    if diffx == 1 and diffy == 1 then
+      candidates = {{x=pos.x+1, y=pos.y, z=pos.z}, {x=pos.x, y=pos.y-1, z=pos.z}}
+    elseif diffx == -1 and diffy == 1 then
+      candidates = {{x=pos.x-1, y=pos.y, z=pos.z}, {x=pos.x, y=pos.y-1, z=pos.z}}
+    elseif diffx == -1 and diffy == -1 then
+      candidates = {{x=pos.x, y=pos.y-1, z=pos.z}, {x=pos.x-1, y=pos.y, z=pos.z}} 
+    elseif diffx == 1 and diffy == -1 then
+      candidates = {{x=pos.x, y=pos.y-1, z=pos.z}, {x=pos.x+1, y=pos.y, z=pos.z}}       
+    else
+      local dir = player:getDirection()
+      if diffx == 1 and dir ~= 1 then turn(1)
+      elseif diffx == -1 and dir ~= 3 then turn(3)
+      elseif diffy == 1 and dir ~= 2 then turn(2)
+      elseif diffy == -1 and dir ~= 0 then turn(0)
+      end
+    end
+    for _, candidate in ipairs(candidates) do
+      local tile = g_map.getTile(candidate)
+      if tile and tile:isWalkable() then
+        return TargetBot.walkTo(candidate, 2, {ignoreNonPathable=true})
+      end
+    end
+  end
+end
+]]
+FILES["targetbot/creature_editor.lua"] = [=[local function buildCreatureRegexPart(part)
+  part = part:trim():lower()
+  part = part:gsub("([%^%$%(%)%%%.%[%]%+%-%|])", "\\%1")
+  return "^" .. part:gsub("%*", ".*"):gsub("%?", ".?") .. "$"
+end
+
+TargetBot.Creature.edit = function(config, callback) -- callback = function(newConfig)
+  config = config or {}
+
+  local editor = UI.createWindow('TargetBotCreatureEditorWindow')
+  local values = {} -- (key, function returning value of key)
+
+  editor.name:setText(config.name or "")
+  table.insert(values, {"name", function() return editor.name:getText() end})
+
+  local addScrollBar = function(id, title, min, max, defaultValue)
+    local widget = UI.createWidget('TargetBotCreatureEditorScrollBar', editor.content.left)
+    widget.scroll.onValueChange = function(scroll, value)
+      widget.text:setText(title .. ": " .. value)
+    end
+    widget.scroll:setRange(min, max)
+    if max-min > 1000 then
+      widget.scroll:setStep(100)
+    elseif max-min > 100 then
+      widget.scroll:setStep(10)
+    end
+    widget.scroll:setValue(config[id] or defaultValue)
+    widget.scroll.onValueChange(widget.scroll, widget.scroll:getValue())
+    table.insert(values, {id, function() return widget.scroll:getValue() end})
+  end
+
+  local addTextEdit = function(id, title, defaultValue)
+    local widget = UI.createWidget('TargetBotCreatureEditorTextEdit', editor.content.right)
+    widget.text:setText(title)
+    widget.textEdit:setText(config[id] or defaultValue or "")
+    table.insert(values, {id, function() return widget.textEdit:getText() end})
+  end
+
+  local addCheckBox = function(id, title, defaultValue)
+    local widget = UI.createWidget('TargetBotCreatureEditorCheckBox', editor.content.right)
+    widget.onClick = function()
+      widget:setOn(not widget:isOn())
+    end
+    widget:setText(title)
+    if config[id] == nil then
+      widget:setOn(defaultValue)
+    else
+      widget:setOn(config[id])
+    end
+    table.insert(values, {id, function() return widget:isOn() end})
+  end
+
+  local addItem = function(id, title, defaultItem)
+    local widget = UI.createWidget('TargetBotCreatureEditorItem', editor.content.right)
+    widget.text:setText(title)
+    widget.item:setItemId(config[id] or defaultItem)
+    table.insert(values, {id, function() return widget.item:getItemId() end})
+  end
+
+  editor.cancel.onClick = function()
+    editor:destroy()
+  end
+  editor.onEscape = editor.cancel.onClick
+
+  editor.ok.onClick = function()
+    local newConfig = {}
+    for _, value in ipairs(values) do
+      newConfig[value[1]] = value[2]()
+    end
+    if newConfig.name:len() < 1 then return end
+
+    newConfig.regex = ""
+    for part in string.gmatch(newConfig.name, "[^,]+") do
+      if newConfig.regex:len() > 0 then
+        newConfig.regex = newConfig.regex .. "|"
+      end
+      newConfig.regex = newConfig.regex .. buildCreatureRegexPart(part)
+    end
+
+    editor:destroy()
+    callback(newConfig)
+  end
+
+  -- values
+  addScrollBar("priority", "Priority", 0, 20, 1)
+  addScrollBar("danger", "Danger", 0, 10, 1)
+  addScrollBar("maxDistance", "Max distance", 1, 10, 10)
+  addScrollBar("keepDistanceRange", "Keep distance", 1, 5, 1)
+  addScrollBar("anchorRange", "Anchoring Range", 1, 10, 3)
+  addScrollBar("rePositionAmount", "Min tiles to rePosition", 0, 7, 5)
+
+  addCheckBox("chase", "Chase", false)
+  addCheckBox("stop", "Stop", false)
+  addCheckBox("keepDistance", "Keep Distance", false)
+  addCheckBox("anchor", "Anchoring", false)
+  addCheckBox("dontLoot", "Don't loot", false)
+  addCheckBox("faceMonster", "Face monsters", false)
+  addCheckBox("avoidAttacks", "Avoid wave attacks", false)
+  addCheckBox("diamondArrows", "D-Arrows priority", false)
+  addCheckBox("rePosition", "rePosition to better tile", false)
+  addCheckBox("rpSafe", "RP PVP SAFE - (DA)", false)
+end
+]=]
+FILES["targetbot/creature_editor.otui"] = [[TargetBotCreatureEditorScrollBar < Panel
+  height: 28
+  margin-top: 3
+
+  Label
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    
+  HorizontalScrollBar
+    id: scroll
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 3
+    minimum: 0
+    maximum: 10
+    step: 1
+
+TargetBotCreatureEditorTextEdit < Panel
+  height: 40
+  margin-top: 7
+
+  Label
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    
+  TextEdit
+    id: textEdit
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 10
+    step: 1
+
+TargetBotCreatureEditorItem < Panel
+  height: 34
+  margin-top: 7
+  margin-left: 25
+  margin-right: 25
+
+  Label
+    id: text
+    anchors.left: parent.left
+    anchors.verticalCenter: next.verticalCenter
+
+  BotItem
+    id: item
+    anchors.top: parent.top
+    anchors.right: parent.right
+
+
+TargetBotCreatureEditorCheckBox < BotSwitch
+  height: 20
+  margin-top: 7
+
+TargetBotCreatureEditorWindow < MainWindow
+  text: TargetBot creature editor
+  width: 500
+  height: 515
+  
+  $mobile:
+    height: 300
+
+  Label
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    !text: tr('You can use * (any characters) and ? (any character) in target name')
+
+  Label
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    text-align: center
+    !text: tr('You can also enter multiple targets, separate them by ,')
+  
+  TextEdit
+    id: name
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-left: 90
+    margin-top: 5
+
+  Label
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: parent.left
+    text: Target name:
+
+  VerticalScrollBar
+    id: contentScroll
+    anchors.top: name.bottom
+    anchors.right: parent.right
+    anchors.bottom: help.top
+    step: 28
+    pixels-scroll: true
+    margin-right: -10
+    margin-top: 5
+    margin-bottom: 5
+
+  ScrollablePanel
+    id: content
+    anchors.top: name.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: help.top
+    vertical-scrollbar: contentScroll
+    margin-bottom: 10
+      
+    Panel
+      id: left
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.horizontalCenter
+      margin-top: 5
+      margin-left: 10
+      margin-right: 10
+      layout:
+        type: verticalBox
+        fit-children: true
+
+    Panel
+      id: right
+      anchors.top: parent.top
+      anchors.left: parent.horizontalCenter
+      anchors.right: parent.right
+      margin-top: 5
+      margin-left: 10
+      margin-right: 10
+      layout:
+        type: verticalBox
+        fit-children: true
+  
+  Button
+    id: help
+    !text: tr('Help & Tutorials')
+    anchors.bottom: parent.bottom
+    anchors.left: parent.left
+    width: 150
+    @onClick: g_platform.openUrl("https://discord.com/channels/628769144925585428/877436752736944181/912360435305578496")
+
+  Button
+    id: ok
+    !text: tr('Ok')
+    anchors.bottom: parent.bottom
+    anchors.right: next.left
+    margin-right: 10
+    width: 60
+
+  Button
+    id: cancel
+    !text: tr('Cancel')
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+    width: 60
+]]
+FILES["targetbot/creature_priority.lua"] = [[TargetBot.Creature.calculatePriority = function(creature, config, path)
+  -- config is based on creature_editor
+  local priority = 0
+  local currentTarget = g_game.getAttackingCreature()
+
+  -- extra priority if it's current target
+  if currentTarget == creature then
+    priority = priority + 1
+  end
+
+  -- check if distance is ok
+  if #path > config.maxDistance then
+    if config.rpSafe then
+      if currentTarget == creature then
+        g_game.cancelAttackAndFollow()  -- if not, stop attack (pvp safe)
+      end
+    end
+    return priority
+  end
+
+  -- add config priority
+  priority = priority + config.priority
+  
+  -- extra priority for close distance
+  local path_length = #path
+  local max_increase_by_distance = 10
+  local max_distance = 5
+  if isTrapped() and path_length == 1 then
+    priority = priority + (2 * max_increase_by_distance) -- double extra priority if trapped
+  elseif path_length <= max_distance then
+    local calc = (max_distance - path_length + 1) / max_distance * max_increase_by_distance
+    priority = priority + calc
+  end
+
+  -- extra priority for paladin diamond arrows
+  if config.diamondArrows then
+    local mobCount = getCreaturesInArea(creature:getPosition(), diamondArrowArea, 2)
+    priority = priority + (mobCount * 4)
+
+    if config.rpSafe then
+      if getCreaturesInArea(creature:getPosition(), largeRuneArea, 3) > 0 then
+        if currentTarget == creature then
+          g_game.cancelAttackAndFollow()
+        end
+        return 0 -- pvp safe
+      end
+    end
+  end
+
+  -- extra priority for low health
+  local max_increase_by_health = 10
+  local hp = creature:getHealthPercent()
+  if config.chase and hp < 30 then
+    priority = priority + max_increase_by_health
+  else
+    local calc = (100 - hp) / 100 * max_increase_by_health
+    priority = priority + calc
+  end
+
+  return priority
+end]]
+FILES["targetbot/looting.lua"] = [[TargetBot.Looting = {}
+TargetBot.Looting.list = {} -- list of containers to loot
+
+local ui
+local items = {}
+local containers = {}
+local itemsById = {}
+local containersById = {}
+local dontSave = false
+
+TargetBot.Looting.setup = function()
+  ui = UI.createWidget("TargetBotLootingPanel")
+  UI.Container(TargetBot.Looting.onItemsUpdate, true, nil, ui.items)
+  UI.Container(TargetBot.Looting.onContainersUpdate, true, nil, ui.containers) 
+  ui.everyItem.onClick = function()
+    ui.everyItem:setOn(not ui.everyItem:isOn())
+    TargetBot.save()
+  end
+  ui.maxDangerPanel.value.onTextChange = function()
+    local value = tonumber(ui.maxDangerPanel.value:getText())
+    if not value then
+      ui.maxDangerPanel.value:setText(0)
+    end
+    if dontSave then return end
+    TargetBot.save()
+  end
+  ui.minCapacityPanel.value.onTextChange = function()
+    local value = tonumber(ui.minCapacityPanel.value:getText())
+    if not value then
+      ui.minCapacityPanel.value:setText(0)
+    end
+    if dontSave then return end
+    TargetBot.save()
+  end
+end
+
+TargetBot.Looting.onItemsUpdate = function()
+  if dontSave then return end
+  TargetBot.save()
+  TargetBot.Looting.updateItemsAndContainers()
+end
+
+TargetBot.Looting.onContainersUpdate = function()
+  if dontSave then return end
+  TargetBot.save()
+  TargetBot.Looting.updateItemsAndContainers()
+end
+
+TargetBot.Looting.update = function(data)
+  dontSave = true
+  TargetBot.Looting.list = {}
+  ui.items:setItems(data['items'] or {})
+  ui.containers:setItems(data['containers'] or {})
+  ui.everyItem:setOn(data['everyItem'])
+  ui.maxDangerPanel.value:setText(data['maxDanger'] or 10)
+  ui.minCapacityPanel.value:setText(data['minCapacity'] or 100)
+  TargetBot.Looting.updateItemsAndContainers()
+  dontSave = false
+  --vBot
+  vBot.lootConainers = {}
+  vBot.lootItems = {}
+  for i, item in ipairs(ui.containers:getItems()) do
+    table.insert(vBot.lootConainers, item['id'])
+  end
+  for i, item in ipairs(ui.items:getItems()) do
+    table.insert(vBot.lootItems, item['id'])
+  end
+end
+
+TargetBot.Looting.save = function(data)
+  data['items'] = ui.items:getItems()
+  data['containers'] = ui.containers:getItems()
+  data['maxDanger'] = tonumber(ui.maxDangerPanel.value:getText())
+  data['minCapacity'] = tonumber(ui.minCapacityPanel.value:getText())
+  data['everyItem'] = ui.everyItem:isOn()
+end
+
+TargetBot.Looting.updateItemsAndContainers = function()
+  items = ui.items:getItems()
+  containers = ui.containers:getItems()
+  itemsById = {}
+  containersById = {}
+  for i, item in ipairs(items) do
+    itemsById[item.id] = 1
+  end
+  for i, container in ipairs(containers) do
+    containersById[container.id] = 1
+  end
+end
+
+local waitTill = 0
+local waitingForContainer = nil
+local status = ""
+local lastFoodConsumption = 0
+
+TargetBot.Looting.getStatus = function()
+  return status
+end
+
+TargetBot.Looting.process = function(targets, dangerLevel)
+  -- Never let corpse walking/opening take control while Mage Run is fighting.
+  -- The corpse remains queued and will be looted after the configured targets die.
+  if TargetBot
+    and TargetBot.isMageRunActive
+    and TargetBot.isMageRunActive() then
+    status = ""
+    return false
+  end
+  if (not items[1] and not ui.everyItem:isOn()) or not containers[1] then
+    status = ""
+    return false
+  end
+  if dangerLevel > tonumber(ui.maxDangerPanel.value:getText()) then
+    status = "High danger"
+    return false
+  end
+  if player:getFreeCapacity() < tonumber(ui.minCapacityPanel.value:getText()) then
+    status = "No cap"
+    TargetBot.Looting.list = {}
+    return false
+  end
+  local loot = storage.coreSettings.lootLast and TargetBot.Looting.list[#TargetBot.Looting.list] or TargetBot.Looting.list[1]
+  if loot == nil then
+    status = ""
+    return false
+  end
+
+  if waitTill > now then
+    return true
+  end
+  local containers = g_game.getContainers()
+  local lootContainers = TargetBot.Looting.getLootContainers(containers)
+
+  -- check if there's container for loot and has empty space for it
+  if not lootContainers[1] then
+    -- there's no space, don't loot
+    status = "No space"
+    return false
+  end
+
+  status = "Looting"
+
+  for index, container in pairs(containers) do
+    if container.lootContainer then
+      TargetBot.Looting.lootContainer(lootContainers, container)
+      return true
+    end
+  end
+
+  local pos = player:getPosition()
+  local dist = math.max(math.abs(pos.x-loot.pos.x), math.abs(pos.y-loot.pos.y))
+  local maxRange = storage.coreSettings.looting or 40
+  if loot.tries > 30 or loot.pos.z ~= pos.z or dist > maxRange then
+    table.remove(TargetBot.Looting.list, storage.coreSettings.lootLast and #TargetBot.Looting.list or 1)
+    return true
+  end
+
+  local tile = g_map.getTile(loot.pos)
+  if dist >= 2 or not tile then
+    loot.tries = loot.tries + 1
+    TargetBot.walkTo(loot.pos, 20, { ignoreNonPathable = true, precision = 1 })
+    return true
+  end
+
+  local container = tile:getTopUseThing()
+  if not container or not container:isContainer() then
+    table.remove(TargetBot.Looting.list, storage.coreSettings.lootLast and #TargetBot.Looting.list or 1)
+    return true
+  end
+
+  g_game.open(container)
+  waitTill = now + (storage.coreSettings.lootDelay or 200)
+  waitingForContainer = container:getId()
+
+  return true
+end
+
+TargetBot.Looting.getLootContainers = function(containers)
+  local lootContainers = {}
+  local openedContainersById = {}
+  local toOpen = nil
+  for index, container in pairs(containers) do
+    openedContainersById[container:getContainerItem():getId()] = 1
+    if containersById[container:getContainerItem():getId()] and not container.lootContainer then
+      if container:getItemsCount() < container:getCapacity() or container:hasPages() then
+        table.insert(lootContainers, container)
+      else -- it's full, open next container if possible
+        for slot, item in ipairs(container:getItems()) do
+          if item:isContainer() and containersById[item:getId()] then
+            toOpen = {item, container}
+            break
+          end
+        end
+      end
+    end
+  end
+  if not lootContainers[1] then
+    if toOpen then
+      g_game.open(toOpen[1], toOpen[2])
+      waitTill = now + 500 -- wait 0.5s
+      return lootContainers
+    end
+    -- check containers one more time, maybe there's any loot container
+    for index, container in pairs(containers) do
+      if not containersById[container:getContainerItem():getId()] and not container.lootContainer then
+        for slot, item in ipairs(container:getItems()) do
+          if item:isContainer() and containersById[item:getId()] then
+            g_game.open(item)
+            waitTill = now + 500 -- wait 0.5s
+            return lootContainers
+          end
+        end
+      end
+    end
+    -- can't find any lootContainer, let's check slots, maybe there's one
+    for slot = InventorySlotFirst, InventorySlotLast do
+      local item = getInventoryItem(slot)
+      if item and item:isContainer() and not openedContainersById[item:getId()] then
+        -- container which is not opened yet, let's open it
+        g_game.open(item)
+        waitTill = now + 500 -- wait 0.5s
+        return lootContainers
+      end
+    end
+  end
+  return lootContainers
+end
+
+TargetBot.Looting.lootContainer = function(lootContainers, container)
+  -- loot items
+  local nextContainer = nil
+
+  for i, item in ipairs(container:getItems()) do
+    -- se encontrou container dentro do corpo, guarda para abrir depois
+    if item:isContainer() then
+      nextContainer = item
+
+    elseif itemsById[item:getId()] or (ui.everyItem:isOn() and not item:isContainer()) then
+      item.lootTries = (item.lootTries or 0) + 1
+
+      if item.lootTries < 5 then -- if can't be looted within 0.5s then skip it
+        return TargetBot.Looting.lootItem(lootContainers, item)
+      end
+
+    elseif storage.foodItems and storage.foodItems[1] and lastFoodConsumption + 5000 < now then
+      for _, food in ipairs(storage.foodItems) do
+        if item:getId() == food.id then
+          g_game.use(item)
+          lastFoodConsumption = now
+          return
+        end
+      end
+    end
+  end
+
+  -- no more items to loot, open next container
+  if nextContainer then
+    nextContainer.lootTries = (nextContainer.lootTries or 0) + 1
+
+    -- tenta abrir várias vezes antes de desistir
+    if nextContainer.lootTries <= 8 then
+      status = "Opening loot container"
+
+      g_game.open(nextContainer, container)
+
+      -- delay seguro para abrir container dentro da criatura
+      waitTill = now + 250
+      waitingForContainer = nextContainer:getId()
+
+      return
+    end
+  end
+  
+  -- looting finished, remove container from list
+  container.lootContainer = false
+  g_game.close(container)
+
+  local index = storage.coreSettings.lootLast and #TargetBot.Looting.list or 1
+  table.remove(TargetBot.Looting.list, index) 
+end
+
+onTextMessage(function(mode, text)
+  if TargetBot.isOff() then return end
+  if #TargetBot.Looting.list == 0 then return end
+  if string.find(text:lower(), "you are not the owner") then -- if we are not the owners of corpse then its a waste of time to try to loot it
+    table.remove(TargetBot.Looting.list, storage.coreSettings.lootLast and #TargetBot.Looting.list or 1)
+  end
+end)
+
+TargetBot.Looting.lootItem = function(lootContainers, item)
+  if item:isStackable() then
+    local count = item:getCount()
+    for _, container in ipairs(lootContainers) do
+      for slot, citem in ipairs(container:getItems()) do
+        if item:getId() == citem:getId() and citem:getCount() < 100 then
+          g_game.move(item, container:getSlotPosition(slot - 1), count)
+          waitTill = now + 300 -- give it 0.3s to move item
+          return
+        end
+      end
+    end
+  end
+
+  local container = lootContainers[1]
+  g_game.move(item, container:getSlotPosition(container:getItemsCount()), 1)
+  waitTill = now + 300 -- give it 0.3s to move item
+end
+
+onContainerOpen(function(container, previousContainer)
+  if container:getContainerItem():getId() == waitingForContainer then
+    container.lootContainer = true
+    waitingForContainer = nil
+  end
+end)
+
+onCreatureDisappear(function(creature)
+  if isInPz() then return end
+  if not TargetBot.isOn() then return end
+  if not creature:isMonster() then return end
+  local config = TargetBot.Creature.calculateParams(creature, {}) -- return {craeture, config, danger, priority}
+  if not config.config or config.config.dontLoot then
+    return
+  end
+  local pos = player:getPosition()
+  local mpos = creature:getPosition()
+  local name = creature:getName()
+  if not mpos then return end
+  if pos.z ~= mpos.z or math.max(math.abs(pos.x-mpos.x), math.abs(pos.y-mpos.y)) > 6 then return end
+  schedule(20, function() -- check in 20ms if there's container (dead body) on that tile
+    if not containers[1] then return end
+    if TargetBot.Looting.list[20] then return end -- too many items to loot
+    local tile = g_map.getTile(mpos)
+    if not tile then return end
+    local container = tile:getTopUseThing()
+    if not container or not container:isContainer() then return end
+    if not findPath(player:getPosition(), mpos, 6, {ignoreNonPathable=true, ignoreCreatures=true, ignoreCost=true}) then return end
+    table.insert(TargetBot.Looting.list, {pos=mpos, creature=name, container=container:getId(), added=now, tries=0})
+
+    table.sort(TargetBot.Looting.list, function(a,b) 
+      a.dist = distanceFromPlayer(a.pos)
+      b.dist = distanceFromPlayer(b.pos)
+
+      return a.dist > b.dist
+    end)
+    container:setMarked('#000088')
+  end)
+end)
+]]
+FILES["targetbot/looting.otui"] = [[TargetBotLootingPanel < Panel
+  layout:
+    type: verticalBox
+    fit-children: true
+
+  HorizontalSeparator
+    margin-top: 5
+
+  Label
+    margin-top: 5
+    text: Items to loot
+    text-align: center    
+
+  BotContainer
+    id: items
+    margin-top: 3
+  
+  BotSwitch
+    id: everyItem
+    !text: tr("Loot every item")
+    margin-top: 2
+
+  Label
+    margin-top: 5
+    text: Containers for loot
+    text-align: center
+
+  BotContainer
+    id: containers
+    margin-top: 3
+    height: 34
+  
+  Panel
+    id: maxDangerPanel
+    height: 20
+    margin-top: 5
+    
+    BotTextEdit
+      id: value
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      margin-right: 6
+      width: 80
+
+    Label
+      anchors.left: parent.left
+      anchors.verticalCenter: prev.verticalCenter
+      text: Max. danger:
+      margin-left: 5
+
+  Panel
+    id: minCapacityPanel
+    height: 20
+    margin-top: 3
+    
+    BotTextEdit
+      id: value
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      margin-right: 6
+      width: 80
+
+    Label
+      anchors.left: parent.left
+      anchors.verticalCenter: prev.verticalCenter
+      text: Min. capacity:
+      margin-left: 5]]
+FILES["targetbot/target.lua"] = [=[local targetbotMacro = nil
+local config = nil
+local lastAction = 0
+local cavebotAllowance = 0
+local dangerValue = 0
+local looterStatus = ""
+local attackConfig = {mode="priority", style="melee"}
+local mageRunState = {active=false, center=nil}
+
+-- Shared scan/path range for the whole Mage Run stack. "Creature range" is
+-- the authoritative detection radius; the kiting max distance only controls
+-- spacing from the pack and can never make TargetBot see less than the lure.
+local function getMageRunConfigNumber(id, defaultValue, minValue, maxValue)
+  local value = defaultValue
+  if CaveBot and CaveBot.Config and CaveBot.Config.values
+    and CaveBot.Config.values[id] ~= nil then
+    value = tonumber(CaveBot.Config.values[id]) or defaultValue
+  end
+  value = math.floor(value)
+  if minValue and value < minValue then value = minValue end
+  if maxValue and value > maxValue then value = maxValue end
+  return value
+end
+
+TargetBot.getMageRunScanRange = function()
+  local creatureRange = getMageRunConfigNumber("lureCreatureRange", 8, 1, 15)
+  local kiteRange = getMageRunConfigNumber("lureMageRunMaxRange", 6, 2, 15)
+  return math.max(6, creatureRange, kiteRange)
+end
+
+local targetCandidateCache = {}
+local targetCandidateCacheSize = 0
+
+
+-- One shared, cheap snapshot is produced by TargetBot and reused by CaveBot Lure
+-- and the Mage Run movement evaluator. It deliberately contains no per-creature
+-- pathfinding; paths are confirmed only for the small target-selection shortlist.
+TargetBot.MageRunSnapshot = TargetBot.MageRunSnapshot or {
+  createdAt = 0,
+  nextRefreshAt = 0,
+  playerPos = nil,
+  scanRange = 0,
+  hazards = {},
+  configured = {},
+  configuredIds = {},
+  paramsById = {},
+  selected = nil,
+  dangerLevel = 0,
+  targets = 0
+}
+
+TargetBot.getMageRunSnapshot = function(maxAge)
+  local snapshot = TargetBot.MageRunSnapshot
+  maxAge = tonumber(maxAge) or 350
+  if not snapshot or snapshot.createdAt <= 0 or now - snapshot.createdAt > maxAge then
+    return nil
+  end
+  return snapshot
+end
+
+local syntheticPaths = {}
+local mageRunTargetSelection = {
+  params = nil,
+  expiresAt = 0,
+  pathConfirmedAt = 0
+}
+
+local function creatureId(creature)
+  return creature and creature.getId and creature:getId() or tostring(creature)
+end
+
+local function getValidCreaturePosition(creature, expectedZ)
+  if not creature or not creature.getPosition then return nil, 0 end
+
+  local okPos, creaturePos = pcall(function()
+    return creature:getPosition()
+  end)
+  if not okPos or not creaturePos then return nil, 0 end
+  if expectedZ ~= nil and creaturePos.z ~= expectedZ then return nil, 0 end
+
+  local okHp, hp = pcall(function()
+    return creature:getHealthPercent()
+  end)
+  hp = okHp and tonumber(hp) or 0
+  if hp <= 0 then return nil, 0 end
+
+  return creaturePos, hp
+end
+
+local function isValidMageRunMonster(creature, expectedZ)
+  if not creature or not creature.isMonster or not creature:isMonster() then
+    return false, nil, 0
+  end
+  if g_game.getClientVersion() >= 960
+    and creature.getType and creature:getType() >= 3 then
+    return false, nil, 0
+  end
+  local creaturePos, hp = getValidCreaturePosition(creature, expectedZ)
+  return creaturePos ~= nil, creaturePos, hp
+end
+
+local function chebyshevDistance(a, b)
+  if not a or not b or a.z ~= b.z then return 99 end
+  return math.max(math.abs(a.x - b.x), math.abs(a.y - b.y))
+end
+
+local function syntheticPath(length)
+  length = math.max(0, math.floor(tonumber(length) or 0))
+  if not syntheticPaths[length] then
+    local path = {}
+    for i = 1, length do path[i] = 0 end
+    syntheticPaths[length] = path
+  end
+  return syntheticPaths[length]
+end
+
+-- Lightweight Mage Run priority. Expensive global checks such as isTrapped()
+-- are computed once per snapshot, not once per creature.
+local function calculateMageRunConfigPriority(creature, creatureConfig, distance, trapped, currentTarget)
+  local priority = currentTarget == creature and 1 or 0
+  local maxDistance = tonumber(creatureConfig.maxDistance) or 10
+  if distance > maxDistance then
+    return priority
+  end
+
+  priority = priority + (tonumber(creatureConfig.priority) or 0)
+
+  if trapped and distance == 1 then
+    priority = priority + 20
+  elseif distance <= 5 then
+    priority = priority + ((5 - distance + 1) / 5 * 10)
+  end
+
+  if creatureConfig.diamondArrows then
+    local creaturePos = creature:getPosition()
+    if creaturePos then
+      local mobCount = getCreaturesInArea(creaturePos, diamondArrowArea, 2)
+      priority = priority + (mobCount * 4)
+      if creatureConfig.rpSafe
+        and getCreaturesInArea(creaturePos, largeRuneArea, 3) > 0 then
+        return 0
+      end
+    end
+  end
+
+  local hp = tonumber(creature:getHealthPercent()) or 100
+  if creatureConfig.chase and hp < 30 then
+    priority = priority + 10
+  else
+    priority = priority + ((100 - hp) / 100 * 10)
+  end
+
+  return priority
+end
+
+local function calculateMageRunParams(creature, distance, trapped, currentTarget)
+  local configs = TargetBot.Creature.getConfigs(creature)
+  local priority = 0
+  local danger = 0
+  local selectedConfig = nil
+
+  for _, creatureConfig in ipairs(configs) do
+    local configPriority = calculateMageRunConfigPriority(
+      creature, creatureConfig, distance, trapped, currentTarget
+    )
+    if configPriority > priority then
+      priority = configPriority
+      danger = tonumber(creatureConfig.danger) or 0
+      selectedConfig = creatureConfig
+    end
+  end
+
+  return {
+    config = selectedConfig,
+    creature = creature,
+    danger = danger,
+    priority = priority,
+    pathLength = distance
+  }
+end
+
+local function getCheapMageRunCandidate(creature, playerPos, trapped, currentTarget)
+  local creaturePos = creature:getPosition()
+  if not creaturePos then return nil end
+  local distance = chebyshevDistance(playerPos, creaturePos)
+  return calculateMageRunParams(creature, distance, trapped, currentTarget)
+end
+
+local function getConfirmedMageRunCandidate(cheapParams, playerPos, pathRange, trapped, currentTarget)
+  if not cheapParams or not cheapParams.creature then return nil end
+  local creature = cheapParams.creature
+  local creaturePos = creature:getPosition()
+  if not creaturePos or creaturePos.z ~= playerPos.z then return nil end
+
+  local path = findPath(playerPos, creaturePos, pathRange, {
+    ignoreLastCreature = true,
+    ignoreNonPathable = true,
+    ignoreCost = true,
+    ignoreCreatures = true
+  })
+  if not path then return nil end
+  return calculateMageRunParams(creature, #path, trapped, currentTarget)
+end
+
+local function getCachedTargetCandidate(creature, playerPos, pathRange)
+  local creaturePos = creature:getPosition()
+  local creatureId = creature.getId and creature:getId() or tostring(creature)
+  local hp = creature:getHealthPercent() or 0
+  local currentTarget = g_game.getAttackingCreature and g_game.getAttackingCreature() or nil
+  local currentTargetId = currentTarget and currentTarget.getId and currentTarget:getId() or 0
+  local key = table.concat({
+    creatureId,
+    currentTargetId,
+    playerPos.x, playerPos.y, playerPos.z,
+    creaturePos.x, creaturePos.y, creaturePos.z,
+    hp,
+    pathRange
+  }, ":")
+  local cached = targetCandidateCache[key]
+  if cached and cached.expiresAt > now then
+    return cached.params
+  end
+
+  local path = findPath(playerPos, creaturePos, pathRange, {
+    ignoreLastCreature = true,
+    ignoreNonPathable = true,
+    ignoreCost = true,
+    ignoreCreatures = true
+  })
+  if not path then
+    return nil
+  end
+
+  local params = TargetBot.Creature.calculateParams(creature, path)
+  params.pathLength = #path
+  targetCandidateCache[key] = {params=params, expiresAt=now + 160}
+  targetCandidateCacheSize = targetCandidateCacheSize + 1
+
+  if targetCandidateCacheSize > 250 then
+    targetCandidateCache = {}
+    targetCandidateCacheSize = 0
+  end
+
+  return params
+end
+local lastAttackConfigMenu = 0
+local lastForcedStopTargetId = 0
+local lastForcedStopAt = 0
+
+-- ui
+local configWidget = UI.Config()
+local ui = UI.createWidget("TargetBotPanel")
+
+ui.list = ui.listPanel.list -- shortcut
+TargetBot.targetList = ui.list
+TargetBot.Looting.setup()
+
+ui.status.left:setText("Status:")
+ui.status.right:setText("Off")
+ui.target.left:setText("Target:")
+ui.target.right:setText("-")
+ui.config.left:setText("Config:")
+ui.config.right:setText("-")
+ui.danger.left:setText("Danger:")
+ui.danger.right:setText("0")
+
+-- ui.editor.debug.onClick = function()
+--   local on = ui.editor.debug:isOn()
+--   ui.editor.debug:setOn(not on)
+--   if on then
+--     for _, spec in ipairs(getSpectators()) do
+--       spec:clearText()
+--     end
+--   end
+-- end
+
+local oldTibia = g_game.getClientVersion() < 960
+local burstArrowArea = [[
+  111
+  111
+  111
+]]
+
+local attackModes = {
+  {id="priority", text="Default priority"},
+  {id="closest", text="Closest creature"},
+  {id="farthest", text="Farthest creature"},
+  {id="mostHp", text="Highest HP"},
+  {id="leastHp", text="Lowest HP"},
+  {id="mostHpClosest", text="Highest HP + closest"},
+  {id="mostHpFarthest", text="Highest HP + farthest"},
+  {id="leastHpClosest", text="Lowest HP + closest"},
+  {id="leastHpFarthest", text="Lowest HP + farthest"},
+  {id="smartDiamond", text="Smart Diamond Arrow"},
+  {id="smartBurst", text="Smart Burst Arrow"}
+}
+
+local attackStyles = {
+  {id="melee", text="Melee attack"},
+  {id="mageRun", text="Mage run"}
+}
+
+local function getAttackMode(modeId)
+  for _, mode in ipairs(attackModes) do
+    if mode.id == modeId then
+      return mode
+    end
+  end
+  return attackModes[1]
+end
+
+local function updateAttackConfigButton()
+  if ui.editor.attackConfig then
+    ui.editor.attackConfig:setText("CONFIG")
+  end
+  if CaveBot and CaveBot.Config and CaveBot.Config.refreshTargetMode then
+    CaveBot.Config.refreshTargetMode()
+  end
+end
+
+local function setAttackConfig(data)
+  local mode = data and data.mode or "priority"
+  local style = data and data.style or "melee"
+  if getAttackMode(mode).id ~= mode then
+    mode = "priority"
+  end
+  local validStyle = false
+  for _, attackStyle in ipairs(attackStyles) do
+    if attackStyle.id == style then
+      validStyle = true
+      break
+    end
+  end
+  if not validStyle then
+    style = "melee"
+  end
+  attackConfig = {mode=mode, style=style}
+  if style ~= "mageRun" then
+    mageRunState.active = false
+    mageRunState.center = nil
+    if TargetBot.resetMageRunMovement then
+      TargetBot.resetMageRunMovement()
+    end
+  end
+  updateAttackConfigButton()
+end
+
+local function isSmartAttackMode()
+  return attackConfig.mode == "smartDiamond" or attackConfig.mode == "smartBurst"
+end
+
+local function getAttackStyle(styleId)
+  for _, style in ipairs(attackStyles) do
+    if style.id == styleId then
+      return style
+    end
+  end
+  return attackStyles[1]
+end
+
+local function targetDistance(params)
+  return params.pathLength or distanceFromPlayer(params.creature:getPosition())
+end
+
+local function targetHp(params)
+  return params.creature:getHealthPercent() or 0
+end
+
+local function betterByRules(candidate, current, rules)
+  if not current then return true end
+  for _, rule in ipairs(rules) do
+    local a = rule.value(candidate) or 0
+    local b = rule.value(current) or 0
+    if a ~= b then
+      if rule.asc then
+        return a < b
+      end
+      return a > b
+    end
+  end
+  return false
+end
+
+local function smartAreaScore(params, area)
+  local position = params.creature:getPosition()
+  if distanceFromPlayer(position) > 6 then
+    return -1
+  end
+  if params.config.rpSafe and getCreaturesInArea(position, area, 3) > 0 then
+    return -1
+  end
+  return getCreaturesInArea(position, area, 2)
+end
+
+local function selectTargetByRules(candidates, rules)
+  local selected = nil
+  for _, params in ipairs(candidates) do
+    if betterByRules(params, selected, rules) then
+      selected = params
+    end
+  end
+  return selected
+end
+
+local function selectTarget(candidates)
+  local mode = attackConfig.mode or "priority"
+  local rules = {
+    priority = {
+      {value=function(params) return params.priority end},
+      {value=targetDistance, asc=true},
+      {value=targetHp, asc=true}
+    },
+    closest = {
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end},
+      {value=targetHp, asc=true}
+    },
+    farthest = {
+      {value=targetDistance},
+      {value=function(params) return params.priority end},
+      {value=targetHp, asc=true}
+    },
+    mostHp = {
+      {value=targetHp},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    },
+    leastHp = {
+      {value=targetHp, asc=true},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    },
+    mostHpClosest = {
+      {value=targetHp},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    },
+    mostHpFarthest = {
+      {value=targetHp},
+      {value=targetDistance},
+      {value=function(params) return params.priority end}
+    },
+    leastHpClosest = {
+      {value=targetHp, asc=true},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    },
+    leastHpFarthest = {
+      {value=targetHp, asc=true},
+      {value=targetDistance},
+      {value=function(params) return params.priority end}
+    },
+    smartDiamond = {
+      {value=function(params) return smartAreaScore(params, diamondArrowArea) end},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    },
+    smartBurst = {
+      {value=function(params) return smartAreaScore(params, burstArrowArea) end},
+      {value=targetDistance, asc=true},
+      {value=function(params) return params.priority end}
+    }
+  }
+
+  local selected = selectTargetByRules(candidates, rules[mode] or rules.priority)
+  if mode == "smartDiamond" and selected and smartAreaScore(selected, diamondArrowArea) < 0 then
+    return selectTargetByRules(candidates, rules.priority)
+  elseif mode == "smartBurst" and selected and smartAreaScore(selected, burstArrowArea) < 0 then
+    return selectTargetByRules(candidates, rules.priority)
+  end
+  return selected
+end
+
+local function copyMageRunCandidatePool(candidates)
+  local pool = {}
+  for _, candidate in ipairs(candidates) do
+    pool[#pool + 1] = candidate
+  end
+  return pool
+end
+
+local function isCloseMageRunTargetCandidate(candidate, best, currentTarget)
+  if not candidate then return false end
+  if not best or candidate == best then return true end
+
+  local candidatePriority = tonumber(candidate.priority) or 0
+  local bestPriority = tonumber(best.priority) or 0
+  local candidateDistance = tonumber(candidate.pathLength) or 99
+  local bestDistance = tonumber(best.pathLength) or 99
+  local currentBonus = 0
+  if currentTarget
+    and creatureId(candidate.creature) == creatureId(currentTarget) then
+    currentBonus = 4
+  end
+
+  if candidatePriority + currentBonus >= bestPriority * 0.88 then
+    return true
+  end
+  if candidatePriority + currentBonus + 4 >= bestPriority
+    and candidateDistance <= bestDistance + 2 then
+    return true
+  end
+  if candidateDistance <= bestDistance - 2
+    and candidatePriority + currentBonus + 7 >= bestPriority then
+    return true
+  end
+
+  return false
+end
+
+
+local function selectConfirmedMageRunTarget(
+  candidates, playerPos, pathRange, configuredIds, trapped, currentTarget
+)
+  local cheapBest = selectTarget(copyMageRunCandidatePool(candidates))
+  local previous = mageRunTargetSelection.params
+  if previous and previous.creature then
+    local id = creatureId(previous.creature)
+    local previousCandidate = nil
+    for _, candidate in ipairs(candidates) do
+      if creatureId(candidate.creature) == id then
+        previousCandidate = candidate
+        break
+      end
+    end
+
+    if previousCandidate and configuredIds[id]
+      and isCloseMageRunTargetCandidate(
+        previousCandidate, cheapBest, currentTarget
+      ) then
+      -- Keep an already valid target for one second. Rechecking its path on every
+      -- 100-ms cycle was the largest avoidable pathfinding cost.
+      if now - mageRunTargetSelection.pathConfirmedAt < 1000 then
+        mageRunTargetSelection.params = previousCandidate
+        mageRunTargetSelection.expiresAt = now + 1200
+        return previousCandidate
+      end
+
+      local confirmedPrevious = getConfirmedMageRunCandidate(
+        previousCandidate, playerPos, pathRange, trapped, currentTarget
+      )
+      if confirmedPrevious and confirmedPrevious.config and confirmedPrevious.priority > 0 then
+        mageRunTargetSelection.params = confirmedPrevious
+        mageRunTargetSelection.pathConfirmedAt = now
+        mageRunTargetSelection.expiresAt = now + 1200
+        return confirmedPrevious
+      end
+    end
+  end
+
+  local pool = copyMageRunCandidatePool(candidates)
+
+  -- Confirm only the best cheap candidates. This keeps target changes stable
+  -- while still allowing a nearby/dangerous creature to take over the pack.
+  local attempts = math.min(3, #pool)
+  for _ = 1, attempts do
+    local cheap = selectTarget(pool)
+    if not cheap then break end
+    local confirmed = getConfirmedMageRunCandidate(
+      cheap, playerPos, pathRange, trapped, currentTarget
+    )
+    if confirmed and confirmed.config and confirmed.priority > 0 then
+      mageRunTargetSelection.params = confirmed
+      mageRunTargetSelection.pathConfirmedAt = now
+      mageRunTargetSelection.expiresAt = now + 1200
+      return confirmed
+    end
+    for index, candidate in ipairs(pool) do
+      if candidate == cheap then
+        table.remove(pool, index)
+        break
+      end
+    end
+  end
+
+  mageRunTargetSelection.params = nil
+  mageRunTargetSelection.expiresAt = 0
+  mageRunTargetSelection.pathConfirmedAt = 0
+  return nil
+end
+
+local function refreshMageRunSnapshot(playerPos, scanRange)
+  local specs = g_map.getSpectatorsInRange(playerPos, false, scanRange, scanRange)
+  local hazards = {}
+  local configured = {}
+  local configuredIds = {}
+  local paramsById = {}
+  local targetCandidates = {}
+  local dangerLevel = 0
+  local targets = 0
+  local trapped = isTrapped()
+  local currentTarget = g_game.getAttackingCreature and g_game.getAttackingCreature() or nil
+
+  for _, creature in ipairs(specs) do
+    local valid, creaturePos = isValidMageRunMonster(creature, playerPos.z)
+    if valid and chebyshevDistance(playerPos, creaturePos) <= scanRange then
+      hazards[#hazards + 1] = creature
+
+      local configs = TargetBot.Creature.getConfigs(creature)
+      if configs and #configs > 0 then
+        local id = creatureId(creature)
+        configured[#configured + 1] = creature
+        configuredIds[id] = true
+
+        local params = getCheapMageRunCandidate(
+          creature, playerPos, trapped, currentTarget
+        )
+        if params then
+          paramsById[id] = params
+          dangerLevel = dangerLevel + (params.danger or 0)
+          if params.config and params.priority > 0 then
+            targets = targets + 1
+            targetCandidates[#targetCandidates + 1] = params
+            if storage.coreSettings.showTargetPriority then
+              creature:setText(params.config.name .. "\n" .. params.priority)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  local pathRange = math.max(7, scanRange + 2)
+  local selected = selectConfirmedMageRunTarget(
+    targetCandidates, playerPos, pathRange, configuredIds, trapped, currentTarget
+  )
+
+  local emergency = TargetBot.isMageRunEmergencyMovement
+    and TargetBot.isMageRunEmergencyMovement() or false
+  local refreshDelay = emergency and 120 or 250
+
+  local snapshot = {
+    createdAt = now,
+    nextRefreshAt = now + refreshDelay,
+    playerPos = {x=playerPos.x, y=playerPos.y, z=playerPos.z},
+    scanRange = scanRange,
+    hazards = hazards,
+    configured = configured,
+    configuredIds = configuredIds,
+    paramsById = paramsById,
+    selected = selected,
+    dangerLevel = dangerLevel,
+    targets = targets
+  }
+  TargetBot.MageRunSnapshot = snapshot
+  return snapshot
+end
+
+TargetBot.refreshMageRunSnapshot = refreshMageRunSnapshot
+
+local function shouldAllowCaveBotForTarget(params)
+  if not params or not params.config then
+    return false
+  end
+
+  local config = params.config
+
+  if attackConfig.style == "mageRun"
+    and mageRunState.active
+    and CaveBot
+    and CaveBot.isLureIgnoreExitAllowed
+    and CaveBot.isLureIgnoreExitAllowed() then
+    return true
+  end
+
+  if config.stop then
+    return false
+  end
+
+  if config.chase then
+    return false
+  end
+
+  if attackConfig.style == "mageRun" and mageRunState.active then
+    return false
+  end
+
+  return true
+end
+
+local function forceStopForTarget(creature)
+  if not creature then return end
+  local creatureId = creature.getId and creature:getId() or 0
+  local sameTarget = creatureId ~= 0 and creatureId == lastForcedStopTargetId
+  if sameTarget and lastForcedStopAt + 150 > now and not player:isWalking() then
+    return
+  end
+
+  if TargetBot.stopWalk then
+    TargetBot.stopWalk()
+  end
+
+  pcall(function()
+    player:stopAutoWalk()
+  end)
+  pcall(function()
+    g_game.stop()
+  end)
+
+  lastForcedStopTargetId = creatureId
+  lastForcedStopAt = now
+end
+
+local function openAttackConfigMenu(mousePos)
+  if lastAttackConfigMenu + 100 > now then return end
+  lastAttackConfigMenu = now
+  local menu = g_ui.createWidget('PopupMenu')
+  menu:setId("targetBotAttackConfigMenu")
+  menu:setGameMenu(true)
+  for _, mode in ipairs(attackModes) do
+    local text = mode.text
+    if attackConfig.mode == mode.id then
+      text = "> " .. text
+    end
+    menu:addOption(text, function()
+      attackConfig.mode = mode.id
+      TargetBot.save()
+      updateAttackConfigButton()
+    end, "")
+  end
+  menu:addSeparator()
+  for _, style in ipairs(attackStyles) do
+    local text = style.text
+    if attackConfig.style == style.id then
+      text = "> " .. text
+    end
+    menu:addOption(text, function()
+      attackConfig.style = style.id
+      if style.id ~= "mageRun" then
+        mageRunState.active = false
+        mageRunState.center = nil
+        if TargetBot.resetMageRunMovement then
+          TargetBot.resetMageRunMovement()
+        end
+      end
+      TargetBot.save()
+      updateAttackConfigButton()
+    end, "")
+  end
+  menu:display(mousePos)
+end
+
+-- main loop, controlled by config
+targetbotMacro = macro(100, function()
+  local pos = player:getPosition()
+  local mageRunMode = attackConfig.style == "mageRun"
+  local dangerLevel = 0
+  local targets = 0
+  local highestPriorityParams = nil
+  local looting = false
+  local mageRunSnapshot = nil
+
+  if mageRunMode then
+    local scanRange = TargetBot.getMageRunScanRange()
+    local snapshot = TargetBot.getMageRunSnapshot(900)
+    local needsRefresh = not snapshot
+      or snapshot.nextRefreshAt <= now
+      or not snapshot.playerPos
+      or snapshot.playerPos.z ~= pos.z
+
+    if needsRefresh then
+      snapshot = refreshMageRunSnapshot(pos, scanRange)
+    end
+
+    dangerLevel = snapshot and snapshot.dangerLevel or 0
+    targets = snapshot and snapshot.targets or 0
+    highestPriorityParams = snapshot and snapshot.selected or nil
+    mageRunSnapshot = snapshot
+
+    -- A creature object may disappear between snapshot creation and this cycle.
+    if highestPriorityParams and highestPriorityParams.creature then
+      local creaturePos, hp = getValidCreaturePosition(
+        highestPriorityParams.creature, pos.z
+      )
+      if not creaturePos or hp <= 0 then
+        highestPriorityParams = nil
+        if snapshot then
+          snapshot.selected = nil
+          snapshot.nextRefreshAt = 0
+        end
+      end
+    end
+  else
+    local scanRange = 6
+    local specs = g_map.getSpectatorsInRange(pos, false, scanRange, scanRange)
+    local monsterCount = 0
+    for _, spec in ipairs(specs) do
+      if spec:isMonster() then monsterCount = monsterCount + 1 end
+    end
+
+    local creatures
+    if monsterCount > 10 and not isSmartAttackMode() then
+      creatures = g_map.getSpectatorsInRange(pos, false, 3, 3)
+    else
+      creatures = specs
+    end
+
+    local targetCandidates = {}
+    for _, creature in ipairs(creatures) do
+      local valid = isValidMageRunMonster(creature, pos.z)
+      if valid then
+        local params = getCachedTargetCandidate(creature, pos, 7)
+        if params then
+          dangerLevel = dangerLevel + (params.danger or 0)
+          if params.config and params.priority > 0 then
+            targets = targets + 1
+            targetCandidates[#targetCandidates + 1] = params
+            if storage.coreSettings.showTargetPriority then
+              creature:setText(params.config.name .. "\n" .. params.priority)
+            end
+          end
+        end
+      end
+    end
+    highestPriorityParams = selectTarget(targetCandidates)
+  end
+
+  if not mageRunMode then
+    TargetBot.walkTo(nil)
+  end
+
+  looting = TargetBot.Looting.process(targets, dangerLevel)
+  local lootingStatus = TargetBot.Looting.getStatus()
+  looterStatus = lootingStatus
+  dangerValue = dangerLevel
+  ui.danger.right:setText(dangerLevel)
+
+  if highestPriorityParams and not isInPz() then
+    local lureIgnoreExitAllowed = CaveBot
+      and CaveBot.isLureIgnoreExitAllowed
+      and CaveBot.isLureIgnoreExitAllowed()
+
+    if shouldAllowCaveBotForTarget(highestPriorityParams) then
+      TargetBot.allowCaveBot(lureIgnoreExitAllowed and 650 or 150)
+    else
+      TargetBot.disallowCaveBot()
+    end
+
+    if highestPriorityParams.config
+      and highestPriorityParams.config.stop
+      and not lureIgnoreExitAllowed then
+      forceStopForTarget(highestPriorityParams.creature)
+    end
+
+    ui.target.right:setText(highestPriorityParams.creature:getName())
+    ui.config.right:setText(highestPriorityParams.config.name)
+    TargetBot.Creature.attack(highestPriorityParams, targets, looting)
+
+    local mageRunMovementState = TargetBot.isMageRunActive
+      and TargetBot.isMageRunActive()
+      and TargetBot.getMageRunMovementState
+      and TargetBot.getMageRunMovementState()
+
+    if mageRunMovementState and mageRunMovementState.reason then
+      TargetBot.setStatus("Mage run: " .. mageRunMovementState.reason)
+    elseif lootingStatus:len() > 0 then
+      TargetBot.setStatus("Attack & " .. lootingStatus)
+    elseif cavebotAllowance > now then
+      TargetBot.setStatus("Luring using CaveBot")
+    else
+      TargetBot.setStatus("Attacking")
+    end
+
+    if not mageRunMode then
+      TargetBot.walk()
+    end
+    lastAction = now
+    return
+  elseif TargetBot.isMageRunActive
+    and TargetBot.isMageRunActive()
+    and not isInPz() then
+    local movementState = TargetBot.getMageRunMovementState
+      and TargetBot.getMageRunMovementState()
+    local hasMageRunPack = mageRunSnapshot
+      and #(mageRunSnapshot.configured or {}) > 0
+
+    local lureIgnoreExitAllowed = CaveBot
+      and CaveBot.isLureIgnoreExitAllowed
+      and CaveBot.isLureIgnoreExitAllowed()
+
+    if hasMageRunPack and not lureIgnoreExitAllowed then
+      TargetBot.disallowCaveBot()
+      if movementState and movementState.reason then
+        TargetBot.setStatus("Mage run: " .. movementState.reason)
+      else
+        TargetBot.setStatus("Mage run: scanning")
+      end
+      lastAction = now
+      return
+    end
+
+    if TargetBot.stopWalk then
+      TargetBot.stopWalk()
+    end
+    TargetBot.allowCaveBot(lureIgnoreExitAllowed and 650 or 150)
+    if lureIgnoreExitAllowed then
+      TargetBot.setStatus("Mage run: ignore remaining")
+    elseif movementState and movementState.reason == "no pack" then
+      TargetBot.setStatus("Mage run: no pack")
+    else
+      TargetBot.setStatus("Mage run: clear")
+    end
+  elseif isInPz() then
+    if g_game.isAttacking() then
+      g_game.cancelAttack()
+      return
+    end
+  end
+
+  ui.target.right:setText("-")
+  ui.config.right:setText("-")
+  lastForcedStopTargetId = 0
+  if looting then
+    TargetBot.walk()
+    lastAction = now
+  end
+  if lootingStatus:len() > 0 then
+    TargetBot.setStatus(lootingStatus)
+  else
+    TargetBot.setStatus("Waiting")
+  end
+end)
+
+-- config, its callback is called immediately, data can be nil
+config = Config.setup("targetbot_configs", configWidget, "json", function(name, enabled, data)
+  if not data then
+    ui.status.right:setText("Off")
+    return targetbotMacro.setOff() 
+  end
+  TargetBot.Creature.resetConfigs()
+  for _, value in ipairs(data["targeting"] or {}) do
+    TargetBot.Creature.addConfig(value)
+  end
+  TargetBot.Looting.update(data["looting"] or {})
+  setAttackConfig(data["attackConfig"] or {})
+
+  -- add configs
+  if enabled then
+    ui.status.right:setText("On")
+  else
+    ui.status.right:setText("Off")
+  end
+
+  targetbotMacro.setOn(enabled)
+  targetbotMacro.delay = nil
+end)
+
+-- setup ui
+ui.editor.buttons.add.onClick = function()
+  TargetBot.Creature.edit(nil, function(newConfig)
+    TargetBot.Creature.addConfig(newConfig, true)
+    TargetBot.save()
+  end)
+end
+
+ui.editor.buttons.edit.onClick = function()
+  local entry = ui.list:getFocusedChild()
+  if not entry then return end
+  TargetBot.Creature.edit(entry.value, function(newConfig)
+    entry:setText(newConfig.name)
+    entry.value = newConfig
+    TargetBot.Creature.resetConfigsCache()
+    TargetBot.save()
+  end)
+end
+
+ui.editor.buttons.remove.onClick = function()
+  local entry = ui.list:getFocusedChild()
+  if not entry then return end
+  entry:destroy()
+  TargetBot.Creature.resetConfigsCache()
+  TargetBot.save()
+end
+
+ui.editor.attackConfig.onMouseRelease = function(widget, mousePos, mouseButton)
+  if mouseButton ~= 1 then return false end
+  openAttackConfigMenu(mousePos)
+  return true
+end
+
+ui.editor.attackConfig.onClick = function(widget)
+  local pos = widget:getPosition()
+  local height = widget.getHeight and widget:getHeight() or 20
+  openAttackConfigMenu({x=pos.x, y=pos.y + height})
+end
+
+updateAttackConfigButton()
+
+-- public function, you can use them in your scripts
+TargetBot.isActive = function() -- return true if attacking or looting takes place
+  return lastAction + 300 > now
+end
+
+TargetBot.isCaveBotActionAllowed = function()
+  return cavebotAllowance > now
+end
+
+TargetBot.setStatus = function(text)
+  return ui.status.right:setText(text)
+end
+
+TargetBot.getStatus = function()
+  return ui.status.right:getText()
+end
+
+TargetBot.isOn = function()
+  return config.isOn()
+end
+
+TargetBot.isOff = function()
+  return config.isOff()
+end
+
+TargetBot.setOn = function(val)
+  if val == false then  
+    return TargetBot.setOff(true)
+  end
+  config.setOn()
+end
+
+TargetBot.setOff = function(val)
+  if val == false then  
+    return TargetBot.setOn(true)
+  end
+  config.setOff()
+end
+
+TargetBot.getCurrentProfile = function()
+  return storage._configs.targetbot_configs.selected
+end
+
+local botConfigName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+TargetBot.setCurrentProfile = function(name)
+  if not g_resources.fileExists("/bot/"..botConfigName.."/targetbot_configs/"..name..".json") then
+    return warn("there is no targetbot profile with that name!")
+  end
+  TargetBot.setOff()
+  storage._configs.targetbot_configs.selected = name
+  TargetBot.setOn()
+end
+
+TargetBot.delay = function(value)
+  targetbotMacro.delay = now + value
+end
+
+TargetBot.save = function()
+  local data = {targeting={}, looting={}, attackConfig=attackConfig}
+  for _, entry in ipairs(ui.list:getChildren()) do
+    table.insert(data.targeting, entry.value)
+  end
+  TargetBot.Looting.save(data.looting)
+  config.save(data)
+end
+
+TargetBot.allowCaveBot = function(time)
+  cavebotAllowance = now + time
+end
+
+TargetBot.disallowCaveBot = function()
+  cavebotAllowance = 0
+end
+
+TargetBot.getAttackConfig = function()
+  return attackConfig
+end
+
+TargetBot.isMageRunMode = function()
+  return attackConfig.style == "mageRun"
+end
+
+TargetBot.setMageRunLureState = function(active, center)
+  local nextActive = active and true or false
+  local nextCenter = nil
+  if center and center.x and center.y and center.z then
+    nextCenter = {x=center.x, y=center.y, z=center.z}
+  end
+
+  local centerChanged = false
+  if nextCenter then
+    centerChanged = not mageRunState.center
+      or mageRunState.center.x ~= nextCenter.x
+      or mageRunState.center.y ~= nextCenter.y
+      or mageRunState.center.z ~= nextCenter.z
+  elseif mageRunState.center then
+    centerChanged = true
+  end
+
+  if not nextActive or not mageRunState.active or centerChanged then
+    mageRunTargetSelection.params = nil
+    mageRunTargetSelection.expiresAt = 0
+    TargetBot.MageRunSnapshot.createdAt = 0
+    if TargetBot.resetMageRunMovement then
+      TargetBot.resetMageRunMovement()
+    end
+  end
+
+  mageRunState.active = nextActive
+  mageRunState.center = nextActive and nextCenter or nil
+end
+
+TargetBot.getMageRunCenter = function()
+  return mageRunState.center
+end
+
+TargetBot.isMageRunActive = function()
+  if attackConfig.style ~= "mageRun" then
+    return false
+  end
+  if not (CaveBot and CaveBot.isOn and CaveBot.isOn()) then
+    return false
+  end
+  if not mageRunState.active then
+    return false
+  end
+  local focused = CaveBot.actionList and CaveBot.actionList:getFocusedChild()
+  return focused and focused.action == "endlure" or false
+end
+
+TargetBot.Danger = function()
+  return dangerValue
+end
+
+TargetBot.lootStatus = function()
+  return looterStatus
+end
+
+
+-- attacks
+local lastSpell = 0
+local lastAttackSpell = 0
+
+TargetBot.saySpell = function(text, delay)
+  if type(text) ~= 'string' or text:len() < 1 then return end
+  if not delay then delay = 500 end
+  if g_game.getProtocolVersion() < 1090 then
+    lastAttackSpell = now -- pause attack spells, healing spells are more important
+  end
+  if lastSpell + delay < now then
+    say(text)
+    lastSpell = now
+    return true
+  end
+  return false
+end
+
+TargetBot.sayAttackSpell = function(text, delay)
+  if type(text) ~= 'string' or text:len() < 1 then return end
+  if not delay then delay = 2000 end
+  if lastAttackSpell + delay < now then
+    say(text)
+    lastAttackSpell = now
+    return true
+  end
+  return false
+end
+
+local lastItemUse = 0
+local lastRuneAttack = 0
+
+TargetBot.useItem = function(item, subType, target, delay)
+  if not delay then delay = 200 end
+  if lastItemUse + delay < now then
+    local thing = g_things.getThingType(item)
+    if not thing or not thing:isFluidContainer() then
+      subType = g_game.getClientVersion() >= 860 and 0 or 1
+    end
+    if g_game.getClientVersion() < 780 then
+      local tmpItem = g_game.findPlayerItem(item, subType)
+      if not tmpItem then return end
+      g_game.useWith(tmpItem, target, subType) -- using item from bp
+    else
+      g_game.useInventoryItemWith(item, target, subType) -- hotkey
+    end
+    lastItemUse = now
+  end
+end
+
+TargetBot.useAttackItem = function(item, subType, target, delay)
+  if not delay then delay = 2000 end
+  if lastRuneAttack + delay < now then
+    local thing = g_things.getThingType(item)
+    if not thing or not thing:isFluidContainer() then
+      subType = g_game.getClientVersion() >= 860 and 0 or 1
+    end
+    if g_game.getClientVersion() < 780 then
+      local tmpItem = g_game.findPlayerItem(item, subType)
+      if not tmpItem then return end
+      g_game.useWith(tmpItem, target, subType) -- using item from bp  
+    else
+      g_game.useInventoryItemWith(item, target, subType) -- hotkey
+    end
+    lastRuneAttack = now
+  end
+end
+
+UI.Separator()
+]=]
+FILES["targetbot/target.otui"] = [[TargetBotEntry < Label
+  background-color: alpha
+  text-offset: 2 0
+  focusable: true
+
+  $focus:
+    background-color: #00000055
+
+TargetBotDualLabel < Panel
+  height: 18
+  margin-left: 3
+  margin-right: 4
+
+  Label
+    id: left
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-auto-resize: true
+
+  Label
+    id: right
+    anchors.top: parent.top
+    anchors.right: parent.right
+    text-auto-resize: true
+
+TargetBotPanel < Panel
+  layout:
+    type: verticalBox
+    fit-children: true
+
+  HorizontalSeparator
+    margin-top: 2
+    margin-bottom: 5
+
+  TargetBotDualLabel
+    id: status
+  TargetBotDualLabel
+    id: target
+  TargetBotDualLabel
+    id: config
+  TargetBotDualLabel
+    id: danger
+
+  Panel
+    id: listPanel
+    height: 60
+
+    TextList
+      id: list
+      anchors.fill: parent
+      vertical-scrollbar: listScrollbar
+      margin-right: 15
+      focusable: false
+      auto-focus: first
+      
+    VerticalScrollBar
+      id: listScrollbar
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.right: parent.right
+      pixels-scroll: true
+      step: 10
+  
+  Panel
+    id: editor
+    visible: true
+    layout:
+      type: verticalBox
+      fit-children: true
+
+    Panel
+      id: buttons
+      height: 20
+      margin-top: 2
+
+      Button
+        id: add
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        text: Add
+        width: 56
+
+      Button
+        id: edit
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: Edit
+        width: 56
+
+      Button
+        id: remove
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        text: Remove
+        width: 56
+
+    Button
+      id: attackConfig
+      height: 20
+      margin-top: 2
+      text: CONFIG
+]]
+FILES["targetbot/walking.lua"] = [[-- Smart Mage Run v9.5 - rejected-step watchdog
+local dest
+local maxDist
+local params
+local lastMageRunStepAt = 0
+local mageRunPausedUntil = 0
+local mageRunCommandPos = nil
+local mageRunCommandAt = 0
+
+local function copyWalkParams(source)
+  local result = {}
+  for key, value in pairs(source or {}) do
+    result[key] = value
+  end
+  return result
+end
+
+local function sameWalkPosition(first, second)
+  return first and second
+    and first.x == second.x
+    and first.y == second.y
+    and first.z == second.z
+end
+
+local function copyWalkPosition(position)
+  if not position then return nil end
+  return {x = position.x, y = position.y, z = position.z}
+end
+
+local function getMageRunStepTimeout()
+  local timeout = 900
+
+  if player and player.getStepDuration then
+    local ok, duration = pcall(function()
+      return tonumber(player:getStepDuration())
+    end)
+    if ok and duration and duration > 0 then
+      timeout = math.max(700, math.min(1800, duration + 350))
+    end
+  end
+
+  return timeout
+end
+
+local function clearMageRunStepWatchdog()
+  mageRunCommandPos = nil
+  mageRunCommandAt = 0
+end
+
+local function checkMageRunStepWatchdog(position)
+  if not mageRunCommandPos or mageRunCommandAt <= 0 then
+    return false
+  end
+
+  if not sameWalkPosition(position, mageRunCommandPos) then
+    clearMageRunStepWatchdog()
+    return false
+  end
+
+  if now - mageRunCommandAt < getMageRunStepTimeout() then
+    return false
+  end
+
+  -- A step was sent but the character never left the original tile. Clear the
+  -- client walking state and force an immediate new Mage Run decision.
+  pcall(function()
+    player:stopAutoWalk()
+  end)
+  if g_game and g_game.stop then
+    pcall(function()
+      g_game.stop()
+    end)
+  end
+
+  if TargetBot.invalidateMageRunDestination then
+    TargetBot.invalidateMageRunDestination()
+  end
+
+  dest = nil
+  maxDist = nil
+  params = nil
+  lastMageRunStepAt = 0
+  clearMageRunStepWatchdog()
+  return true
+end
+
+TargetBot.walkTo = function(_dest, _maxDist, _params)
+  dest = _dest
+  maxDist = _maxDist
+  params = _params
+end
+
+TargetBot.stopWalk = function()
+  dest = nil
+  maxDist = nil
+  params = nil
+  clearMageRunStepWatchdog()
+end
+
+-- Small movement pause used by directional spells. It only prevents the next
+-- step from being issued; it does not cancel the current tile movement.
+TargetBot.pauseMageRunMovement = function(milliseconds)
+  milliseconds = math.max(0, tonumber(milliseconds) or 0)
+  mageRunPausedUntil = math.max(mageRunPausedUntil, now + milliseconds)
+end
+
+TargetBot.isMageRunMovementPaused = function()
+  return mageRunPausedUntil > now
+end
+
+-- Directional waves pause movement only long enough to face the selected side.
+-- As soon as the cast packet is sent, clear that pause and immediately reuse the
+-- current Mage Run destination. This prevents the character from standing still
+-- for the remainder of the old turn timeout after successfully casting a wave.
+TargetBot.resumeMageRunMovement = function(forceStep)
+  mageRunPausedUntil = 0
+
+  if not forceStep
+    or not (TargetBot.isMageRunActive and TargetBot.isMageRunActive())
+    or not dest then
+    return false
+  end
+
+  -- The previous step timestamp may belong to the movement made before turning.
+  -- Reset it so a stationary mage can leave on the very next instruction. The
+  -- player:isWalking() guard in TargetBot.walk still prevents duplicate steps.
+  lastMageRunStepAt = 0
+  return TargetBot.walk(true)
+end
+
+-- called every 100ms if targeting or looting is active
+TargetBot.walk = function(forceFast)
+  if not dest then return false end
+
+  local pos = player:getPosition()
+  if pos.z ~= dest.z then return false end
+
+  local walkParams = params or {}
+  local dist = math.max(math.abs(pos.x - dest.x), math.abs(pos.y - dest.y))
+
+  if walkParams.precision and walkParams.precision >= dist then
+    return true
+  end
+
+  if walkParams.marginMin and walkParams.marginMax then
+    if dist >= walkParams.marginMin and dist <= walkParams.marginMax then
+      return true
+    end
+  end
+
+  if TargetBot.isMageRunActive and TargetBot.isMageRunActive() then
+    if mageRunPausedUntil > now then
+      local emergencyMovement = TargetBot.isMageRunEmergencyMovement
+        and TargetBot.isMageRunEmergencyMovement()
+      if not emergencyMovement then
+        return true
+      end
+
+      -- Safety beats spell alignment. A wave may wait for the next opening,
+      -- but the mage must not stand still with monsters already closing in.
+      mageRunPausedUntil = 0
+    end
+
+    -- Mage Run intentionally uses normal one-tile walking instead of autoWalk.
+    -- This makes creature avoidance responsive and prevents map-click-like
+    -- routes from continuing toward a tile that has just become unsafe.
+    if checkMageRunStepWatchdog(pos) then
+      return false
+    end
+
+    if player:isWalking() then
+      return true
+    end
+
+    local minimumStepDelay = forceFast and 20 or 45
+    if now - lastMageRunStepAt < minimumStepDelay then
+      return true
+    end
+
+    local pathParams = copyWalkParams(walkParams)
+    -- The real movement path must respect creatures. Candidate evaluation may
+    -- look through them, but execution must never try to walk through one.
+    pathParams.ignoreCreatures = false
+
+    local path = getPath(pos, dest, maxDist, pathParams)
+    if not path or not path[1] then
+      -- A monster can occupy the route after the destination was selected.
+      -- Drop that decision immediately so the next TargetBot cycle chooses a
+      -- different escape tile instead of waiting at the blocked route.
+      if TargetBot.invalidateMageRunDestination then
+        TargetBot.invalidateMageRunDestination()
+      end
+      dest = nil
+      maxDist = nil
+      params = nil
+      clearMageRunStepWatchdog()
+      return false
+    end
+
+    lastMageRunStepAt = now
+    mageRunCommandPos = copyWalkPosition(pos)
+    mageRunCommandAt = now
+    walk(path[1])
+    return true
+  end
+
+  if player:isWalking() then return true end
+
+  local path = getPath(pos, dest, maxDist, walkParams)
+  if path and path[1] then
+    walk(path[1])
+    return true
+  end
+
+  return false
+end
+
+macro(20, function()
+  if not (TargetBot and TargetBot.isMageRunActive and TargetBot.isMageRunActive()) then
+    return
+  end
+  if not dest then
+    return
+  end
+  TargetBot.walk(true)
+end)
+]]
+FILES["vBot/AttackBot.lua"] = [=[-- setDefaultTab(storage.coreSettings.joinBot and "Cave" or "Target")
+setDefaultTab("Target")
+-- UI.Separator()
+-- locales
+local panelName = "AttackBot"
+local currentSettings
+local showSettings = false
+local showItem = false
+local category = 1
+local patternCategory = 1
+local pattern = 1
+local mainWindow
+
+-- label library
+
+local categories = {
+  "Targeted Spell (exori hur, exori flam, etc)",
+  "Area Rune (avalanche, great fireball, etc)",
+  "Targeted Rune (sudden death, icycle, etc)",
+  "Empowerment (utito tempo, etc)",
+  "Absolute Spell (exori, hells core, etc)",
+  "Challenge / Support (exeta res, exori moe, exori kor, etc)",
+}
+
+
+local function resolvePatternCategory(selectedCategory)
+  if selectedCategory == 4 or selectedCategory == 6 then
+    return 3
+  elseif selectedCategory == 5 then
+    return 4
+  end
+  return selectedCategory
+end
+
+local patterns = {
+  -- targeted spells
+  {
+    "1 Sqm Range (exori ico)",
+    "2 Sqm Range",
+    "3 Sqm Range (strike spells)",
+    "4 Sqm Range (exori san)",
+    "5 Sqm Range (exori hur)",
+    "6 Sqm Range",
+    "7 Sqm Range (exori con)",
+    "8 Sqm Range",
+    "9 Sqm Range",
+    "10 Sqm Range"
+  },
+  -- area runes
+  {
+    "Cross (explosion)",
+    "Bomb (fire bomb)",
+    "Ball (gfb, avalanche)"
+  },
+  -- empowerment/targeted rune
+  {
+    "1 Sqm Range",
+    "2 Sqm Range",
+    "3 Sqm Range",
+    "4 Sqm Range",
+    "5 Sqm Range",
+    "6 Sqm Range",
+    "7 Sqm Range",
+    "8 Sqm Range",
+    "9 Sqm Range",
+    "10 Sqm Range",
+  },
+  -- absolute
+  {
+    "Adjacent (exori, exori gran)",
+    "3x3 Wave (vis hur, tera hur)", 
+    "Small Area (mas san, exori mas)",
+    "Medium Area (mas flam, mas frigo)",
+    "Large Area (mas vis, mas tera)",
+    "Short Beam (vis lux)", 
+    "Large Beam (gran vis lux)", 
+    "Sweep (exori min)", -- 8
+    "Small Wave (gran frigo hur)",
+    "Big Wave (flam hur, frigo hur)",
+    "Huge Wave (gran flam hur)",
+  }
+}
+
+  -- spellPatterns[category][pattern][1 - normal, 2 - safe]
+local spellPatterns = {
+  {}, -- blank, wont be used
+  -- Area Runes,
+  { 
+    {     -- cross
+     [[ 
+      010
+      111
+      010
+     ]],
+     -- cross SAFE
+     [[
+       01110
+       01110
+       11111
+       11111
+       11111
+       01110
+       01110
+     ]]
+    },
+    { -- bomb
+      [[
+        111
+        111
+        111
+      ]],
+      -- bomb SAFE
+      [[
+        11111
+        11111
+        11111
+        11111
+        11111
+      ]]
+    },
+    { -- ball
+      [[
+        0011100
+        0111110
+        1111111
+        1111111
+        1111111
+        0111110
+        0011100
+      ]],
+      -- ball SAFE
+      [[
+        000111000
+        001111100
+        011111110
+        111111111
+        111111111
+        111111111
+        011111110
+        001111100
+        000111000
+      ]]
+    },
+  },
+  {}, -- blank, wont be used
+  -- Absolute
+  {
+    {-- adjacent
+      [[
+        111
+        111
+        111
+      ]],
+      -- adjacent SAFE
+      [[
+        11111
+        11111
+        11111
+        11111
+        11111
+      ]]
+    },
+    { -- 3x3 Wave
+      [[
+        0000NNN0000
+        0000NNN0000
+        0000NNN0000
+        00000N00000
+        WWW00N00EEE
+        WWWWW0EEEEE
+        WWW00S00EEE
+        00000S00000
+        0000SSS0000
+        0000SSS0000
+        0000SSS0000
+      ]],
+      -- 3x3 Wave SAFE
+      [[
+        0000NNNNN0000
+        0000NNNNN0000
+        0000NNNNN0000
+        0000NNNNN0000
+        WWWW0NNN0EEEE
+        WWWWWNNNEEEEE
+        WWWWWW0EEEEEE
+        WWWWWSSSEEEEE
+        WWWW0SSS0EEEE
+        0000SSSSS0000
+        0000SSSSS0000
+        0000SSSSS0000
+        0000SSSSS0000
+      ]]
+    },
+    { -- small area
+      [[
+        0011100
+        0111110
+        1111111
+        1111111
+        1111111
+        0111110
+        0011100
+      ]],
+      -- small area SAFE
+      [[
+        000111000
+        001111100
+        011111110
+        111111111
+        111111111
+        111111111
+        011111110
+        001111100
+        000111000
+      ]]
+    },
+    { -- medium area
+      [[
+        00000100000
+        00011111000
+        00111111100
+        01111111110
+        01111111110
+        11111111111
+        01111111110
+        01111111110
+        00111111100
+        00001110000
+        00000100000
+      ]],
+      -- medium area SAFE
+      [[
+        0000011100000
+        0000111110000
+        0001111111000
+        0011111111100
+        0111111111110
+        0111111111110
+        1111111111111
+        0111111111110
+        0111111111110
+        0011111111100
+        0001111111000
+        0000111110000
+        0000011100000
+      ]]
+    },
+    { -- large area
+      [[
+        0000001000000
+        0000011100000
+        0000111110000
+        0001111111000
+        0011111111100
+        0111111111110
+        1111111111111
+        0111111111110
+        0011111111100
+        0001111111000
+        0000111110000
+        0000011100000
+        0000001000000
+      ]],
+      -- large area SAFE
+      [[
+        000000010000000
+        000000111000000
+        000001111100000
+        000011111110000
+        000111111111000
+        001111111111100
+        011111111111110
+        111111111111111
+        011111111111110
+        001111111111100
+        000111111111000
+        000011111110000
+        000001111100000
+        000000111000000
+        000000010000000
+      ]]
+    },
+    { -- short beam
+      [[
+        00000N00000
+        00000N00000
+        00000N00000
+        00000N00000
+        00000N00000
+        WWWWW0EEEEE
+        00000S00000
+        00000S00000
+        00000S00000
+        00000S00000
+        00000S00000
+      ]],
+      -- short beam SAFE
+      [[
+        00000NNN00000
+        00000NNN00000
+        00000NNN00000
+        00000NNN00000
+        00000NNN00000
+        WWWWWNNNEEEEE
+        WWWWWW0EEEEEE
+        00000SSS00000
+        00000SSS00000
+        00000SSS00000
+        00000SSS00000
+        00000SSS00000
+        00000SSS00000
+      ]]
+    },
+    { -- large beam
+      [[
+        0000000N0000000
+        0000000N0000000
+        0000000N0000000
+        0000000N0000000
+        0000000N0000000
+        0000000N0000000
+        0000000N0000000
+        WWWWWWW0EEEEEEE
+        0000000S0000000
+        0000000S0000000
+        0000000S0000000
+        0000000S0000000
+        0000000S0000000
+        0000000S0000000
+        0000000S0000000
+      ]],
+      -- large beam SAFE
+      [[
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        WWWWWWWNNNEEEEEEE
+        WWWWWWWW0EEEEEEEE
+        WWWWWWWSSSEEEEEEE
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+      ]],
+    },
+    {}, -- sweep, wont be used
+    { -- small wave
+      [[
+        00NNN00
+        00NNN00
+        WW0N0EE
+        WWW0EEE
+        WW0S0EE
+        00SSS00
+        00SSS00
+      ]],
+      -- small wave SAFE
+      [[
+        00NNNNN00
+        00NNNNN00
+        WWNNNNNEE
+        WWWWNEEEE
+        WWWW0EEEE
+        WWWWSEEEE
+        WWSSSSSEE
+        00SSSSS00
+        00SSSSS00
+      ]]
+    },
+    { -- large wave
+      [[
+        000NNNNN000
+        000NNNNN000
+        0000NNN0000
+        WW00NNN00EE
+        WWWW0N0EEEE
+        WWWWW0EEEEE
+        WWWW0S0EEEE
+        WW00SSS00EE
+        0000SSS0000
+        000SSSSS000
+        000SSSSS000
+      ]],
+      [[
+        000NNNNNNN000
+        000NNNNNNN000
+        000NNNNNNN000
+        WWWWNNNNNEEEE
+        WWWWNNNNNEEEE
+        WWWWWNNNEEEEE
+        WWWWWW0EEEEEE
+        WWWWWSSSEEEEE
+        WWWWSSSSSEEEE
+        WWWWSSSSSEEEE
+        000SSSSSSS000
+        000SSSSSSS000
+        000SSSSSSS000
+      ]]
+    },
+    { -- huge wave
+      [[
+        0000NNNNN0000
+        0000NNNNN0000
+        00000NNN00000
+        00000NNN00000
+        WW0000N0000EE
+        WWWW00N00EEEE
+        WWWWWW0EEEEEE
+        WWWW00S00EEEE
+        WW0000S0000EE
+        00000SSS00000
+        00000SSS00000
+        0000SSSSS0000
+        0000SSSSS0000
+      ]],
+      [[
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        0000000NNN0000000
+        WWWWWWWNNNEEEEEEE
+        WWWWWWWW0EEEEEEEE
+        WWWWWWWSSSEEEEEEE
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+        0000000SSS0000000
+      ]]
+    }
+  }
+}
+
+-- direction patterns
+local ek = (voc() == 1 or voc() == 11) and true
+
+local posN = ek and [[
+  111
+  000
+  000
+]] or [[
+  00011111000
+  00011111000
+  00011111000
+  00011111000
+  00000100000
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+]]
+
+local posE = ek and [[
+  001
+  001
+  001
+]] or   [[
+  00000000000
+  00000000000
+  00000000000
+  00000001111
+  00000001111
+  00000011111
+  00000001111
+  00000001111
+  00000000000
+  00000000000
+  00000000000
+]]
+local posS = ek and [[
+  000
+  000
+  111
+]] or   [[
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+  00000000000
+  00000100000
+  00011111000
+  00011111000
+  00011111000
+  00011111000
+]]
+local posW = ek and [[
+  100
+  100
+  100
+]] or   [[
+  00000000000
+  00000000000
+  00000000000
+  11110000000
+  11110000000
+  11111000000
+  11110000000
+  11110000000
+  00000000000
+  00000000000
+  00000000000
+]]
+
+-- AttackBotConfig
+-- create blank profiles 
+if not AttackBotConfig[panelName] or not AttackBotConfig[panelName][1] or #AttackBotConfig[panelName] ~= 5 then
+  AttackBotConfig[panelName] = {
+    [1] = {
+      enabled = false,
+      attackTable = {},
+      ignoreMana = true,
+      Kills = false,
+      Rotate = false,
+      name = "Profile #1",
+      Cooldown = true,
+      Visible = true,
+      OldSchool = false,
+      pvpMode = false,
+      KillsAmount = 1,
+      PvpSafe = true,
+      BlackListSafe = false,
+      AntiRsRange = 5
+    },
+    [2] = {
+      enabled = false,
+      attackTable = {},
+      ignoreMana = true,
+      Kills = false,
+      Rotate = false,
+      name = "Profile #2",
+      Cooldown = true,
+      Visible = true,
+      OldSchool = false,
+      pvpMode = false,
+      KillsAmount = 1,
+      PvpSafe = true,
+      BlackListSafe = false,
+      AntiRsRange = 5
+    },
+    [3] = {
+      enabled = false,
+      attackTable = {},
+      ignoreMana = true,
+      Kills = false,
+      Rotate = false,
+      name = "Profile #3",
+      Cooldown = true,
+      Visible = true,
+      OldSchool = false,
+      pvpMode = false,
+      KillsAmount = 1,
+      PvpSafe = true,
+      BlackListSafe = false,
+      AntiRsRange = 5
+    },
+    [4] = {
+      enabled = false,
+      attackTable = {},
+      ignoreMana = true,
+      Kills = false,
+      Rotate = false,
+      name = "Profile #4",
+      Cooldown = true,
+      Visible = true,
+      OldSchool = false,
+      pvpMode = false,
+      KillsAmount = 1,
+      PvpSafe = true,
+      BlackListSafe = false,
+      AntiRsRange = 5
+    },
+    [5] = {
+      enabled = false,
+      attackTable = {},
+      ignoreMana = true,
+      Kills = false,
+      Rotate = false,
+      name = "Profile #5",
+      Cooldown = true,
+      Visible = true,
+      OldSchool = false,
+      pvpMode = false,
+      KillsAmount = 1,
+      PvpSafe = true,
+      BlackListSafe = false,
+      AntiRsRange = 5
+    },
+  }
+end
+  
+if not AttackBotConfig.currentBotProfile or AttackBotConfig.currentBotProfile == 0 or AttackBotConfig.currentBotProfile > 5 then 
+  AttackBotConfig.currentBotProfile = 1
+end
+
+-- create panel UI
+ui = UI.createWidget("AttackBotBotPanel")
+
+-- finding correct table, manual unfortunately
+local setActiveProfile = function()
+  local n = AttackBotConfig.currentBotProfile
+  currentSettings = AttackBotConfig[panelName][n]
+end
+setActiveProfile()
+
+if not currentSettings.AntiRsRange then
+  currentSettings.AntiRsRange = 5 
+end
+
+local setProfileName = function()
+  ui.name:setText(currentSettings.name)
+end
+
+-- small UI elements
+ui.title.onClick = function(widget)
+  currentSettings.enabled = not currentSettings.enabled
+  widget:setOn(currentSettings.enabled)
+  vBotConfigSave("atk")
+end
+  
+ui.settings.onClick = function(widget)
+  mainWindow:show()
+  mainWindow:raise()
+  mainWindow:focus()
+end
+
+  mainWindow = UI.createWindow("AttackBotWindow")
+  mainWindow:hide()
+
+  local panel = mainWindow.mainPanel
+  local settingsUI = mainWindow.settingsPanel
+  local editingEntry = nil
+
+  local function syncAttackTableFromUi(saveNow)
+    currentSettings.attackTable = {}
+    for _, child in ipairs(panel.entryList:getChildren()) do
+      table.insert(currentSettings.attackTable, child.params)
+    end
+    if saveNow then
+      vBotConfigSave("atk")
+    end
+  end
+
+  mainWindow.onVisibilityChange = function(widget, visible)
+    if not visible then
+      syncAttackTableFromUi(true)
+    end
+  end
+
+  -- main panel
+
+    -- functions
+    function toggleSettings()
+      panel:setVisible(not showSettings)
+      mainWindow.shooterLabel:setVisible(not showSettings)
+      settingsUI:setVisible(showSettings)
+      mainWindow.settingsLabel:setVisible(showSettings)
+      mainWindow.settings:setText(showSettings and "Back" or "Settings")
+    end
+    toggleSettings()
+
+    mainWindow.settings.onClick = function()
+      showSettings = not showSettings
+      toggleSettings()
+    end
+
+    function toggleItem()
+      panel.monsters:setWidth(showItem and 405 or 341)
+      panel.itemId:setVisible(showItem)
+      panel.spellName:setVisible(not showItem)
+    end
+    toggleItem()
+
+    function setCategoryText()
+      panel.category.description:setText(categories[category])
+    end
+    setCategoryText()
+
+    function setPatternText()
+      local categoryPatterns = patterns[patternCategory]
+      local patternText = categoryPatterns and categoryPatterns[pattern]
+      if not patternText then
+        patternCategory = 3
+        pattern = 1
+        categoryPatterns = patterns[patternCategory]
+        patternText = categoryPatterns and categoryPatterns[pattern] or "1 Sqm Range"
+      end
+      panel.range.description:setText(patternText)
+    end
+    setPatternText()
+
+    local function updateEntryButtonText()
+      panel.addEntry:setText(editingEntry and "Save" or "New")
+    end
+    updateEntryButtonText()
+
+    -- in/de/crementation buttons
+    panel.previousCategory.onClick = function()
+      if category == 1 then
+        category = #categories
+      else
+        category = category - 1
+      end
+
+      showItem = (category == 2 or category == 3) and true or false
+      patternCategory = resolvePatternCategory(category)
+      pattern = 1
+      toggleItem()
+      setPatternText()
+      setCategoryText()
+    end
+    panel.nextCategory.onClick = function()
+      if category == #categories then
+        category = 1 
+      else
+        category = category + 1
+      end
+
+      showItem = (category == 2 or category == 3) and true or false
+      patternCategory = resolvePatternCategory(category)
+      pattern = 1
+      toggleItem()
+      setPatternText()
+      setCategoryText()
+    end
+    panel.previousSource.onClick = function()
+      warn("[AttackBot] TODO, reserved for future use.")
+    end
+    panel.nextSource.onClick = function()
+      warn("[AttackBot] TODO, reserved for future use.")
+    end
+    panel.previousRange.onClick = function()
+      local t = patterns[patternCategory]
+      if pattern == 1 then
+        pattern = #t 
+      else
+        pattern = pattern - 1
+      end
+      setPatternText()
+    end
+    panel.nextRange.onClick = function()
+      local t = patterns[patternCategory]
+      if pattern == #t then
+        pattern = 1 
+      else
+        pattern = pattern + 1
+      end
+      setPatternText()
+    end
+    -- eo in/de/crementation
+
+  ------- [[core table function]] -------
+    function setupWidget(widget)
+      local params = widget.params
+      params.stationaryTime = math.max(0, tonumber(params.stationaryTime) or 0)
+
+      widget:setText(params.description)
+      if params.itemId > 0 then
+        widget.spell:setVisible(false)
+        widget.id:setVisible(true)
+        widget.id:setItemId(params.itemId)
+      end
+      widget:setTooltip(params.tooltip)
+      widget.remove.onClick = function()
+        panel.up:setEnabled(false)
+        panel.down:setEnabled(false)
+        widget:destroy()
+        syncAttackTableFromUi(true)
+      end
+      widget.enabled:setChecked(params.enabled)
+      widget.enabled.onClick = function()
+        params.enabled = not params.enabled
+        widget.enabled:setChecked(params.enabled)
+        syncAttackTableFromUi(true)
+      end
+      -- will serve as edit
+      widget.onDoubleClick = function(widget)
+        editingEntry = {
+          index = panel.entryList:getChildIndex(widget),
+          enabled = params.enabled
+        }
+        panel.monsters:setText(params.creatures)
+        panel.manaPercent:setValue(params.mana)
+        panel.creatures:setValue(params.count)
+        panel.minHp:setValue(params.minHp)
+        panel.maxHp:setValue(params.maxHp)
+        panel.cooldown:setValue(params.cooldown)
+        panel.stationaryTime:setValue(params.stationaryTime or 0)
+        showItem = params.itemId > 100 and true or false
+        panel.itemId:setItemId(params.itemId)
+        panel.spellName:setText(params.spell or "")
+        panel.orMore:setChecked(params.orMore)
+        toggleItem()
+        category = params.category
+        patternCategory = params.patternCategory
+        pattern = params.pattern
+        setPatternText()
+        setCategoryText()
+        updateEntryButtonText()
+        widget:destroy()
+      end
+      widget.onClick = function(widget)
+        if #panel.entryList:getChildren() == 1 then
+          panel.up:setEnabled(false)
+          panel.down:setEnabled(false)
+        elseif panel.entryList:getChildIndex(widget) == 1 then
+          panel.up:setEnabled(false)
+          panel.down:setEnabled(true)
+        elseif panel.entryList:getChildIndex(widget) == panel.entryList:getChildCount() then
+          panel.up:setEnabled(true)
+          panel.down:setEnabled(false)
+        else
+          panel.up:setEnabled(true)
+          panel.down:setEnabled(true)
+        end
+      end
+    end
+
+
+    -- refreshing values
+    function refreshAttacks()
+      if not currentSettings.attackTable then return end
+
+      panel.entryList:destroyChildren()
+      for _, entry in ipairs(currentSettings.attackTable) do
+        local label = UI.createWidget("AttackEntry", panel.entryList)
+        label.params = entry
+        setupWidget(label)
+      end
+    end
+    refreshAttacks()
+    panel.up:setEnabled(false)
+    panel.down:setEnabled(false)
+
+    -- adding values
+    panel.addEntry.onClick = function(wdiget)
+      -- first variables
+      local creatures = panel.monsters:getText():lower()
+      local monsters = (creatures:len() == 0 or creatures == "*" or creatures == "monster names") and true or string.split(creatures, ",")
+      if monsters ~= true then
+        for i, monsterName in ipairs(monsters) do
+          monsters[i] = monsterName:trim():lower()
+        end
+      end
+      local mana = panel.manaPercent:getValue()
+      local count = panel.creatures:getValue()
+      local minHp = panel.minHp:getValue()
+      local maxHp = panel.maxHp:getValue()
+      local cooldown = panel.cooldown:getValue()
+      local stationaryTime = panel.stationaryTime:getValue()
+      local itemId = panel.itemId:getItemId()
+      local spell = panel.spellName:getText()
+      local tooltip = monsters ~= true and creatures
+      local orMore = panel.orMore:isChecked()
+
+      -- validation
+      if showItem and itemId < 100 then
+        return warn("[AttackBot]: please fill item ID!")
+      elseif not showItem and (spell:lower() == "spell name" or spell:len() == 0) then
+        return warn("[AttackBot]: please fill spell name!")
+      end
+
+      local regex = patternCategory ~= 1 and [[^[^\(]+]] or [[^[^R]+]]
+      local type = regexMatch(patterns[patternCategory][pattern], regex)[1][1]:trim()
+      regex = [[^[^ ]+]]
+      local categoryName = regexMatch(categories[category], regex)[1][1]:trim():lower()
+      local specificMonsters = monsters == true and "Any Creatures" or "Creatures"
+      local attackType = showItem and "rune "..itemId or spell
+
+      local countDescription = orMore and count.."+" or count
+      local stationaryDescription = stationaryTime > 0 and ", still "..stationaryTime.."ms" or ""
+
+      local params = {
+        creatures = creatures,
+        monsters = monsters,
+        mana = mana,
+        count = count,
+        minHp = minHp,
+        maxHp = maxHp,
+        cooldown = cooldown,
+        stationaryTime = stationaryTime,
+        itemId = itemId,
+        spell = spell,
+        enabled = editingEntry and editingEntry.enabled or true,
+        category = category,
+        patternCategory = patternCategory,
+        pattern = pattern,
+        tooltip = tooltip,
+        orMore = orMore,
+        description = '['..type..'] '..countDescription.. ' '..specificMonsters..': '..attackType..', '..categoryName..' ('..minHp..'%-'..maxHp..'%)'..stationaryDescription
+      }
+
+      local label = UI.createWidget("AttackEntry", panel.entryList)
+      label.params = params
+      setupWidget(label)
+      if editingEntry and editingEntry.index then
+        local targetIndex = math.max(1, math.min(editingEntry.index, panel.entryList:getChildCount()))
+        panel.entryList:moveChildToIndex(label, targetIndex)
+        panel.entryList:focusChild(label)
+        panel.entryList:ensureChildVisible(label)
+      end
+      syncAttackTableFromUi(true)
+      resetFields()
+    end
+
+    -- moving values
+    -- up
+    panel.up.onClick = function(widget)
+      local focused = panel.entryList:getFocusedChild()
+      local n = panel.entryList:getChildIndex(focused)
+
+      if n-1 == 1 then
+        widget:setEnabled(false)
+      end
+      panel.down:setEnabled(true)
+      panel.entryList:moveChildToIndex(focused, n-1)
+      panel.entryList:ensureChildVisible(focused)
+      syncAttackTableFromUi(true)
+    end
+    -- down
+    panel.down.onClick = function(widget)
+      local focused = panel.entryList:getFocusedChild()
+      local n = panel.entryList:getChildIndex(focused)
+
+      if n + 1 == panel.entryList:getChildCount() then
+        widget:setEnabled(false)
+      end
+      panel.up:setEnabled(true)
+      panel.entryList:moveChildToIndex(focused, n+1)
+      panel.entryList:ensureChildVisible(focused)
+      syncAttackTableFromUi(true)
+    end
+
+  -- [[settings panel]] --
+  settingsUI.profileName.onTextChange = function(widget, text)
+    currentSettings.name = text
+    setProfileName()
+  end
+  settingsUI.IgnoreMana.onClick = function(widget)
+    currentSettings.ignoreMana = not currentSettings.ignoreMana
+    settingsUI.IgnoreMana:setChecked(currentSettings.ignoreMana)
+  end
+  settingsUI.Rotate.onClick = function(widget)
+    currentSettings.Rotate = not currentSettings.Rotate
+    settingsUI.Rotate:setChecked(currentSettings.Rotate)
+  end
+  settingsUI.Kills.onClick = function(widget)
+    currentSettings.Kills = not currentSettings.Kills
+    settingsUI.Kills:setChecked(currentSettings.Kills)
+  end
+  settingsUI.Cooldown.onClick = function(widget)
+    currentSettings.Cooldown = not currentSettings.Cooldown
+    settingsUI.Cooldown:setChecked(currentSettings.Cooldown)
+  end
+  settingsUI.Visible.onClick = function(widget)
+    currentSettings.Visible = not currentSettings.Visible
+    settingsUI.Visible:setChecked(currentSettings.Visible)
+  end
+  settingsUI.OldSchool.onClick = function(widget)
+    currentSettings.OldSchool = not currentSettings.OldSchool
+    settingsUI.OldSchool:setChecked(currentSettings.OldSchool)
+  end
+  settingsUI.PvpMode.onClick = function(widget)
+    currentSettings.pvpMode = not currentSettings.pvpMode
+    settingsUI.PvpMode:setChecked(currentSettings.pvpMode)
+  end
+  settingsUI.PvpSafe.onClick = function(widget)
+    currentSettings.PvpSafe = not currentSettings.PvpSafe
+    settingsUI.PvpSafe:setChecked(currentSettings.PvpSafe)
+  end
+  settingsUI.Training.onClick = function(widget)
+    currentSettings.Training = not currentSettings.Training
+    settingsUI.Training:setChecked(currentSettings.Training)
+  end
+  settingsUI.BlackListSafe.onClick = function(widget)
+    currentSettings.BlackListSafe = not currentSettings.BlackListSafe
+    settingsUI.BlackListSafe:setChecked(currentSettings.BlackListSafe)
+  end
+  settingsUI.KillsAmount.onValueChange = function(widget, value)
+    currentSettings.KillsAmount = value
+  end
+  settingsUI.AntiRsRange.onValueChange = function(widget, value)
+    currentSettings.AntiRsRange = value
+  end
+
+
+   -- window elements
+  mainWindow.closeButton.onClick = function()
+    showSettings = false
+    toggleSettings()
+    resetFields()
+    mainWindow:hide()
+  end
+
+  -- core functions
+  function resetFields()
+    editingEntry = nil
+    showItem = false
+    toggleItem()
+    pattern = 1
+    patternCategory = 1
+    category = 1
+    setPatternText()
+    setCategoryText()
+    panel.manaPercent:setText(1)
+    panel.creatures:setText(1)
+    panel.minHp:setValue(0)
+    panel.maxHp:setValue(100)
+    panel.cooldown:setText(1000)
+    panel.stationaryTime:setValue(0)
+    panel.monsters:setText("monster names")
+    panel.itemId:setItemId(0)
+    panel.spellName:setText("spell name")
+    panel.orMore:setChecked(false)
+    updateEntryButtonText()
+  end
+  resetFields()
+
+  function loadSettings()
+    -- BOT panel
+    ui.title:setOn(currentSettings.enabled)
+    setProfileName()
+    -- main panel
+    refreshAttacks()
+    -- settings
+    settingsUI.profileName:setText(currentSettings.name)
+    settingsUI.Visible:setChecked(currentSettings.Visible)
+    settingsUI.OldSchool:setChecked(currentSettings.OldSchool)
+    settingsUI.Cooldown:setChecked(currentSettings.Cooldown)
+    settingsUI.PvpMode:setChecked(currentSettings.pvpMode)
+    settingsUI.PvpSafe:setChecked(currentSettings.PvpSafe)
+    settingsUI.BlackListSafe:setChecked(currentSettings.BlackListSafe)
+    settingsUI.AntiRsRange:setValue(currentSettings.AntiRsRange)
+    settingsUI.IgnoreMana:setChecked(currentSettings.ignoreMana)
+    settingsUI.Rotate:setChecked(currentSettings.Rotate)
+    settingsUI.Kills:setChecked(currentSettings.Kills)
+    settingsUI.KillsAmount:setValue(currentSettings.KillsAmount)
+    settingsUI.Training:setChecked(currentSettings.Training)
+  end
+  loadSettings()
+
+  local activeProfileColor = function()
+    for i=1,5 do
+      if i == AttackBotConfig.currentBotProfile then
+        ui[i]:setColor("green")
+      else
+        ui[i]:setColor("white")
+      end
+    end
+  end
+  activeProfileColor()
+
+  local profileChange = function()
+    setActiveProfile()
+    activeProfileColor()
+    loadSettings()
+    resetFields()
+    vBotConfigSave("atk")
+  end
+
+  for i=1,5 do
+    local button = ui[i]
+      button.onClick = function()
+      AttackBotConfig.currentBotProfile = i
+      profileChange()
+    end
+  end
+
+    -- public functions
+    AttackBot = {} -- global table
+  
+    AttackBot.isOn = function()
+      return currentSettings.enabled
+    end
+    
+    AttackBot.isOff = function()
+      return not currentSettings.enabled
+    end
+    
+    AttackBot.setOff = function()
+      currentSettings.enabled = false
+      ui.title:setOn(currentSettings.enabled)
+      vBotConfigSave("atk")
+    end
+    
+    AttackBot.setOn = function()
+      currentSettings.enabled = true
+      ui.title:setOn(currentSettings.enabled)
+      vBotConfigSave("atk")
+    end
+    
+    AttackBot.getActiveProfile = function()
+      return AttackBotConfig.currentBotProfile -- returns number 1-5
+    end
+  
+    AttackBot.setActiveProfile = function(n)
+      if not n or not tonumber(n) or n < 1 or n > 5 then
+        return error("[AttackBot] wrong profile parameter! should be 1 to 5 is " .. n)
+      else
+        AttackBotConfig.currentBotProfile = n
+        profileChange()
+      end
+    end
+
+    AttackBot.show = function()
+      mainWindow:show()
+      mainWindow:raise()
+      mainWindow:focus()
+    end
+
+
+-- otui covered, now support functions
+function getPattern(category, pattern, safe)
+  safe = safe and 2 or 1
+
+  return spellPatterns[category][pattern][safe]
+end
+
+
+function getMonstersInArea(category, posOrCreature, pattern, minHp, maxHp, safePattern, monsterNamesTable)
+  -- monsterNamesTable can be nil
+  local monsters = 0
+  local t = {}
+  if monsterNamesTable == true or not monsterNamesTable then
+    t = {}
+  else
+    t = monsterNamesTable
+  end
+
+  if safePattern then
+    for i, spec in pairs(getSpectators(posOrCreature, safePattern)) do
+      if spec ~= player and (spec:isPlayer() and not spec:isPartyMember()) then
+        return 0
+      end
+    end
+  end 
+
+  if category == 1 or category == 3 or category == 4 then
+    if category == 1 or category == 3 then
+      local name = getTarget() and getTarget():getName()
+      if #t ~= 0 and not table.find(t, name, true) then
+        return 0
+      end
+    end
+    for i, spec in pairs(getSpectators()) do
+      local specHp = spec:getHealthPercent()
+      local name = spec:getName():lower()
+      monsters = spec:isMonster() and specHp >= minHp and specHp <= maxHp and (#t == 0 or table.find(t, name, true)) and
+                 (g_game.getClientVersion() < 960 or spec:getType() < 3) and monsters + 1 or monsters
+    end
+    return monsters
+  end
+
+  for i, spec in pairs(getSpectators(posOrCreature, pattern)) do
+      if spec ~= player then
+        local specHp = spec:getHealthPercent()
+        local name = spec:getName():lower()
+        monsters = spec:isMonster() and specHp >= minHp and specHp <= maxHp and (#t == 0 or table.find(t, name)) and
+                   (g_game.getClientVersion() < 960 or spec:getType() < 3) and monsters + 1 or monsters
+      end
+  end
+
+  return monsters
+end
+
+-- for area runes only
+-- should return valid targets number (int) and position
+function getBestTileByPattern(pattern, minHp, maxHp, safePattern, monsterNamesTable)
+  local tiles = g_map.getTiles(posz())
+  local targetTile = {amount=0,pos=false}
+
+  for i, tile in pairs(tiles) do
+    local tPos = tile:getPosition()
+    local distance = distanceFromPlayer(tPos)
+    if tile:canShoot() and tile:isWalkable() and distance < 4 then
+      local amount = getMonstersInArea(2, tPos, pattern, minHp, maxHp, safePattern, monsterNamesTable)
+      if amount > targetTile.amount then
+        targetTile = {amount=amount,pos=tPos}
+      end
+    end
+  end
+
+  return targetTile.amount > 0 and targetTile or false
+end
+
+function executeAttackBotAction(categoryOrPos, idOrFormula, cooldown)
+  cooldown = cooldown or 0
+  if categoryOrPos == 1 or categoryOrPos == 4 or categoryOrPos == 5 or categoryOrPos == 6 then
+    cast(idOrFormula, cooldown)
+  elseif categoryOrPos == 3 then
+    if currentSettings.OldSchool then
+      local item = findItem(idOrFormula)
+      if item then
+        useWith(item, target())
+      end
+    else
+      useWith(idOrFormula, target())
+    end
+  end
+end
+
+local function getAreaRuneTileThing(tile)
+  if not tile then return nil end
+
+  local thing = tile.getTopUseThing and tile:getTopUseThing() or nil
+  if thing then return thing end
+
+  return tile.getTopThing and tile:getTopThing() or nil
+end
+
+local function useAttackBotAreaRuneOnTile(itemId, targetPos)
+  if not itemId or not targetPos then
+    return false
+  end
+
+  local tile = g_map.getTile(targetPos)
+  local targetThing = getAreaRuneTileThing(tile)
+  if not targetThing then
+    return false
+  end
+
+  schedule(5, function()
+    useWith(itemId, targetThing)
+  end)
+  return true
+end
+
+local directionalAbsolutePatterns = {
+  [2] = true,  -- 3x3 Wave
+  [6] = true,  -- Short Beam
+  [7] = true,  -- Large Beam
+  [8] = true,  -- Sweep
+  [9] = true,  -- Small Wave
+  [10] = true, -- Big Wave
+  [11] = true, -- Huge Wave
+}
+local pendingRotateCast = nil
+local attackBotTurnRetryMs = 35
+local attackBotTurnTimeoutMs = 500
+local attackBotMovementPauseMs = 140
+local directionalScanCacheMs = 25
+local directionalScanCache = {
+  updatedAt = 0,
+  entry = nil,
+  bestSide = 0,
+  bestDir = nil,
+}
+local directionalPatternCache = {}
+local directionPatternLetters = {
+  [0] = "N",
+  [1] = "E",
+  [2] = "S",
+  [3] = "W"
+}
+
+local function matchesEntryCount(entry, amount)
+  if entry.orMore then
+    return amount >= entry.count
+  end
+  return amount == entry.count
+end
+
+local supportSpellRules = {
+  ["exeta res"] = {
+    mode = "area"
+  },
+  ["exeta amp res"] = {
+    mode = "ranged",
+    duration = 12000,
+    maxTargets = 3
+  },
+  ["exana amp res"] = {
+    mode = "ranged",
+    duration = 8000,
+    maxTargets = 3
+  },
+  ["exori moe"] = {
+    mode = "aoeDebuff",
+    cast = "exori moe",
+    duration = 16000,
+    sharedCooldown = 12000,
+    patternCategory = 2,
+    pattern = 3
+  },
+  ["exori kor"] = {
+    mode = "aoeDebuff",
+    cast = "exori kor",
+    duration = 16000,
+    sharedCooldown = 12000,
+    patternCategory = 2,
+    pattern = 3
+  },
+}
+
+local supportSpellAliases = {
+  ["expose weakness"] = "exori moe",
+  ["sap strength"] = "exori kor"
+}
+
+storage.AttackBotSupport = storage.AttackBotSupport or {}
+storage.AttackBotSupport.effectIcons = storage.AttackBotSupport.effectIcons or {}
+storage.AttackBotSupport.rangedNames = storage.AttackBotSupport.rangedNames or {}
+
+-- Fallback local para clientes/servidores que não enviam os ícones de efeito.
+-- Estrutura: supportEffectUntil[spell][creatureId] = timestamp.
+local supportEffectUntil = {}
+local cripplingSupportCooldownUntil = 0
+
+local function supportNow()
+  if type(now) == "number" then
+    return now
+  end
+
+  if g_clock and g_clock.millis then
+    return g_clock.millis()
+  end
+
+  return 0
+end
+
+local lastPlayerMovementAt = supportNow()
+
+onPlayerPositionChange(function(newPos, oldPos)
+  if not newPos or not oldPos
+    or newPos.x ~= oldPos.x
+    or newPos.y ~= oldPos.y
+    or newPos.z ~= oldPos.z then
+    lastPlayerMovementAt = supportNow()
+  end
+end)
+
+local function isPlayerWalkingNow()
+  if not player or not player.isWalking then
+    return false
+  end
+
+  local ok, walking = pcall(function()
+    return player:isWalking()
+  end)
+
+  return ok and walking or false
+end
+
+local function hasBeenStillLongEnough(entry)
+  local requiredTime = math.max(0, tonumber(entry and entry.stationaryTime) or 0)
+  if requiredTime <= 0 then
+    return true
+  end
+
+  if isPlayerWalkingNow() then
+    lastPlayerMovementAt = supportNow()
+    return false
+  end
+
+  return supportNow() - lastPlayerMovementAt >= requiredTime
+end
+
+local function normalizeSpellName(spell)
+  return tostring(spell or ""):trim():lower()
+end
+
+local function resolveSupportSpellName(spell)
+  local normalized = normalizeSpellName(spell)
+  return supportSpellAliases[normalized] or normalized
+end
+
+local function normalizeCreatureName(name)
+  return tostring(name or ""):trim():lower()
+end
+
+local function monsterMatchesEntry(creature, entry)
+  if not creature or not creature:isMonster() then return false end
+
+  local hp = creature:getHealthPercent()
+  if not hp or hp <= 0 or hp < entry.minHp or hp > entry.maxHp then
+    return false
+  end
+
+  if g_game.getClientVersion() >= 960 and creature:getType() >= 3 then
+    return false
+  end
+
+  local configured = entry.monsters
+  if configured == true or not configured or #configured == 0 then
+    return true
+  end
+
+  local creatureName = normalizeCreatureName(creature:getName())
+  for _, configuredName in ipairs(configured) do
+    if normalizeCreatureName(configuredName) == creatureName then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function entryHasExplicitMonsterNames(entry)
+  return entry.monsters ~= true
+    and type(entry.monsters) == "table"
+    and #entry.monsters > 0
+end
+
+-- OTClient não possui uma propriedade genérica creature:isRanged().
+-- Para entradas com nomes específicos, esses nomes formam a lista ranged.
+-- Com "*", usa distância > 1 sqm até aprender o nome pelo ícone do efeito.
+local function isLikelyRangedMonster(creature, entry)
+  if not creature then return false end
+
+  local name = normalizeCreatureName(creature:getName())
+  if storage.AttackBotSupport.rangedNames[name] then
+    return true
+  end
+
+  if entryHasExplicitMonsterNames(entry) then
+    return true
+  end
+
+  local creaturePos = creature:getPosition()
+  local playerPos = player:getPosition()
+  if not creaturePos or creaturePos.z ~= playerPos.z then
+    return false
+  end
+
+  return distanceFromPlayer(creaturePos) > 1
+end
+
+local function getCreatureEffectIconIds(creature)
+  local result = {}
+  if not creature or not creature.getIcons then
+    return result
+  end
+
+  pcall(function()
+    local icons = creature:getIcons()
+    if type(icons) ~= "table" then return end
+
+    for _, iconEntry in pairs(icons) do
+      local iconId = nil
+
+      if type(iconEntry) == "number" then
+        iconId = iconEntry
+      elseif type(iconEntry) == "table" then
+        iconId = tonumber(iconEntry.icon or iconEntry.id or iconEntry[1])
+      end
+
+      if iconId and iconId > 0 then
+        result[iconId] = true
+      end
+    end
+  end)
+
+  return result
+end
+
+local function hasKnownSupportIcon(creature, spell)
+  local spellIcons = storage.AttackBotSupport.effectIcons[spell]
+  if type(spellIcons) ~= "table" then
+    return false
+  end
+
+  local creatureIcons = getCreatureEffectIconIds(creature)
+  for savedId, enabled in pairs(spellIcons) do
+    if enabled and creatureIcons[tonumber(savedId)] then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function hasLocalSupportEffect(creature, spell)
+  local creatureId = creature and creature:getId()
+  local spellEffects = supportEffectUntil[spell]
+  if not creatureId or not spellEffects then
+    return false
+  end
+
+  local expiresAt = spellEffects[creatureId]
+  if not expiresAt then
+    return false
+  end
+
+  if supportNow() >= expiresAt then
+    spellEffects[creatureId] = nil
+    return false
+  end
+
+  return true
+end
+
+local function hasSupportEffect(creature, spell)
+  return hasKnownSupportIcon(creature, spell)
+    or hasLocalSupportEffect(creature, spell)
+end
+
+local function hasAnyRangedChallengeEffect(creature)
+  return hasSupportEffect(creature, "exeta amp res")
+    or hasSupportEffect(creature, "exana amp res")
+end
+
+local function supportCreatureNeedsSpell(creature, entry, spell, rule)
+  if not monsterMatchesEntry(creature, entry) then
+    return false
+  end
+
+  if rule.mode == "ranged" and not isLikelyRangedMonster(creature, entry) then
+    return false
+  end
+
+  if rule.mode == "ranged" then
+    return not hasAnyRangedChallengeEffect(creature)
+  end
+
+  if rule.mode == "aoeDebuff" then
+    return not hasSupportEffect(creature, spell)
+  end
+
+  -- exeta res: usa somente nomes, HP, alcance e quantidade.
+  -- Não exige criatura ranged e não tenta detectar efeito ativo.
+  return true
+end
+
+local function getSupportAoeOrigin()
+  local currentTarget = target()
+  local targetHp = currentTarget and currentTarget.getHealthPercent and currentTarget:getHealthPercent()
+  if currentTarget and currentTarget:getPosition() and (not targetHp or targetHp > 0) then
+    return currentTarget
+  end
+
+  return player
+end
+
+local function getSupportCandidates(entry, spell, rule)
+  local candidates = {}
+
+  if rule.mode == "aoeDebuff" then
+    local origin = getSupportAoeOrigin()
+    local patternCategory = rule.patternCategory or 2
+    local patternIndex = rule.pattern or 3
+    local patternData = spellPatterns[patternCategory]
+      and spellPatterns[patternCategory][patternIndex]
+      and spellPatterns[patternCategory][patternIndex][1]
+
+    if not origin or not patternData then
+      return candidates
+    end
+
+    for _, creature in pairs(getSpectators(origin, patternData)) do
+      if creature ~= player and supportCreatureNeedsSpell(creature, entry, spell, rule) then
+        table.insert(candidates, creature)
+      end
+    end
+
+    table.sort(candidates, function(a, b)
+      return distanceFromPlayer(a:getPosition()) < distanceFromPlayer(b:getPosition())
+    end)
+
+    return candidates
+  end
+
+  local range = tonumber(entry.pattern) or 1
+  local playerPos = player:getPosition()
+
+  for _, creature in pairs(getSpectators()) do
+    if creature ~= player and supportCreatureNeedsSpell(creature, entry, spell, rule) then
+      local creaturePos = creature:getPosition()
+
+      if creaturePos
+        and creaturePos.z == playerPos.z
+        and distanceFromPlayer(creaturePos) <= range then
+        table.insert(candidates, creature)
+      end
+    end
+  end
+
+  table.sort(candidates, function(a, b)
+    return distanceFromPlayer(a:getPosition()) < distanceFromPlayer(b:getPosition())
+  end)
+
+  return candidates
+end
+
+local function rememberLocalSupportEffect(spell, rule, candidates)
+  supportEffectUntil[spell] = supportEffectUntil[spell] or {}
+  local expiresAt = supportNow() + rule.duration
+  local maxTargets = math.min(#candidates, rule.maxTargets or #candidates)
+
+  for index = 1, maxTargets do
+    local creature = candidates[index]
+    if creature and creature:getId() then
+      supportEffectUntil[spell][creature:getId()] = expiresAt
+    end
+  end
+end
+
+local function learnSupportEffectIcons(spell, rule, candidates, iconsBefore)
+  if not schedule then return end
+
+  schedule(300, function()
+    storage.AttackBotSupport.effectIcons[spell] = storage.AttackBotSupport.effectIcons[spell] or {}
+    local savedIcons = storage.AttackBotSupport.effectIcons[spell]
+
+    for _, creature in ipairs(candidates) do
+      if creature and creature:getHealthPercent() > 0 then
+        local creatureId = creature:getId()
+        local before = iconsBefore[creatureId] or {}
+        local after = getCreatureEffectIconIds(creature)
+        local learnedEffect = false
+
+        for iconId in pairs(after) do
+          if not before[iconId] then
+            savedIcons[tostring(iconId)] = true
+            learnedEffect = true
+          end
+        end
+
+        -- Se o servidor confirmou o efeito ranged com um ícone novo,
+        -- passa a reconhecer esse nome como ranged mesmo quando estiver adjacente.
+        if learnedEffect and rule.mode == "ranged" then
+          storage.AttackBotSupport.rangedNames[normalizeCreatureName(creature:getName())] = true
+        end
+      end
+    end
+  end)
+end
+
+local function executeSupportEntry(entry, spell)
+  spell = resolveSupportSpellName(spell)
+  local rule = supportSpellRules[spell]
+
+  if not rule then
+    return false
+  end
+
+  local castSpell = rule.cast or spell
+  if not canCast(castSpell, not currentSettings.ignoreMana, not currentSettings.Cooldown) then
+    return false
+  end
+
+  if rule.sharedCooldown and supportNow() < cripplingSupportCooldownUntil then
+    return false
+  end
+
+  local candidates = getSupportCandidates(entry, spell, rule)
+  if not matchesEntryCount(entry, #candidates) then
+    return false
+  end
+
+  local iconsBefore = {}
+  local shouldTrackEffect = rule.mode == "ranged" or rule.mode == "aoeDebuff"
+  if shouldTrackEffect then
+    for _, creature in ipairs(candidates) do
+      iconsBefore[creature:getId()] = getCreatureEffectIconIds(creature)
+    end
+  end
+
+  executeAttackBotAction(6, castSpell, entry.cooldown)
+
+  if rule.sharedCooldown then
+    cripplingSupportCooldownUntil = supportNow() + rule.sharedCooldown
+  end
+
+  -- Somente exeta amp res / exana amp res precisam evitar criaturas
+  -- que já estão sob o efeito. Exeta res pode ser recastado normalmente.
+  -- Also covers aoe debuffs such as exori moe/exori kor.
+  if shouldTrackEffect then
+    rememberLocalSupportEffect(spell, rule, candidates)
+    learnSupportEffectIcons(spell, rule, candidates, iconsBefore)
+  end
+
+  return true
+end
+
+local function directionalPatternFor(patternText, direction)
+  if not patternText then return nil end
+
+  directionalPatternCache[patternText] = directionalPatternCache[patternText] or {}
+  local cached = directionalPatternCache[patternText][direction]
+  if cached then return cached end
+
+  local selectedLetter = directionPatternLetters[direction]
+  local converted = patternText:gsub("[NESW]", function(letter)
+    return letter == selectedLetter and "1" or "0"
+  end)
+
+  directionalPatternCache[patternText][direction] = converted
+  return converted
+end
+
+local function getDirectionalEntryAmount(entry, direction)
+  if not entry or direction == nil then return 0 end
+
+  -- Sweep has no dedicated pattern in spellPatterns. Keep its historical
+  -- directional masks, but still apply this entry's HP/name filters.
+  if entry.pattern == 8 then
+    if currentSettings.PvpSafe and getPlayers(2) > 0 then
+      return 0
+    end
+
+    local sweepPatterns = {
+      [0] = posN,
+      [1] = posE,
+      [2] = posS,
+      [3] = posW
+    }
+
+    return getMonstersInArea(
+      5,
+      pos(),
+      sweepPatterns[direction],
+      entry.minHp,
+      entry.maxHp,
+      false,
+      entry.monsters
+    )
+  end
+
+  local categoryPatterns = spellPatterns[entry.patternCategory]
+  local patternData = categoryPatterns and categoryPatterns[entry.pattern]
+  if not patternData or not patternData[1] then return 0 end
+
+  local attackPattern = directionalPatternFor(patternData[1], direction)
+  local safePattern = false
+  if currentSettings.PvpSafe and patternData[2] then
+    safePattern = directionalPatternFor(patternData[2], direction)
+  end
+
+  return getMonstersInArea(
+    5,
+    pos(),
+    attackPattern,
+    entry.minHp,
+    entry.maxHp,
+    safePattern,
+    entry.monsters
+  )
+end
+
+local function getBestDirectionalSide(entry, force)
+  if not force
+    and directionalScanCache.entry == entry
+    and now - directionalScanCache.updatedAt < directionalScanCacheMs then
+    return directionalScanCache.bestSide, directionalScanCache.bestDir
+  end
+
+  local currentDirection = player:getDirection()
+  local bestSide = -1
+  local bestDir = currentDirection
+
+  for direction = 0, 3 do
+    local amount = getDirectionalEntryAmount(entry, direction)
+    if amount > bestSide
+      or (amount == bestSide and direction == currentDirection) then
+      bestSide = amount
+      bestDir = direction
+    end
+  end
+
+  directionalScanCache.updatedAt = now
+  directionalScanCache.entry = entry
+  directionalScanCache.bestSide = math.max(0, bestSide)
+  directionalScanCache.bestDir = bestDir
+  return directionalScanCache.bestSide, directionalScanCache.bestDir
+end
+
+local function pauseMageRunForDirectionalCast(milliseconds)
+  if TargetBot
+    and TargetBot.isMageRunEmergencyMovement
+    and TargetBot.isMageRunEmergencyMovement() then
+    return
+  end
+
+  if TargetBot and TargetBot.pauseMageRunMovement then
+    TargetBot.pauseMageRunMovement(milliseconds or attackBotMovementPauseMs)
+  end
+end
+
+-- support function covered, now the main loop
+macro(10, function()
+  if not currentSettings.enabled then return end
+  if #panel.entryList:getChildren() == 0 or isInPz() then return end
+
+  local currentTarget = target()
+  local attackGroupCooldownActive = modules.game_cooldown.isGroupCooldownIconActive(1)
+
+  if currentSettings.Training and currentTarget and currentTarget:getName():lower():find("training") then return end
+
+  if g_game.getClientVersion() < 960 or not currentSettings.Cooldown then
+    delay(400)
+  end
+
+  -- A pending rotation is only a short-lived state for its own list entry.
+  -- It must never monopolize the whole AttackBot queue: entries above it are
+  -- always evaluated first on every loop.
+  if pendingRotateCast then
+    local pendingEntry = pendingRotateCast.entry
+    local expired = now > (pendingRotateCast.expiresAt or 0)
+    local lostTarget = not currentTarget
+    local disabled = not pendingEntry or not pendingEntry.enabled
+    local movedTooRecently = pendingEntry and not hasBeenStillLongEnough(pendingEntry)
+
+    if expired or lostTarget or disabled or movedTooRecently then
+      pendingRotateCast = nil
+    end
+  end
+
+  local pendingEntrySeen = false
+
+  for index, child in ipairs(panel.entryList:getChildren()) do
+    local entry = child.params
+    local attackData = entry.itemId > 100 and entry.itemId or entry.spell
+    local isPendingEntry = pendingRotateCast and pendingRotateCast.entry == entry
+
+    if isPendingEntry then
+      pendingEntrySeen = true
+    end
+
+    if entry.enabled and manapercent() >= entry.mana and hasBeenStillLongEnough(entry) then
+      local requiresTarget = entry.category ~= 6
+      local blockedByAttackCooldown = entry.category ~= 6 and attackGroupCooldownActive
+      local actionReady = false
+
+      if entry.itemId > 100 then
+        actionReady = not blockedByAttackCooldown
+          and (not currentSettings.Visible or findItem(entry.itemId))
+      else
+        actionReady = (entry.category == 6 or not blockedByAttackCooldown)
+          and canCast(entry.spell, not currentSettings.ignoreMana, not currentSettings.Cooldown)
+      end
+
+      if (not requiresTarget or currentTarget) and actionReady then
+        -- challenge / support spells
+        if entry.category == 6 then
+          if executeSupportEntry(entry, attackData) then
+            pendingRotateCast = nil
+            return
+          end
+
+        -- first PVP scenario
+        elseif currentSettings.pvpMode
+          and entry.category ~= 5
+          and currentTarget:getHealthPercent() >= entry.minHp
+          and currentTarget:getHealthPercent() <= entry.maxHp
+          and currentTarget:canShoot() then
+          if entry.category == 2 then
+            return warn("[AttackBot] Area Runes cannot be used in PVP situation!")
+          end
+
+          pendingRotateCast = nil
+          return executeAttackBotAction(entry.category, attackData, entry.cooldown)
+        end
+
+        -- empowerment
+        if entry.category == 4 and not isBuffed() then
+          local monsterAmount = getMonstersInArea(entry.category, nil, nil, entry.minHp, entry.maxHp, false, entry.monsters)
+          if matchesEntryCount(entry, monsterAmount)
+            and distanceFromPlayer(currentTarget:getPosition()) <= entry.pattern then
+            pendingRotateCast = nil
+            return executeAttackBotAction(entry.category, attackData, entry.cooldown)
+          end
+
+        elseif entry.category == 1 or entry.category == 3 then
+          local monsterAmount = getMonstersInArea(entry.category, nil, nil, entry.minHp, entry.maxHp, false, entry.monsters)
+          if matchesEntryCount(entry, monsterAmount)
+            and distanceFromPlayer(currentTarget:getPosition()) <= entry.pattern then
+            pendingRotateCast = nil
+            return executeAttackBotAction(entry.category, attackData, entry.cooldown)
+          end
+
+        elseif entry.category == 5 then
+          local pattern = entry.pattern
+          local safeToCast = (not currentSettings.BlackListSafe or not isBlackListedPlayerInRange(currentSettings.AntiRsRange))
+            and (not currentSettings.Kills or killsToRs() > currentSettings.KillsAmount)
+
+          if directionalAbsolutePatterns[pattern] then
+            local currentDirection = player:getDirection()
+            local amount = getDirectionalEntryAmount(entry, currentDirection)
+            local castDirection = currentDirection
+
+            if currentSettings.Rotate then
+              amount, castDirection = getBestDirectionalSide(entry, true)
+            end
+
+            local ready = matchesEntryCount(entry, amount) and safeToCast
+
+            if ready then
+              if currentSettings.Rotate and castDirection ~= nil and currentDirection ~= castDirection then
+                local samePending = pendingRotateCast
+                  and pendingRotateCast.entry == entry
+                  and pendingRotateCast.dir == castDirection
+
+                if not samePending then
+                  pendingRotateCast = {
+                    spell = attackData,
+                    cooldown = entry.cooldown,
+                    dir = castDirection,
+                    entry = entry,
+                    index = index,
+                    readyAt = now + attackBotTurnRetryMs,
+                    expiresAt = now + attackBotTurnTimeoutMs,
+                    lastTurnAt = 0
+                  }
+                end
+
+                if now - (pendingRotateCast.lastTurnAt or 0) >= attackBotTurnRetryMs then
+                  pauseMageRunForDirectionalCast(attackBotMovementPauseMs)
+                  turn(castDirection)
+                  pendingRotateCast.lastTurnAt = now
+                end
+
+                -- This is currently the highest-priority valid action. Hold the
+                -- lower entries only for the brief turn, not for an arbitrary
+                -- 500 ms cooldown wait.
+                return
+              end
+
+              if isPendingEntry and now < (pendingRotateCast.readyAt or 0) then
+                return
+              end
+
+              pendingRotateCast = nil
+
+              -- The movement pause is needed only while turning. Send the wave
+              -- first, then release Mage Run immediately and reuse its current
+              -- escape/kiting destination without waiting for the old pause to
+              -- expire. Packet order remains cast first, movement second.
+              local result = executeAttackBotAction(entry.category, attackData, entry.cooldown)
+              if TargetBot and TargetBot.resumeMageRunMovement then
+                TargetBot.resumeMageRunMovement(true)
+              end
+              return result
+            end
+
+            if isPendingEntry then
+              pendingRotateCast = nil
+            end
+          else
+            local pCat = entry.patternCategory
+            local safe = currentSettings.PvpSafe and spellPatterns[pCat][entry.pattern][2] or false
+            local monsterAmount = getMonstersInArea(
+              entry.category,
+              pos(),
+              spellPatterns[pCat][entry.pattern][1],
+              entry.minHp,
+              entry.maxHp,
+              safe,
+              entry.monsters
+            )
+
+            if matchesEntryCount(entry, monsterAmount) and safeToCast then
+              pendingRotateCast = nil
+              return executeAttackBotAction(entry.category, attackData, entry.cooldown)
+            end
+          end
+
+        elseif entry.category == 2 then
+          local pCat = entry.patternCategory
+          local safe = currentSettings.PvpSafe and spellPatterns[pCat][entry.pattern][2] or false
+          local data = getBestTileByPattern(spellPatterns[pCat][entry.pattern][1], entry.minHp, entry.maxHp, safe, entry.monsters)
+          local monsterAmount
+          local targetPos
+
+          if data then
+            monsterAmount = data.amount
+            targetPos = data.pos
+          end
+
+          if monsterAmount and matchesEntryCount(entry, monsterAmount) then
+            if (not currentSettings.BlackListSafe or not isBlackListedPlayerInRange(currentSettings.AntiRsRange))
+              and (not currentSettings.Kills or killsToRs() > currentSettings.KillsAmount) then
+              if useAttackBotAreaRuneOnTile(attackData, targetPos) then
+                pendingRotateCast = nil
+                return
+              end
+            end
+          end
+        end
+      elseif isPendingEntry then
+        -- Its spell/rune is not actually ready. Do not let a stale pending wave
+        -- block lower-priority attacks that can be used right now.
+        pendingRotateCast = nil
+      end
+    elseif isPendingEntry then
+      pendingRotateCast = nil
+    end
+  end
+
+  if pendingRotateCast and not pendingEntrySeen then
+    pendingRotateCast = nil
+  end
+end)
+UI.Separator()
+]=]
+FILES["vBot/AttackBot.otui"] = [[AttackEntry < UIWidget
+  background-color: alpha
+  text-offset: 35 1
+  focusable: true
+  height: 16
+  font: verdana-11px-rounded
+  text-align: left
+
+  CheckBox
+    id: enabled
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    width: 15
+    height: 15
+    margin-top: 2
+    margin-left: 3
+
+  UIItem
+    id: id
+    anchors.left: prev.right
+    anchors.verticalCenter: parent.verticalCenter
+    size: 16 16
+    focusable: false
+    visible: false
+
+  UIWidget
+    id: spell
+    anchors.left: enabled.right
+    anchors.verticalCenter: parent.verticalCenter
+    size: 12 12
+    margin-left: 1
+    image-source: /images/game/dangerous
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    !text: tr('x')
+    anchors.right: parent.right
+    margin-right: 15
+    width: 15
+    height: 15
+
+AttackBotBotPanel < Panel
+  height: 38
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('AttackBot')
+
+  Button
+    id: settings
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Setup
+
+  Button
+    id: 1
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: 1
+    margin-right: 2
+    margin-top: 4
+    size: 17 17
+
+  Button
+    id: 2
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 2
+    margin-left: 4
+    size: 17 17
+    
+  Button
+    id: 3
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 3
+    margin-left: 4
+    size: 17 17
+
+  Button
+    id: 4
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 4
+    margin-left: 4
+    size: 17 17 
+    
+  Button
+    id: 5
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 5
+    margin-left: 4
+    size: 17 17
+    
+  Label
+    id: name
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    anchors.right: parent.right
+    text-align: center
+    margin-left: 4
+    height: 17
+    text: Profile #1
+    background: #292A2A
+
+CategoryLabel < Panel
+  size: 315 15
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  padding: 1
+
+  Label
+    id: description
+    anchors.fill: parent
+    text-align: center
+    text: Area Rune (avalanche, great fireball, etc)
+    font: verdana-11px-rounded
+    background: #363636
+
+SourceLabel < Panel
+  size: 105 15
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  padding: 1
+
+  Label
+    id: description
+    anchors.fill: parent
+    text-align: center
+    text: Monster Name
+    font: verdana-11px-rounded
+    background: #363636
+
+RangeLabel < Panel
+  size: 323 15
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  padding: 1
+
+  Label
+    id: description
+    anchors.fill: parent
+    text-align: center
+    text: 5 Sqm
+    font: verdana-11px-rounded
+    background: #363636
+
+PreButton < PreviousButton
+  background: #363636
+  height: 15
+
+NexButton < NextButton
+  background: #363636
+  height: 15
+
+AttackBotPanel < Panel
+  size: 500 225
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  padding: 5
+
+  TextList
+    id: entryList
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    margin-top: 3
+    size: 430 100
+    vertical-scrollbar: entryListScrollBar
+
+  VerticalScrollBar
+    id: entryListScrollBar
+    anchors.top: entryList.top
+    anchors.bottom: entryList.bottom
+    anchors.right: entryList.right
+    step: 14
+    pixels-scroll: true
+
+  PreButton
+    id: previousCategory
+    anchors.left: entryList.left
+    anchors.top: entryList.bottom
+    margin-top: 8
+
+  NexButton
+    id: nextCategory
+    anchors.left: category.right
+    anchors.top: entryList.bottom
+    margin-top: 8
+    margin-left: 2
+
+  CategoryLabel
+    id: category
+    anchors.top: entryList.bottom
+    anchors.left: previousCategory.right
+    anchors.verticalCenter: previousCategory.verticalCenter
+    margin-left: 3
+
+  PreButton
+    id: previousSource
+    anchors.left: entryList.left
+    anchors.top: category.bottom
+    margin-top: 8
+
+  NexButton
+    id: nextSource
+    anchors.left: source.right
+    anchors.top: category.bottom
+    margin-top: 8
+    margin-left: 2
+
+  SourceLabel
+    id: source
+    anchors.top: category.bottom
+    anchors.left: previousSource.right
+    anchors.verticalCenter: previousSource.verticalCenter
+    margin-left: 3
+
+  PreButton
+    id: previousRange
+    anchors.left: nextSource.right
+    anchors.verticalCenter: nextSource.verticalCenter
+    margin-left: 8
+
+  NexButton
+    id: nextRange
+    anchors.left: range.right
+    anchors.verticalCenter: range.verticalCenter
+    margin-left: 2
+
+  RangeLabel
+    id: range
+    anchors.left: previousRange.right
+    anchors.verticalCenter: previousRange.verticalCenter
+    margin-left: 3
+
+  TextEdit
+    id: monsters
+    anchors.left: entryList.left
+    anchors.top: range.bottom
+    margin-top: 5
+    size: 405 15
+    text: monster names
+    font: cipsoftFont
+    background: #363636
+
+  Label
+    anchors.left: prev.left
+    anchors.top: prev.bottom
+    margin-top: 6
+    margin-left: 3
+    text-align: center
+    text: Mana%:
+    font: verdana-11px-rounded
+  
+  SpinBox
+    id: manaPercent
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 4
+    size: 30 20
+    minimum: 0
+    maximum: 99
+    step: 1
+    editable: true
+    focusable: true
+
+  Label
+    anchors.left: prev.right
+    margin-left: 7
+    anchors.verticalCenter: prev.verticalCenter
+    text: Creatures: 
+    font: verdana-11px-rounded
+
+  SpinBox
+    id: creatures
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 4
+    size: 30 20
+    minimum: 1
+    maximum: 99
+    step: 1
+    editable: true
+    focusable: true
+
+  CheckBox
+    id: orMore
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    tooltip: or more creatures
+
+  Label
+    anchors.left: prev.right
+    margin-left: 7
+    anchors.verticalCenter: prev.verticalCenter
+    text: HP: 
+    font: verdana-11px-rounded
+
+  SpinBox
+    id: minHp
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 4
+    size: 40 20
+    minimum: 0
+    maximum: 99
+    value: 0
+    editable: true
+    focusable: true
+
+  Label
+    anchors.left: prev.right
+    margin-left: 4
+    anchors.verticalCenter: prev.verticalCenter
+    text: - 
+    font: verdana-11px-rounded
+
+  SpinBox
+    id: maxHp
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 4
+    size: 40 20
+    minimum: 1
+    maximum: 100
+    value: 100
+    editable: true
+    focusable: true
+
+  Label
+    anchors.left: prev.right
+    margin-left: 7
+    anchors.verticalCenter: prev.verticalCenter
+    text: CD: 
+    font: verdana-11px-rounded
+
+  SpinBox
+    id: cooldown
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 4
+    size: 60 20
+    minimum: 0
+    maximum: 999999
+    step: 100
+    value: 0
+    editable: true
+    focusable: true
+
+  Label
+    id: stationaryTimeLabel
+    anchors.left: entryList.left
+    anchors.bottom: parent.bottom
+    margin-bottom: 2
+    text: Still (ms):
+    font: verdana-11px-rounded
+    tooltip: Minimum time stopped before cast; 0 disables
+
+  SpinBox
+    id: stationaryTime
+    anchors.verticalCenter: stationaryTimeLabel.verticalCenter
+    anchors.left: stationaryTimeLabel.right
+    margin-left: 5
+    size: 70 20
+    minimum: 0
+    maximum: 999999
+    step: 100
+    value: 0
+    editable: true
+    focusable: true
+    tooltip: Minimum time stopped before cast; 0 disables
+
+  Button
+    id: up
+    anchors.right: parent.right
+    anchors.top: entryList.bottom
+    size: 60 17
+    text: Move Up
+    text-align: center
+    font: cipsoftFont
+    margin-top: 7
+    margin-right: 8
+
+  Button
+    id: down
+    anchors.right: prev.left
+    anchors.verticalCenter: prev.verticalCenter
+    size: 60 17
+    margin-right: 5
+    text: Move Down
+    text-align: center
+    font: cipsoftFont
+  
+  Button
+    id: addEntry
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 40 19
+    text-align: center
+    text: New
+    font: cipsoftFont
+
+  BotItem
+    id: itemId
+    anchors.right: addEntry.left
+    margin-right: 5
+    anchors.bottom: parent.bottom
+    margin-bottom: 2
+    tooltip: drag item here on press to open window
+
+  TextEdit
+    id: spellName
+    anchors.top: monsters.top
+    anchors.left: monsters.right
+    anchors.right: parent.right
+    margin-left: 5
+    height: 15
+    text: spell name
+    background: #363636
+    font: cipsoftFont
+    visible: false
+
+SettingsPanel < Panel
+  size: 500 200
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  padding: 10
+
+  VerticalSeparator
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.left: Visible.right
+    margin-left: 10
+    margin-top: 5
+    margin-bottom: 5
+
+  Label
+    anchors.top: parent.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 10
+    text-align: center
+    font: verdana-11px-rounded
+    text: Profile:
+
+  TextEdit
+    id: profileName
+    anchors.top: prev.bottom
+    margin-top: 3
+    anchors.left: prev.left
+    anchors.right: prev.right
+    margin-left: 20
+    margin-right: 20
+
+  CheckBox
+    id: OldSchool
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 245
+    text: Old School Mode (No Hotkeys)
+    !tooltip: tr('Items Must be Visible')
+
+  Button
+    id: resetSettings
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    text-align: center
+    text: Reset Settings
+
+  CheckBox 
+    id: IgnoreMana
+    anchors.top: parent.top
+    anchors.left: parent.left
+    margin-top: 5
+    width: 200
+    text: Check RL Tibia conditions
+
+  CheckBox
+    id: Kills
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 200
+    height: 22
+    text: Don't use area attacks if less than kills to red skull
+    text-wrap: true
+    text-align: left
+
+  SpinBox
+    id: KillsAmount
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.left: prev.right
+    text-align: left
+    width: 30
+    minimum: 1
+    maximum: 10
+    focusable: true 
+    margin-left: 5
+
+  CheckBox
+    id: Rotate
+    anchors.top: Kills.bottom
+    anchors.left: Kills.left
+    margin-top: 8
+    width: 220
+    text: Turn to side with most monsters
+
+  CheckBox
+    id: Cooldown
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 220
+    text: Check spell cooldowns
+
+  CheckBox
+    id: Visible
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 245
+    text: Items must be visible (recommended)
+
+  CheckBox
+    id: PvpMode
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 245
+    text: PVP mode
+
+  CheckBox
+    id: PvpSafe
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 245
+    text: PVP safe
+
+  CheckBox
+    id: Training
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 245
+    text: Stop when attacking trainers
+
+  CheckBox
+    id: BlackListSafe
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    margin-top: 8
+    width: 200
+    height: 18
+    text: Stop if Anti-RS player in range
+
+  SpinBox
+    id: AntiRsRange
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.left: prev.right
+    text-align: center
+    width: 50
+    minimum: 1
+    maximum: 10
+    focusable: true 
+    margin-left: 5
+
+AttackBotWindow < MainWindow
+  size: 535 325
+  padding: 15
+  text: AttackBot v2
+  @onEscape: self:hide()
+
+  Label
+    id: mainLabel
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    margin-top: 10
+    margin-left: 2
+    !text: tr('More important methods come first (Example: Exori gran above Exori)')
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae  
+
+  SettingsPanel
+    id: settingsPanel
+    anchors.top: prev.bottom
+    margin-top: 10
+    anchors.left: parent.left
+    margin-left: 2
+
+  Label
+    id: settingsLabel
+    anchors.verticalCenter: prev.top
+    anchors.left: prev.left
+    margin-left: 3
+    text: Settings
+    color: #fe4400
+    font: verdana-11px-rounded
+
+  AttackBotPanel
+    id: mainPanel
+    anchors.top: mainLabel.bottom
+    margin-top: 10
+    anchors.left: parent.left
+    margin-left: 2
+    visible: false    
+
+  Label
+    id: shooterLabel
+    anchors.verticalCenter: prev.top
+    anchors.left: prev.left
+    margin-left: 3
+    text: Spell Shooter
+    color: #fe4400
+    font: verdana-11px-rounded
+    visible: false    
+
+  HorizontalSeparator
+    anchors.left: parent.left
+    anchors.right: parent.right 
+    anchors.bottom: closeButton.top
+    margin-bottom: 10
+
+  Button
+    id: closeButton
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    text: Close
+    font: cipsoftFont
+
+  Button
+    id: settings
+    anchors.left: parent.left
+    anchors.verticalCenter: prev.verticalCenter
+    size: 50 21
+    font: cipsoftFont
+    text: Settings]]
+FILES["vBot/Conditions.lua"] = [=[setDefaultTab("HP")
+local panelName = "ConditionPanel"
+local ui = setupUI([[
+Panel
+  height: 19
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('Conditions')
+
+  Button
+    id: conditionList
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Setup
+      
+  ]])
+  ui:setId(panelName)
+
+  if not HealBotConfig[panelName] then
+    HealBotConfig[panelName] = {
+      enabled = false,
+      curePosion = false,
+      poisonCost = 20,
+      cureCurse = false,
+      curseCost = 80,
+      cureBleed = false,
+      bleedCost = 45,
+      cureBurn = false,
+      burnCost = 30,
+      cureElectrify = false,
+      electrifyCost = 22,
+      cureParalyse = false,
+      paralyseCost = 40,
+      paralyseSpell = "utani hur",
+      holdHaste = false,
+      hasteCost = 40,
+      hasteSpell = "utani hur",
+      holdUtamo = false,
+      utamoCost = 40,
+      holdUtana = false,
+      utanaCost = 440,
+      holdUtura = false,
+      uturaType = "utura",
+      uturaCost = 100,
+      ignoreInPz = true,
+      stopHaste = false
+    }
+  end
+
+  local config = HealBotConfig[panelName]
+
+  local function normalizeUturaType(value)
+    value = tostring(value or ""):lower():trim()
+    if value:find("gran") then
+      return "utura gran"
+    end
+    return "utura"
+  end
+
+  config.uturaType = normalizeUturaType(config.uturaType)
+
+  ui.title:setOn(config.enabled)
+  ui.title.onClick = function(widget)
+    config.enabled = not config.enabled
+    widget:setOn(config.enabled)
+    vBotConfigSave("heal")
+  end
+  
+  ui.conditionList.onClick = function(widget)
+    conditionsWindow:show()
+    conditionsWindow:raise()
+    conditionsWindow:focus()
+  end
+
+
+
+  local rootWidget = g_ui.getRootWidget()
+  if rootWidget then
+    conditionsWindow = UI.createWindow('ConditionsWindow', rootWidget)
+    conditionsWindow:hide()
+    
+
+    conditionsWindow.onVisibilityChange = function(widget, visible)
+      if not visible then
+        vBotConfigSave("heal")
+      end
+    end
+
+    -- text edits
+    conditionsWindow.Cure.PoisonCost:setText(config.poisonCost)
+    conditionsWindow.Cure.PoisonCost.onTextChange = function(widget, text)
+      config.poisonCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.CurseCost:setText(config.curseCost)
+    conditionsWindow.Cure.CurseCost.onTextChange = function(widget, text)
+      config.curseCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.BleedCost:setText(config.bleedCost)
+    conditionsWindow.Cure.BleedCost.onTextChange = function(widget, text)
+      config.bleedCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.BurnCost:setText(config.burnCost)
+    conditionsWindow.Cure.BurnCost.onTextChange = function(widget, text)
+      config.burnCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.ElectrifyCost:setText(config.electrifyCost)
+    conditionsWindow.Cure.ElectrifyCost.onTextChange = function(widget, text)
+      config.electrifyCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.ParalyseCost:setText(config.paralyseCost)
+    conditionsWindow.Cure.ParalyseCost.onTextChange = function(widget, text)
+      config.paralyseCost = tonumber(text)
+    end
+
+    conditionsWindow.Cure.ParalyseSpell:setText(config.paralyseSpell)
+    conditionsWindow.Cure.ParalyseSpell.onTextChange = function(widget, text)
+      config.paralyseSpell = text
+    end
+
+    conditionsWindow.Hold.HasteSpell:setText(config.hasteSpell)
+    conditionsWindow.Hold.HasteSpell.onTextChange = function(widget, text)
+      config.hasteSpell = text
+    end 
+    
+    conditionsWindow.Hold.HasteCost:setText(config.hasteCost)
+    conditionsWindow.Hold.HasteCost.onTextChange = function(widget, text)
+      config.hasteCost = tonumber(text)
+    end
+    
+    conditionsWindow.Hold.UtamoCost:setText(config.utamoCost)
+    conditionsWindow.Hold.UtamoCost.onTextChange = function(widget, text)
+      config.utamoCost = tonumber(text)
+    end   
+    
+    conditionsWindow.Hold.UtanaCost:setText(config.utanaCost)
+    conditionsWindow.Hold.UtanaCost.onTextChange = function(widget, text)
+      config.utanaCost = tonumber(text)
+    end 
+
+    conditionsWindow.Hold.UturaCost:setText(config.uturaCost)
+    conditionsWindow.Hold.UturaCost.onTextChange = function(widget, text)
+      config.uturaCost = tonumber(text)
+    end
+
+    -- combo box
+    conditionsWindow.Hold.UturaType:setOption(config.uturaType == "utura gran" and "Utura Gran" or "Utura")
+    conditionsWindow.Hold.UturaType.onOptionChange = function(widget)
+      config.uturaType = normalizeUturaType(widget:getCurrentOption().text)
+    end
+
+    -- checkboxes
+    conditionsWindow.Cure.CurePoison:setChecked(config.curePoison)
+    conditionsWindow.Cure.CurePoison.onClick = function(widget)
+      config.curePoison = not config.curePoison
+      widget:setChecked(config.curePoison)
+    end
+    
+    conditionsWindow.Cure.CureCurse:setChecked(config.cureCurse)
+    conditionsWindow.Cure.CureCurse.onClick = function(widget)
+      config.cureCurse = not config.cureCurse
+      widget:setChecked(config.cureCurse)
+    end
+
+    conditionsWindow.Cure.CureBleed:setChecked(config.cureBleed)
+    conditionsWindow.Cure.CureBleed.onClick = function(widget)
+      config.cureBleed = not config.cureBleed
+      widget:setChecked(config.cureBleed)
+    end
+
+    conditionsWindow.Cure.CureBurn:setChecked(config.cureBurn)
+    conditionsWindow.Cure.CureBurn.onClick = function(widget)
+      config.cureBurn = not config.cureBurn
+      widget:setChecked(config.cureBurn)
+    end
+
+    conditionsWindow.Cure.CureElectrify:setChecked(config.cureElectrify)
+    conditionsWindow.Cure.CureElectrify.onClick = function(widget)
+      config.cureElectrify = not config.cureElectrify
+      widget:setChecked(config.cureElectrify)
+    end
+
+    conditionsWindow.Cure.CureParalyse:setChecked(config.cureParalyse)
+    conditionsWindow.Cure.CureParalyse.onClick = function(widget)
+      config.cureParalyse = not config.cureParalyse
+      widget:setChecked(config.cureParalyse)
+    end
+
+    conditionsWindow.Hold.HoldHaste:setChecked(config.holdHaste)
+    conditionsWindow.Hold.HoldHaste.onClick = function(widget)
+      config.holdHaste = not config.holdHaste
+      widget:setChecked(config.holdHaste)
+    end
+
+    conditionsWindow.Hold.HoldUtamo:setChecked(config.holdUtamo)
+    conditionsWindow.Hold.HoldUtamo.onClick = function(widget)
+      config.holdUtamo = not config.holdUtamo
+      widget:setChecked(config.holdUtamo)
+    end
+
+    conditionsWindow.Hold.HoldUtana:setChecked(config.holdUtana)
+    conditionsWindow.Hold.HoldUtana.onClick = function(widget)
+      config.holdUtana = not config.holdUtana
+      widget:setChecked(config.holdUtana)
+    end
+
+    conditionsWindow.Hold.HoldUtura:setChecked(config.holdUtura)
+    conditionsWindow.Hold.HoldUtura.onClick = function(widget)
+      config.holdUtura = not config.holdUtura
+      widget:setChecked(config.holdUtura)
+    end
+
+    conditionsWindow.Hold.IgnoreInPz:setChecked(config.ignoreInPz)
+    conditionsWindow.Hold.IgnoreInPz.onClick = function(widget)
+      config.ignoreInPz = not config.ignoreInPz
+      widget:setChecked(config.ignoreInPz)
+    end
+
+    conditionsWindow.Hold.StopHaste:setChecked(config.stopHaste)
+    conditionsWindow.Hold.StopHaste.onClick = function(widget)
+      config.stopHaste = not config.stopHaste
+      widget:setChecked(config.stopHaste)
+    end
+
+    -- buttons
+    conditionsWindow.closeButton.onClick = function(widget)
+      conditionsWindow:hide()
+    end
+
+    Conditions = {}
+    Conditions.show = function()
+      conditionsWindow:show()
+      conditionsWindow:raise()
+      conditionsWindow:focus()
+    end
+  end
+
+  local utanaCast = nil
+  macro(500, function()
+    if not config.enabled or modules.game_cooldown.isGroupCooldownIconActive(2) then return end
+    if hppercent() > 95 then
+      if config.curePoison and mana() >= config.poisonCost and isPoisioned() then say("exana pox") 
+      elseif config.cureCurse and mana() >= config.curseCost and isCursed() then say("exana mort") 
+      elseif config.cureBleed and mana() >= config.bleedCost and isBleeding() then say("exana kor")
+      elseif config.cureBurn and mana() >= config.burnCost and isBurning() then say("exana flam") 
+      elseif config.cureElectrify and mana() >= config.electrifyCost and isEnergized() then say("exana vis") 
+      end
+    end
+    local uturaSpell = normalizeUturaType(config.uturaType)
+    if (not config.ignoreInPz or not isInPz()) and config.holdUtura and mana() >= config.uturaCost and canCast(uturaSpell) and hppercent() < 90 then say(uturaSpell)
+    elseif (not config.ignoreInPz or not isInPz()) and config.holdUtana and mana() >= config.utanaCost and (not utanaCast or (now - utanaCast > 120000)) then say("utana vid") utanaCast = now
+    end
+  end)
+
+  local lastUtamoAttempt = 0
+
+  local function safeConditionCall(fn)
+    if type(fn) ~= "function" then return false end
+    local ok, result = pcall(fn)
+    return ok and result == true
+  end
+
+  local function hasPlayerState(state)
+    if not state then return false end
+    local localPlayer = player or (g_game and g_game.getLocalPlayer and g_game.getLocalPlayer())
+    if not localPlayer then return false end
+
+    local ok, result = pcall(function()
+      return localPlayer:hasState(state)
+    end)
+    return ok and result == true
+  end
+
+  local function hasAnyManaShield()
+    if safeConditionCall(hasManaShield) or safeConditionCall(hasNewManaShield) then
+      return true
+    end
+
+    if PlayerStates then
+      return hasPlayerState(PlayerStates.ManaShield)
+        or hasPlayerState(PlayerStates.NewManaShield)
+    end
+
+    return false
+  end
+
+  macro(50, function()
+    if not config.enabled then return end
+
+    local shouldCastUtamo = (not config.ignoreInPz or not isInPz())
+      and config.holdUtamo
+      and mana() >= config.utamoCost
+      and not hasAnyManaShield()
+
+    -- Even before the condition icon/state arrives from the server, never flood
+    -- utamo packets every 50 ms. The old flood could stall walking and fake ping.
+    if shouldCastUtamo and now - lastUtamoAttempt >= 1000 then
+      lastUtamoAttempt = now
+      say("utamo vita")
+    elseif ((not config.ignoreInPz or not isInPz()) and standTime() < 5000 and config.holdHaste and mana() >= config.hasteCost and not hasHaste() and not getSpellCoolDown(config.hasteSpell) and (not target() or not config.stopHaste or TargetBot.isCaveBotActionAllowed())) and standTime() < 3000 then
+      say(config.hasteSpell)
+    elseif config.cureParalyse and mana() >= config.paralyseCost and isParalyzed() and not getSpellCoolDown(config.paralyseSpell) then
+      say(config.paralyseSpell)
+    end
+  end)
+]=]
+FILES["vBot/Conditions.otui"] = [[UturaComboBoxPopupMenu < ComboBoxPopupMenu
+UturaComboBoxPopupMenuButton < ComboBoxPopupMenuButton
+UturaComboBox < ComboBox
+  @onSetup: |
+    self:addOption("Utura")
+    self:addOption("Utura Gran")    
+
+CureConditions < Panel
+  id: Cure
+  image-source: /images/ui/panel_flat
+  image-border: 6
+  padding: 3
+  size: 200 190
+
+  Label
+    id: label1
+    anchors.top: parent.top
+    anchors.left: parent.left
+    margin-top: 10
+    margin-left: 5
+    text: Poison
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label11
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 40
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: PoisonCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CurePoison
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label2
+    anchors.left: label1.left
+    anchors.top: label1.bottom
+    margin-top: 10
+    text: Curse
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label22
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 44
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: CurseCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CureCurse
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label3
+    anchors.left: label2.left
+    anchors.top: label2.bottom
+    margin-top: 10
+    text: Bleed
+    color: #ffaa00
+  font: verdana-11px-rounded
+
+  Label
+    id: label33
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 46
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: BleedCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CureBleed
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10  
+
+  Label
+    id: label4
+    anchors.left: label3.left
+    anchors.top: label3.bottom
+    margin-top: 10
+    text: Burn
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label44
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 50
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: BurnCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CureBurn
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label5
+    anchors.left: label4.left
+    anchors.top: label4.bottom
+    margin-top: 10
+    text: Electify
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label55
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 33
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: ElectrifyCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CureElectrify
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label6
+    anchors.left: label5.left
+    anchors.top: label5.bottom
+    margin-top: 10
+    text: Paralyse
+    color: #ffaa00
+    font: verdana-11px-rounded  
+
+  Label
+    id: label66
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 26
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: ParalyseCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: CureParalyse
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label7
+    anchors.left: label6.left
+    anchors.top: label6.bottom
+    margin-top: 10
+    margin-left: 12
+    text: Spell:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: ParalyseSpell
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 10
+    width: 100 
+    font: verdana-11px-rounded
+
+HoldConditions < Panel
+  id: Hold
+  image-source: /images/ui/panel_flat
+  image-border: 6
+  padding: 3
+  size: 200 190
+
+  Label
+    id: label1
+    anchors.top: parent.top
+    anchors.left: parent.left
+    margin-top: 10
+    margin-left: 5
+    text: Haste
+    color: #ffaa00
+    font: verdana-11px-rounded  
+
+  Label
+    id: label11
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 44
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: HasteCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: HoldHaste
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label2
+    anchors.left: label1.left
+    anchors.top: label1.bottom
+    margin-top: 10
+    margin-left: 12
+    text: Spell:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: HasteSpell
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 10
+    width: 100
+    font: verdana-11px-rounded
+
+  Label
+    id: label3
+    anchors.left: label1.left
+    anchors.top: label2.bottom
+    margin-top: 10
+    text: Utana Vid
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label33
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 21
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: UtanaCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: HoldUtana
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label4
+    anchors.left: label3.left
+    anchors.top: label3.bottom
+    margin-top: 10
+    text: Utamo Vita
+    color: #ffaa00
+    font: verdana-11px-rounded
+
+  Label
+    id: label44
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 12
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: UtamoCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: HoldUtamo
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10  
+
+  Label
+    id: label5
+    anchors.left: label4.left
+    anchors.top: label4.bottom
+    margin-top: 10
+    text: Recovery
+    color: #ffaa00 
+    font: verdana-11px-rounded 
+
+  Label
+    id: label55
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 20
+    text: Mana:
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: UturaCost
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 3
+    width: 40
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: HoldUtura
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: parent.right
+    margin-right: 10
+
+  Label
+    id: label6
+    anchors.left: label5.left
+    anchors.top: label5.bottom
+    margin-top: 10
+    margin-left: 12
+    text: Spell:
+    font: verdana-11px-rounded
+
+  UturaComboBox
+    id: UturaType
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-left: 10
+    width: 100
+    font: verdana-11px-rounded
+
+  CheckBox
+    id: IgnoreInPz
+    anchors.left: label5.left
+    anchors.top: label6.bottom
+    margin-top: 12
+
+  Label
+    anchors.verticalCenter: IgnoreInPz.verticalCenter
+    anchors.left: prev.right
+    margin-top: 3
+    margin-left: 5
+    text: Don't Cast in Protection Zones
+    font: cipsoftFont
+
+  CheckBox
+    id: StopHaste
+    anchors.horizontalCenter: IgnoreInPz.horizontalCenter
+    anchors.top: IgnoreInPz.bottom
+    margin-top: 8
+  
+  Label
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    margin-top: 3
+    margin-left: 5
+    text: Stop Haste if TargetBot Is Active
+    font: cipsoftFont
+
+ConditionsWindow < MainWindow
+  !text: tr('Condition Manager')
+  size: 445 280
+  @onEscape: self:hide()
+
+  CureConditions
+    id: Cure
+    anchors.top: parent.top
+    anchors.left: parent.left
+    margin-top: 7
+
+  Label
+    id: label
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text: Cure Conditions 
+    color: #88e3dd
+    margin-left: 10
+    font: verdana-11px-rounded
+
+  HoldConditions
+    id: Hold
+    anchors.top: parent.top
+    anchors.right: parent.right
+    margin-top: 7
+
+  Label
+    id: label
+    anchors.top: parent.top
+    anchors.right: parent.right
+    text: Hold Conditions 
+    color: #88e3dd
+    margin-right: 100
+    font: verdana-11px-rounded    
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8    
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-top: 15
+    margin-right: 5    ]]
+FILES["vBot/Dropper.lua"] = [=[setDefaultTab("Tools")
+
+local ui = setupUI([[
+Panel
+  height: 19
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('Dropper')
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Edit
+]])
+
+local edit = setupUI([[
+Panel
+  height: 150
+    
+  Label
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 5
+    text-align: center
+    text: Trash:
+
+  BotContainer
+    id: TrashItems
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 32
+
+  Label
+    anchors.top: prev.bottom
+    margin-top: 5
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text-align: center
+    text: Use:
+
+  BotContainer
+    id: UseItems
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 32
+
+  Label
+    anchors.top: prev.bottom
+    margin-top: 5
+    anchors.left: parent.left
+    margin-top: 5
+    text-align: center
+    width: 120
+    text: Drop if Cap below:
+    height: 17
+
+  BotTextEdit
+    id: minCap
+    height: 17
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    editable: true
+    text-align: center
+
+  BotContainer
+    id: CapItems
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 32   
+]])
+edit:hide()
+
+if not storage.dropper then
+    storage.dropper = {
+      enabled = false,
+      trashItems = { 3354, 3358, 3410, 3286, 3264 },
+      useItems = { 3061 },
+      capItems = { 3359 },
+      minCap = "100"
+    }
+end
+
+local config = storage.dropper
+if not config.minCap then config.minCap = "100" end
+
+local showEdit = false
+ui.edit.onClick = function(widget)
+  showEdit = not showEdit
+  if showEdit then
+    edit:show()
+  else
+    edit:hide()
+  end
+end
+
+ui.title:setOn(config.enabled)
+ui.title.onClick = function(widget)
+  config.enabled = not config.enabled
+  ui.title:setOn(config.enabled)
+end
+
+UI.Container(function()
+    config.trashItems = edit.TrashItems:getItems()
+    end, true, nil, edit.TrashItems) 
+edit.TrashItems:setItems(config.trashItems)
+
+UI.Container(function()
+    config.useItems = edit.UseItems:getItems()
+    end, true, nil, edit.UseItems) 
+edit.UseItems:setItems(config.useItems)
+
+UI.Container(function()
+    config.capItems = edit.CapItems:getItems()
+    end, true, nil, edit.CapItems) 
+edit.CapItems:setItems(config.capItems)
+
+edit.minCap:setText(config.minCap)
+edit.minCap.onTextChange = function(widget, text)
+    config.minCap = text
+end
+
+local function properTable(t)
+    local r = {}
+  
+    for _, entry in pairs(t) do
+      table.insert(r, entry.id)
+    end
+    return r
+end
+
+macro(200, function()
+    if not config.enabled then return end
+    local tables = {properTable(config.capItems), properTable(config.useItems), properTable(config.trashItems)}
+
+    local containers = getContainers()
+    for i=1,3 do
+        for _, container in pairs(containers) do
+            for __, item in ipairs(container:getItems()) do
+                for ___, userItem in ipairs(tables[i]) do
+                    if item:getId() == userItem then
+                        return i == 1 and freecap() < tonumber(config.minCap) and dropItem(item) or
+                               i == 2 and use(item) or
+                               i == 3 and dropItem(item)
+                    end
+                end
+            end
+        end
+    end
+
+end)
+
+UI.Separator()]=]
+FILES["vBot/HealBot.lua"] = [=[local standBySpells = false
+local standByItems = false
+local editingSpellIndex = nil
+local editingItemIndex = nil
+
+local red = "#ff0800" -- "#ff0800" / #ea3c53 best
+local blue = "#7ef9ff"
+
+local function formatSpellEntry(entry)
+  return string.format("[%s%s%s | Mana:%s] %s", entry.origin, entry.sign, entry.value, entry.cost, entry.spell)
+end
+
+local function getSpellSourceCode(sourceText)
+  if sourceText == "Current Mana" then
+    return "MP"
+  elseif sourceText == "Current Health" then
+    return "HP"
+  elseif sourceText == "Mana Percent" then
+    return "MP%"
+  elseif sourceText == "Health Percent" then
+    return "HP%"
+  end
+  return "burst"
+end
+
+local function getSpellSourceText(sourceCode)
+  if sourceCode == "MP" then
+    return "Current Mana"
+  elseif sourceCode == "HP" then
+    return "Current Health"
+  elseif sourceCode == "MP%" then
+    return "Mana Percent"
+  elseif sourceCode == "HP%" then
+    return "Health Percent"
+  end
+  return "Burst Damage"
+end
+
+local function getSpellConditionCode(conditionText)
+  if conditionText == "Above" then
+    return ">"
+  elseif conditionText == "Below" then
+    return "<"
+  end
+  return "="
+end
+
+local function getSpellConditionText(conditionCode)
+  if conditionCode == ">" then
+    return "Above"
+  elseif conditionCode == "<" then
+    return "Below"
+  end
+  return "Equal To"
+end
+
+setDefaultTab("HP")
+local healPanelName = "healbot"
+local ui = setupUI([[
+Panel
+  height: 38
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('HealBot')
+
+  Button
+    id: settings
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Setup
+
+  Button
+    id: 1
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: 1
+    margin-right: 2
+    margin-top: 4
+    size: 17 17
+
+  Button
+    id: 2
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 2
+    margin-left: 4
+    size: 17 17
+    
+  Button
+    id: 3
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 3
+    margin-left: 4
+    size: 17 17
+
+  Button
+    id: 4
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 4
+    margin-left: 4
+    size: 17 17 
+    
+  Button
+    id: 5
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    text: 5
+    margin-left: 4
+    size: 17 17
+    
+  Label
+    id: name
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: prev.right
+    anchors.right: parent.right
+    text-align: center
+    margin-left: 4
+    height: 17
+    text: Profile #1
+    background: #292A2A
+]])
+ui:setId(healPanelName)
+
+if not HealBotConfig[healPanelName] or not HealBotConfig[healPanelName][1] or #HealBotConfig[healPanelName] ~= 5 then
+  HealBotConfig[healPanelName] = {
+    [1] = {
+      enabled = false,
+      spellTable = {},
+      itemTable = {},
+      name = "Profile #1",
+      Visible = true,
+      OldSchool = false,
+      Cooldown = true,
+      Interval = true,
+      Conditions = true,
+      Delay = true,
+      MessageDelay = false
+    },
+    [2] = {
+      enabled = false,
+      spellTable = {},
+      itemTable = {},
+      name = "Profile #2",
+      Visible = true,
+      OldSchool = false,
+      Cooldown = true,
+      Interval = true,
+      Conditions = true,
+      Delay = true,
+      MessageDelay = false
+    },
+    [3] = {
+      enabled = false,
+      spellTable = {},
+      itemTable = {},
+      name = "Profile #3",
+      Visible = true,
+      OldSchool = false,
+      Cooldown = true,
+      Interval = true,
+      Conditions = true,
+      Delay = true,
+      MessageDelay = false
+    },
+    [4] = {
+      enabled = false,
+      spellTable = {},
+      itemTable = {},
+      name = "Profile #4",
+      Visible = true,
+      OldSchool = false,
+      Cooldown = true,
+      Interval = true,
+      Conditions = true,
+      Delay = true,
+      MessageDelay = false
+    },
+    [5] = {
+      enabled = false,
+      spellTable = {},
+      itemTable = {},
+      name = "Profile #5",
+      Visible = true,
+      OldSchool = false,
+      Cooldown = true,
+      Interval = true,
+      Conditions = true,
+      Delay = true,
+      MessageDelay = false
+    },
+  }
+end
+
+if not HealBotConfig.currentHealBotProfile or HealBotConfig.currentHealBotProfile == 0 or HealBotConfig.currentHealBotProfile > 5 then 
+  HealBotConfig.currentHealBotProfile = 1
+end
+
+-- finding correct table, manual unfortunately
+local currentSettings
+local setActiveProfile = function()
+  local n = HealBotConfig.currentHealBotProfile
+  currentSettings = HealBotConfig[healPanelName][n]
+end
+setActiveProfile()
+
+local activeProfileColor = function()
+  for i=1,5 do
+    if i == HealBotConfig.currentHealBotProfile then
+      ui[i]:setColor("green")
+    else
+      ui[i]:setColor("white")
+    end
+  end
+end
+activeProfileColor()
+
+ui.title:setOn(currentSettings.enabled)
+ui.title.onClick = function(widget)
+  currentSettings.enabled = not currentSettings.enabled
+  widget:setOn(currentSettings.enabled)
+  vBotConfigSave("heal")
+end
+
+ui.settings.onClick = function(widget)
+  healWindow:show()
+  healWindow:raise()
+  healWindow:focus()
+end
+
+rootWidget = g_ui.getRootWidget()
+if rootWidget then
+  healWindow = UI.createWindow('HealWindow', rootWidget)
+  healWindow:hide()
+
+  local clearSpellEditor
+  local startSpellEdit
+  local saveSpellEntry
+  local clearItemEditor
+  local startItemEdit
+  local saveItemEntry
+
+  healWindow.onVisibilityChange = function(widget, visible)
+    if not visible then
+      vBotConfigSave("heal")
+      healWindow.healer:show()
+      healWindow.settings:hide()
+      healWindow.settingsButton:setText("Settings")
+      if clearSpellEditor then
+        clearSpellEditor()
+      end
+      if clearItemEditor then
+        clearItemEditor()
+      end
+    end
+  end
+
+  healWindow.settingsButton.onClick = function(widget)
+    if healWindow.healer:isVisible() then
+      healWindow.healer:hide()
+      healWindow.settings:show()
+      widget:setText("Back")
+    else
+      healWindow.healer:show()
+      healWindow.settings:hide()
+      widget:setText("Settings")
+    end
+  end
+
+  local setProfileName = function()
+    ui.name:setText(currentSettings.name)
+  end
+  healWindow.settings.profiles.Name.onTextChange = function(widget, text)
+    currentSettings.name = text
+    setProfileName()
+  end
+  healWindow.settings.list.Visible.onClick = function(widget)
+    currentSettings.Visible = not currentSettings.Visible
+    healWindow.settings.list.Visible:setChecked(currentSettings.Visible)
+  end
+  healWindow.settings.list.OldSchool.onClick = function(widget)
+    currentSettings.OldSchool = not currentSettings.OldSchool
+    healWindow.settings.list.OldSchool:setChecked(currentSettings.OldSchool)
+  end
+  healWindow.settings.list.Cooldown.onClick = function(widget)
+    currentSettings.Cooldown = not currentSettings.Cooldown
+    healWindow.settings.list.Cooldown:setChecked(currentSettings.Cooldown)
+  end
+  healWindow.settings.list.Interval.onClick = function(widget)
+    currentSettings.Interval = not currentSettings.Interval
+    healWindow.settings.list.Interval:setChecked(currentSettings.Interval)
+  end
+  healWindow.settings.list.Conditions.onClick = function(widget)
+    currentSettings.Conditions = not currentSettings.Conditions
+    healWindow.settings.list.Conditions:setChecked(currentSettings.Conditions)
+  end
+  healWindow.settings.list.Delay.onClick = function(widget)
+    currentSettings.Delay = not currentSettings.Delay
+    healWindow.settings.list.Delay:setChecked(currentSettings.Delay)
+  end
+  healWindow.settings.list.MessageDelay.onClick = function(widget)
+    currentSettings.MessageDelay = not currentSettings.MessageDelay
+    healWindow.settings.list.MessageDelay:setChecked(currentSettings.MessageDelay)
+  end
+
+  local refreshSpells = function()
+    if currentSettings.spellTable then
+      healWindow.healer.spells.spellList:destroyChildren()
+      for index, entry in pairs(currentSettings.spellTable) do
+        local label = UI.createWidget("SpellEntry", healWindow.healer.spells.spellList)
+        label.entryIndex = index
+        label.enabled:setChecked(entry.enabled)
+        label.enabled.onClick = function(widget)
+          standBySpells = false
+          standByItems = false
+          entry.enabled = not entry.enabled
+          label.enabled:setChecked(entry.enabled)
+        end
+        label.remove.onClick = function(widget)
+          standBySpells = false
+          standByItems = false
+          if editingSpellIndex and editingSpellIndex == index and clearSpellEditor then
+            clearSpellEditor()
+          elseif editingSpellIndex and editingSpellIndex > index then
+            editingSpellIndex = editingSpellIndex - 1
+          end
+          table.removevalue(currentSettings.spellTable, entry)
+          reindexTable(currentSettings.spellTable)
+          label:destroy()
+        end
+        label:setText(formatSpellEntry(entry))
+      end
+    end
+  end
+  refreshSpells()
+
+  local refreshItems = function()
+    if currentSettings.itemTable then
+      healWindow.healer.items.itemList:destroyChildren()
+      for index, entry in pairs(currentSettings.itemTable) do
+        local label = UI.createWidget("ItemEntry", healWindow.healer.items.itemList)
+        label.entryIndex = index
+        label.onClick = function(widget)
+          healWindow.healer.items.itemList:focusChild(widget)
+        end
+        label.enabled:setChecked(entry.enabled)
+        label.enabled.onClick = function(widget)
+          standBySpells = false
+          standByItems = false
+          entry.enabled = not entry.enabled
+          label.enabled:setChecked(entry.enabled)
+        end
+        label.remove.onClick = function(widget)
+          standBySpells = false
+          standByItems = false
+          if editingItemIndex and editingItemIndex == index and clearItemEditor then
+            clearItemEditor()
+          elseif editingItemIndex and editingItemIndex > index then
+            editingItemIndex = editingItemIndex - 1
+          end
+          table.removevalue(currentSettings.itemTable, entry)
+          reindexTable(currentSettings.itemTable)
+          label:destroy()
+        end
+        label.onDoubleClick = function(widget)
+          healWindow.healer.items.itemList:focusChild(widget)
+          startItemEdit(index)
+        end
+        label.id:setItemId(entry.item)
+        label.id:setItemSubType(entry.subType)
+        label:setText(entry.origin .. entry.sign .. entry.value .. ": " .. entry.item)
+      end
+    end
+  end
+  refreshItems()
+
+  healWindow.healer.spells.MoveUp.onClick = function(widget)
+    local input = healWindow.healer.spells.spellList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.spells.spellList:getChildIndex(input)
+    if index < 2 then return end
+
+    local t = currentSettings.spellTable
+
+    t[index],t[index-1] = t[index-1], t[index]
+    if editingSpellIndex == index then
+      editingSpellIndex = index - 1
+    elseif editingSpellIndex == index - 1 then
+      editingSpellIndex = index
+    end
+    healWindow.healer.spells.spellList:moveChildToIndex(input, index - 1)
+    healWindow.healer.spells.spellList:ensureChildVisible(input)
+  end
+
+  healWindow.healer.spells.MoveDown.onClick = function(widget)
+    local input = healWindow.healer.spells.spellList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.spells.spellList:getChildIndex(input)
+    if index >= healWindow.healer.spells.spellList:getChildCount() then return end
+
+    local t = currentSettings.spellTable
+
+    t[index],t[index+1] = t[index+1],t[index]
+    if editingSpellIndex == index then
+      editingSpellIndex = index + 1
+    elseif editingSpellIndex == index + 1 then
+      editingSpellIndex = index
+    end
+    healWindow.healer.spells.spellList:moveChildToIndex(input, index + 1)
+    healWindow.healer.spells.spellList:ensureChildVisible(input)
+  end
+
+  clearSpellEditor = function()
+    editingSpellIndex = nil
+    healWindow.healer.spells.spellFormula:setText('')
+    healWindow.healer.spells.spellValue:setText('')
+    healWindow.healer.spells.manaCost:setText('')
+    healWindow.healer.spells.spellSource:setOption("Current Mana")
+    healWindow.healer.spells.spellCondition:setOption("Below")
+    healWindow.healer.spells.addSpell:setText("Add")
+    healWindow.healer.spells.editSpell:setText("Edit")
+  end
+
+  startSpellEdit = function(index)
+    local entry = currentSettings.spellTable[index]
+    if not entry then return end
+
+    editingSpellIndex = index
+    healWindow.healer.spells.spellFormula:setText(entry.spell or '')
+    healWindow.healer.spells.spellValue:setText(tostring(entry.value or ''))
+    healWindow.healer.spells.manaCost:setText(tostring(entry.cost or ''))
+    healWindow.healer.spells.spellSource:setOption(getSpellSourceText(entry.origin))
+    healWindow.healer.spells.spellCondition:setOption(getSpellConditionText(entry.sign))
+    healWindow.healer.spells.addSpell:setText("Save")
+    healWindow.healer.spells.editSpell:setText("Cancel")
+  end
+
+  saveSpellEntry = function()
+    local spellFormula = healWindow.healer.spells.spellFormula:getText():trim()
+    local manaCost = tonumber(healWindow.healer.spells.manaCost:getText())
+    local spellTrigger = tonumber(healWindow.healer.spells.spellValue:getText())
+    local spellSource = healWindow.healer.spells.spellSource:getCurrentOption().text
+    local spellCondition = healWindow.healer.spells.spellCondition:getCurrentOption().text
+    local source = getSpellSourceCode(spellSource)
+    local equation = getSpellConditionCode(spellCondition)
+
+    if not manaCost then
+      warn("HealBot: incorrect mana cost value!")
+      healWindow.healer.spells.spellFormula:setText('')
+      healWindow.healer.spells.spellValue:setText('')
+      healWindow.healer.spells.manaCost:setText('')
+      return false
+    end
+
+    if not spellTrigger then
+      warn("HealBot: incorrect condition value!")
+      healWindow.healer.spells.spellFormula:setText('')
+      healWindow.healer.spells.spellValue:setText('')
+      healWindow.healer.spells.manaCost:setText('')
+      return false
+    end
+
+    if spellFormula:len() < 1 then
+      return false
+    end
+
+    local entry = {
+      spell = spellFormula,
+      sign = equation,
+      origin = source,
+      cost = manaCost,
+      value = spellTrigger,
+      enabled = true
+    }
+
+    if editingSpellIndex and currentSettings.spellTable[editingSpellIndex] then
+      entry.index = editingSpellIndex
+      entry.enabled = currentSettings.spellTable[editingSpellIndex].enabled
+      currentSettings.spellTable[editingSpellIndex] = entry
+    else
+      entry.index = #currentSettings.spellTable + 1
+      table.insert(currentSettings.spellTable, entry)
+    end
+
+    standBySpells = false
+    standByItems = false
+    refreshSpells()
+    clearSpellEditor()
+    return true
+  end
+
+  healWindow.healer.spells.editSpell.onClick = function(widget)
+    if editingSpellIndex then
+      clearSpellEditor()
+      return
+    end
+
+    local input = healWindow.healer.spells.spellList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.spells.spellList:getChildIndex(input)
+    if not index or not currentSettings.spellTable[index] then return end
+    startSpellEdit(index)
+  end
+
+  healWindow.healer.items.MoveUp.onClick = function(widget)
+    local input = healWindow.healer.items.itemList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.items.itemList:getChildIndex(input)
+    if index < 2 then return end
+
+    local t = currentSettings.itemTable
+
+    t[index],t[index-1] = t[index-1], t[index]
+    if editingItemIndex == index then
+      editingItemIndex = index - 1
+    elseif editingItemIndex == index - 1 then
+      editingItemIndex = index
+    end
+    healWindow.healer.items.itemList:moveChildToIndex(input, index - 1)
+    healWindow.healer.items.itemList:ensureChildVisible(input)
+  end
+
+  healWindow.healer.items.MoveDown.onClick = function(widget)
+    local input = healWindow.healer.items.itemList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.items.itemList:getChildIndex(input)
+    if index >= healWindow.healer.items.itemList:getChildCount() then return end
+
+    local t = currentSettings.itemTable
+
+    t[index],t[index+1] = t[index+1],t[index]
+    if editingItemIndex == index then
+      editingItemIndex = index + 1
+    elseif editingItemIndex == index + 1 then
+      editingItemIndex = index
+    end
+    healWindow.healer.items.itemList:moveChildToIndex(input, index + 1)
+    healWindow.healer.items.itemList:ensureChildVisible(input)
+  end
+
+  clearItemEditor = function()
+    editingItemIndex = nil
+    healWindow.healer.items.itemId:setItemId(0)
+    if healWindow.healer.items.itemId.setItemSubType then
+      healWindow.healer.items.itemId:setItemSubType(0)
+    end
+    healWindow.healer.items.itemValue:setText('')
+    healWindow.healer.items.itemSource:setOption("Current Mana")
+    healWindow.healer.items.itemCondition:setOption("Below")
+    healWindow.healer.items.addItem:setText("Add")
+    healWindow.healer.items.editItem:setText("Edit")
+  end
+
+  startItemEdit = function(index)
+    local entry = currentSettings.itemTable[index]
+    if not entry then return end
+
+    editingItemIndex = index
+    healWindow.healer.items.itemId:setItemId(entry.item)
+    if healWindow.healer.items.itemId.setItemSubType then
+      healWindow.healer.items.itemId:setItemSubType(entry.subType or 0)
+    end
+    healWindow.healer.items.itemValue:setText(tostring(entry.value or ''))
+    healWindow.healer.items.itemSource:setOption(getSpellSourceText(entry.origin))
+    healWindow.healer.items.itemCondition:setOption(getSpellConditionText(entry.sign))
+    healWindow.healer.items.addItem:setText("Save")
+    healWindow.healer.items.editItem:setText("Cancel")
+  end
+
+  saveItemEntry = function()
+    local id = healWindow.healer.items.itemId:getItemId()
+    local thing = g_things.getThingType(id)
+    local subType = g_game.getClientVersion() >= 860 and 0 or 1
+    if thing and thing:isFluidContainer() then
+      subType = healWindow.healer.items.itemId:getItem():getSubType()
+    end
+    local trigger = tonumber(healWindow.healer.items.itemValue:getText())
+    local src = healWindow.healer.items.itemSource:getCurrentOption().text
+    local eq = healWindow.healer.items.itemCondition:getCurrentOption().text
+    local source = getSpellSourceCode(src)
+    local equation = getSpellConditionCode(eq)
+
+    if not trigger then
+      warn("HealBot: incorrect trigger value!")
+      healWindow.healer.items.itemId:setItemId(0)
+      healWindow.healer.items.itemValue:setText('')
+      return false
+    end
+
+    if id <= 100 then
+      return false
+    end
+
+    local entry = {
+      item = id,
+      sign = equation,
+      origin = source,
+      value = trigger,
+      enabled = true,
+      subType = subType
+    }
+
+    if editingItemIndex and currentSettings.itemTable[editingItemIndex] then
+      entry.index = editingItemIndex
+      entry.enabled = currentSettings.itemTable[editingItemIndex].enabled
+      currentSettings.itemTable[editingItemIndex] = entry
+    else
+      entry.index = #currentSettings.itemTable + 1
+      table.insert(currentSettings.itemTable, entry)
+    end
+
+    standBySpells = false
+    standByItems = false
+    refreshItems()
+    clearItemEditor()
+    return true
+  end
+
+  healWindow.healer.items.editItem.onClick = function(widget)
+    if editingItemIndex then
+      clearItemEditor()
+      return
+    end
+
+    local input = healWindow.healer.items.itemList:getFocusedChild()
+    if not input then return end
+    local index = healWindow.healer.items.itemList:getChildIndex(input)
+    if not index or not currentSettings.itemTable[index] then return end
+    startItemEdit(index)
+  end
+
+  healWindow.healer.spells.addSpell.onClick = function(widget)
+    saveSpellEntry()
+  end
+
+  healWindow.healer.items.addItem.onClick = function(widget)
+    saveItemEntry()
+  end
+
+  healWindow.closeButton.onClick = function(widget)
+    healWindow:hide()
+  end
+
+  local loadSettings = function()
+    ui.title:setOn(currentSettings.enabled)
+    setProfileName()
+    clearSpellEditor()
+    clearItemEditor()
+    healWindow.settings.profiles.Name:setText(currentSettings.name)
+    refreshSpells()
+    refreshItems()
+    healWindow.settings.list.Visible:setChecked(currentSettings.Visible)
+    healWindow.settings.list.OldSchool:setChecked(currentSettings.OldSchool)
+    healWindow.settings.list.Cooldown:setChecked(currentSettings.Cooldown)
+    healWindow.settings.list.Delay:setChecked(currentSettings.Delay)
+    healWindow.settings.list.MessageDelay:setChecked(currentSettings.MessageDelay)
+    healWindow.settings.list.Interval:setChecked(currentSettings.Interval)
+    healWindow.settings.list.Conditions:setChecked(currentSettings.Conditions)
+  end
+  loadSettings()
+
+  local profileChange = function()
+    setActiveProfile()
+    activeProfileColor()
+    loadSettings()
+    vBotConfigSave("heal")
+  end
+
+  local resetSettings = function()
+    currentSettings.enabled = false
+    currentSettings.spellTable = {}
+    currentSettings.itemTable = {}
+    currentSettings.Visible = true
+    currentSettings.OldSchool = false
+    currentSettings.Cooldown = true
+    currentSettings.Delay = true
+    currentSettings.MessageDelay = false
+    currentSettings.Interval = true
+    currentSettings.Conditions = true
+    currentSettings.name = "Profile #" .. HealBotConfig.currentBotProfile
+  end
+
+  -- profile buttons
+  for i=1,5 do
+    local button = ui[i]
+      button.onClick = function()
+      HealBotConfig.currentHealBotProfile = i
+      profileChange()
+    end
+  end
+
+  healWindow.settings.profiles.ResetSettings.onClick = function()
+    resetSettings()
+    loadSettings()
+  end
+
+
+  -- public functions
+  HealBot = {} -- global table
+
+  HealBot.isOn = function()
+    return currentSettings.enabled
+  end
+
+  HealBot.isOff = function()
+    return not currentSettings.enabled
+  end
+
+  HealBot.setOff = function()
+    currentSettings.enabled = false
+    ui.title:setOn(currentSettings.enabled)
+    vBotConfigSave("atk")
+  end
+
+  HealBot.setOn = function()
+    currentSettings.enabled = true
+    ui.title:setOn(currentSettings.enabled)
+    vBotConfigSave("atk")
+  end
+
+  HealBot.getActiveProfile = function()
+    return HealBotConfig.currentHealBotProfile -- returns number 1-5
+  end
+
+  HealBot.setActiveProfile = function(n)
+    if not n or not tonumber(n) or n < 1 or n > 5 then
+      return error("[HealBot] wrong profile parameter! should be 1 to 5 is " .. n)
+    else
+      HealBotConfig.currentHealBotProfile = n
+      profileChange()
+    end
+  end
+
+  HealBot.show = function()
+    healWindow:show()
+    healWindow:raise()
+    healWindow:focus()
+  end
+end
+
+-- spells
+macro(100, function()
+  if standBySpells then return end
+  if not currentSettings.enabled then return end
+  local somethingIsOnCooldown = false
+
+  for _, entry in pairs(currentSettings.spellTable) do
+    if entry.enabled and entry.cost < mana() then
+      if canCast(entry.spell, not currentSettings.Conditions, not currentSettings.Cooldown) then
+        if entry.origin == "HP%" then
+          if entry.sign == "=" and hppercent() == entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == ">" and hppercent() >= entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == "<" and hppercent() <= entry.value then
+            say(entry.spell)
+            return
+          end
+        elseif entry.origin == "HP" then
+          if entry.sign == "=" and hp() == entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == ">" and hp() >= entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == "<" and hp() <= entry.value then
+            say(entry.spell)
+            return
+          end
+        elseif entry.origin == "MP%" then
+          if entry.sign == "=" and manapercent() == entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == ">" and manapercent() >= entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == "<" and manapercent() <= entry.value then
+            say(entry.spell)
+            return
+          end
+        elseif entry.origin == "MP" then
+          if entry.sign == "=" and mana() == entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == ">" and mana() >= entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == "<" and mana() <= entry.value then
+            say(entry.spell)
+            return
+          end    
+        elseif entry.origin == "burst" then
+          if entry.sign == "=" and burstDamageValue() == entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == ">" and burstDamageValue() >= entry.value then
+            say(entry.spell)
+            return
+          elseif entry.sign == "<" and burstDamageValue() <= entry.value then
+            say(entry.spell)
+            return
+          end    
+        end
+      else
+        somethingIsOnCooldown = true
+      end
+    end
+  end
+  if not somethingIsOnCooldown then
+    standBySpells = true 
+  end
+end)
+
+-- items
+macro(100, function()
+  if standByItems then return end
+  if not currentSettings.enabled or #currentSettings.itemTable == 0 then return end
+  if currentSettings.Delay and vBot.isUsing then return end
+  if currentSettings.MessageDelay and vBot.isUsingPotion then return end
+
+  if not currentSettings.MessageDelay then
+    delay(400)
+  end
+
+  if TargetBot.isOn() and TargetBot.Looting.getStatus():len() > 0 and currentSettings.Interval then
+    if not currentSettings.MessageDelay then
+      delay(700)
+    else
+      delay(200)
+    end
+  end
+
+  for _, entry in pairs(currentSettings.itemTable) do
+    local item = findItem(entry.item)
+    if (not currentSettings.Visible or item) and (currentSettings.OldSchool or item) and entry.enabled then
+      local useItem = currentSettings.OldSchool and item or entry.item
+      if entry.origin == "HP%" then
+        if entry.sign == "=" and hppercent() == entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == ">" and hppercent() >= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == "<" and hppercent() <= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        end
+      elseif entry.origin == "HP" then
+        if entry.sign == "=" and hp() == tonumberentry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == ">" and hp() >= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == "<" and hp() <= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        end
+      elseif entry.origin == "MP%" then
+        if entry.sign == "=" and manapercent() == entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == ">" and manapercent() >= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == "<" and manapercent() <= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        end
+      elseif entry.origin == "MP" then
+        if entry.sign == "=" and mana() == entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == ">" and mana() >= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == "<" and mana() <= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        end   
+      elseif entry.origin == "burst" then
+        if entry.sign == "=" and burstDamageValue() == entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == ">" and burstDamageValue() >= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        elseif entry.sign == "<" and burstDamageValue() <= entry.value then
+          useWith(useItem, player, entry.subType)
+          return
+        end   
+      end
+    end
+  end
+  standByItems = true
+end)
+UI.Separator()
+
+onPlayerHealthChange(function(healthPercent)
+  standByItems = false
+  standBySpells = false
+end)
+
+onManaChange(function(player, mana, maxMana, oldMana, oldMaxMana)
+  standByItems = false
+  standBySpells = false
+end)
+]=]
+FILES["vBot/HealBot.otui"] = [[SettingCheckBox < CheckBox
+  text-wrap: true
+  text-auto-resize: true
+  margin-top: 3
+  font: verdana-11px-rounded
+
+SpellSourceBoxPopupMenu < ComboBoxPopupMenu
+SpellSourceBoxPopupMenuButton < ComboBoxPopupMenuButton
+SpellSourceBox < ComboBox
+  @onSetup: |
+    self:addOption("Current Mana")
+    self:addOption("Current Health")
+    self:addOption("Mana Percent")
+    self:addOption("Health Percent")
+    self:addOption("Burst Damage")
+
+SpellConditionBoxPopupMenu < ComboBoxPopupMenu
+SpellConditionBoxPopupMenuButton < ComboBoxPopupMenuButton
+SpellConditionBox < ComboBox
+  @onSetup: |
+    self:addOption("Below")
+    self:addOption("Above")
+    self:addOption("Equal To")
+
+SpellEntry < Label
+  background-color: alpha
+  text-offset: 18 1
+  focusable: true
+  height: 16
+  font: verdana-11px-rounded
+
+  CheckBox
+    id: enabled
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    width: 15
+    height: 15
+    margin-top: 2
+    margin-left: 3
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    !text: tr('x')
+    anchors.right: parent.right
+    margin-right: 15
+    text-offset: 1 0
+    width: 15
+    height: 15   
+
+ItemEntry < Label
+  background-color: alpha
+  text-offset: 40 1
+  focusable: true
+  height: 16
+  font: verdana-11px-rounded
+
+  CheckBox
+    id: enabled
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    width: 15
+    height: 15
+    margin-top: 2
+    margin-left: 3
+
+  UIItem
+    id: id
+    anchors.left: prev.right
+    margin-left: 3
+    anchors.verticalCenter: parent.verticalCenter
+    size: 15 15
+    focusable: false
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    !text: tr('x')
+    anchors.right: parent.right
+    margin-right: 15
+    text-offset: 1 0
+    width: 15
+    height: 15               
+
+SpellHealing < FlatPanel
+  size: 490 130
+
+  Label
+    id: title
+    anchors.verticalCenter: parent.top
+    anchors.left: parent.left
+    margin-left: 5
+    text: Spell Healing
+    color: #269e26
+    font: verdana-11px-rounded
+
+  SpellSourceBox
+    id: spellSource
+    anchors.top: spellList.top
+    anchors.left: spellList.right
+    margin-left: 80
+    width: 125
+    font: verdana-11px-rounded
+
+  Label
+    id: whenSpell
+    anchors.left: spellList.right
+    anchors.verticalCenter: prev.verticalCenter
+    text: When
+    margin-left: 7
+    font: verdana-11px-rounded
+
+  Label
+    id: isSpell
+    anchors.left: spellList.right
+    anchors.top: whenSpell.bottom
+    text: Is
+    margin-top: 9
+    margin-left: 7 
+    font: verdana-11px-rounded
+
+  SpellConditionBox
+    id: spellCondition
+    anchors.left: spellSource.left
+    anchors.top: spellSource.bottom   
+    marin-top: 15
+    width: 80
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: spellValue
+    anchors.left: spellCondition.right
+    anchors.top: spellCondition.top
+    anchors.bottom: spellCondition.bottom
+    anchors.right: spellSource.right
+    font: verdana-11px-rounded
+
+  Label
+    id: castSpell
+    anchors.left: isSpell.left
+    anchors.top: isSpell.bottom
+    text: Cast  
+    margin-top: 9
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: spellFormula
+    anchors.left: spellCondition.left
+    anchors.top: spellCondition.bottom
+    anchors.right: spellValue.right
+    font: verdana-11px-rounded
+
+  Label
+    id: manaSpell
+    anchors.left: castSpell.left
+    anchors.top: castSpell.bottom
+    text: Mana Cost:
+    margin-top: 8
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: manaCost
+    anchors.left: spellFormula.left
+    anchors.top: spellFormula.bottom
+    width: 40 
+    font: verdana-11px-rounded
+
+  TextList
+    id: spellList
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+    anchors.top: parent.top
+    padding: 1
+    padding-top: 2
+    width: 270  
+    margin-bottom: 7
+    margin-left: 7
+    margin-top: 10
+    vertical-scrollbar: spellListScrollBar
+
+  VerticalScrollBar
+    id: spellListScrollBar
+    anchors.top: spellList.top
+    anchors.bottom: spellList.bottom
+    anchors.right: spellList.right
+    step: 14
+    pixels-scroll: true
+
+  Button
+    id: addSpell
+    anchors.right: spellFormula.right
+    anchors.bottom: spellList.bottom
+    text: Add
+    size: 40 17
+    font: cipsoftFont
+
+  Button
+    id: editSpell
+    anchors.right: addSpell.left
+    anchors.bottom: addSpell.bottom
+    margin-right: 5
+    text: Edit
+    size: 40 17
+    font: cipsoftFont
+
+  Button
+    id: MoveUp
+    anchors.right: editSpell.left
+    anchors.bottom: editSpell.bottom
+    margin-right: 5
+    text: Move Up
+    size: 55 17
+    font: cipsoftFont
+
+  Button
+    id: MoveDown
+    anchors.right: prev.left
+    anchors.bottom: prev.bottom
+    margin-right: 5
+    text: Move Down
+    size: 55 17
+    font: cipsoftFont  
+
+ItemHealing < FlatPanel
+  size: 490 120
+
+  Label
+    id: title
+    anchors.verticalCenter: parent.top
+    anchors.left: parent.left
+    margin-left: 5
+    text: Item Healing
+    color: #ff4513
+    font: verdana-11px-rounded
+
+  SpellSourceBox
+    id: itemSource
+    anchors.top: itemList.top
+    anchors.right: parent.right
+    margin-right: 10
+    width: 128
+    font: verdana-11px-rounded
+
+  Label
+    id: whenItem
+    anchors.left: itemList.right
+    anchors.verticalCenter: prev.verticalCenter
+    text: When
+    margin-left: 7
+    font: verdana-11px-rounded
+
+  Label
+    id: isItem
+    anchors.left: itemList.right
+    anchors.top: whenItem.bottom
+    text: Is
+    margin-top: 9
+    margin-left: 7 
+    font: verdana-11px-rounded
+
+  SpellConditionBox
+    id: itemCondition
+    anchors.left: itemSource.left
+    anchors.top: itemSource.bottom   
+    marin-top: 15
+    width: 80
+    font: verdana-11px-rounded
+
+  TextEdit
+    id: itemValue
+    anchors.left: itemCondition.right
+    anchors.top: itemCondition.top
+    anchors.bottom: itemCondition.bottom
+    width: 49
+    font: verdana-11px-rounded
+
+  Label
+    id: useItem
+    anchors.left: isItem.left
+    anchors.top: isItem.bottom
+    text: Use Item:
+    margin-top: 15
+    font: verdana-11px-rounded
+
+  BotItem
+    id: itemId
+    anchors.left: itemCondition.left
+    anchors.top: itemCondition.bottom
+
+  TextList
+    id: itemList
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+    anchors.top: parent.top
+    padding: 1
+    padding-top: 2
+    width: 270  
+    margin-top: 10
+    margin-bottom: 7
+    margin-left: 8
+    vertical-scrollbar: itemListScrollBar
+
+  VerticalScrollBar
+    id: itemListScrollBar
+    anchors.top: itemList.top
+    anchors.bottom: itemList.bottom
+    anchors.right: itemList.right
+    step: 14
+    pixels-scroll: true
+
+  Button
+    id: addItem
+    anchors.right: itemValue.right
+    anchors.bottom: itemList.bottom
+    text: Add
+    size: 40 17
+    font: cipsoftFont
+
+  Button
+    id: editItem
+    anchors.right: addItem.left
+    anchors.bottom: addItem.bottom
+    margin-right: 5
+    text: Edit
+    size: 40 17
+    font: cipsoftFont
+
+  Button
+    id: MoveUp
+    anchors.right: editItem.left
+    anchors.bottom: editItem.bottom
+    margin-right: 5
+    text: Move Up
+    size: 55 17
+    font: cipsoftFont
+
+  Button
+    id: MoveDown
+    anchors.right: prev.left
+    anchors.bottom: prev.bottom
+    margin-right: 5
+    text: Move Down
+    size: 55 17
+    font: cipsoftFont
+
+HealerPanel < Panel
+  size: 510 275
+
+  SpellHealing
+    id: spells
+    anchors.top: parent.top
+    margin-top: 8
+    anchors.left: parent.left
+
+  ItemHealing
+    id: items
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    margin-top: 10
+
+HealBotSettingsPanel < Panel
+  size: 500 267
+  padding-top: 8
+
+  FlatPanel
+    id: list
+    anchors.fill: parent
+    margin-right: 240
+    padding-left: 6
+    padding-right: 6
+    padding-top: 6
+    layout:
+      type: verticalBox
+
+    Label
+      text: Additional Settings
+      text-align: center
+      font: verdana-11px-rounded
+      
+    HorizontalSeparator
+
+    SettingCheckBox
+      id: Cooldown
+      text: Check spell cooldowns
+      margin-top: 10
+
+    SettingCheckBox
+      id: Visible
+      text: Items must be visible (recommended)
+
+    SettingCheckBox
+      id: Delay
+      text: Don't use items when interacting
+
+    SettingCheckBox
+      id: Interval
+      text: Additional delay when looting corpses
+
+    SettingCheckBox
+      id: Conditions
+      text: Also check conditions from RL Tibia
+
+    SettingCheckBox
+      id: MessageDelay
+      text: Cooldown based on "Aaaah..." message
+
+    SettingCheckBox
+      id: OldSchool
+      text: Old School Mode (No Hotkeys)
+      !tooltip: tr('Items Must be Visible')
+
+  VerticalSeparator
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.left: prev.right
+    margin-left: 8
+
+  FlatPanel
+    id: profiles
+    anchors.fill: parent
+    anchors.left: prev.left
+    margin-left: 8
+    margin-right: 8
+    padding: 8
+
+    Label
+      text: Profile Settings
+      text-align: center
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.right
+      font: verdana-11px-rounded
+
+    HorizontalSeparator
+      anchors.top: prev.bottom
+      anchors.left: parent.left
+      anchors.right: parent.right
+
+    Label
+      anchors.top: prev.bottom
+      margin-top: 30
+      anchors.left: parent.left
+      anchors.right: parent.right
+      text-align: center
+      font: verdana-11px-rounded
+      text: Profile Name:
+
+    TextEdit
+      id: Name
+      anchors.top: prev.bottom
+      margin-top: 3
+      anchors.left: parent.left
+      anchors.right: parent.right     
+
+    Button
+      id: ResetSettings
+      anchors.bottom: parent.bottom
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: Reset Current Profile
+      text-auto-resize: true
+      color: #ff4513
+
+HealWindow < MainWindow
+  !text: tr('Self Healer')
+  size: 520 360
+  @onEscape: self:hide()
+
+  Label
+    id: title
+    anchors.left: parent.left
+    anchors.top: parent.top
+    margin-left: 2
+    !text: tr('More important methods come first (Example: Exura gran above Exura)')
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae  
+
+  HealerPanel
+    id: healer
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+
+  HealBotSettingsPanel
+    id: settings
+    anchors.top: title.bottom
+    anchors.left: parent.left
+    visible: false
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8    
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-right: 5
+
+  Button
+    id: settingsButton
+    !text: tr('Settings')
+    font: cipsoftFont
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+    size: 45 21
+]]
+FILES["vBot/alarms.lua"] = [=[setDefaultTab("Tools")
+local panelName = "alarms"
+
+local soundFiles = {
+  lowSupplies = "/sounds/Low Supplies.ogg",
+  lowHealth = "/sounds/Low Health.ogg",
+  lowMana = "/sounds/Low Mana.ogg",
+  damageTaken = "/sounds/Damage Taken.ogg",
+  playerAttack = "/sounds/Player Attack.ogg",
+  privateMsg = "/sounds/Private Message.ogg",
+  defaultMsg = "/sounds/Default Message.ogg",
+  customMessage = "/sounds/Custom Message.ogg",
+  creatureDetected = "/sounds/Creature Detected.ogg",
+  playerDetected = "/sounds/Player Detected.ogg",
+  gmDetected = "/sounds/GM Detected.ogg",
+  creatureName = "/sounds/Creature Name.ogg",
+}
+
+local ui = setupUI([[
+Panel
+  height: 19
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('Alarms')
+
+  Button
+    id: alerts
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Edit
+
+]])
+ui:setId(panelName)
+
+if not storage[panelName] then
+  storage[panelName] = {}
+end
+
+local config = storage[panelName]
+
+ui.title:setOn(config.enabled)
+ui.title.onClick = function(widget)
+  config.enabled = not config.enabled
+  widget:setOn(config.enabled)
+end
+
+local window = UI.createWindow("AlarmsWindow")
+window:hide()
+
+ui.alerts.onClick = function()
+  window:show()
+  window:raise()
+  window:focus()
+end
+
+local widgets = 
+{
+  "AlarmCheckBox", 
+  "AlarmCheckBoxAndSpinBox", 
+  "AlarmCheckBoxAndTextEdit"
+}
+
+local parents = 
+{
+  window.list, 
+  window.settingsList
+}
+
+
+-- type
+addAlarm = function(id, title, defaultValue, alarmType, parent, tooltip)
+  local widget = UI.createWidget(widgets[alarmType], parents[parent])
+  widget:setId(id)
+
+  if type(config[id]) ~= 'table' then
+    config[id] = {
+      enabled = alarmType == 1 and defaultValue or false,
+      value = (alarmType == 2 or alarmType == 3) and defaultValue or nil,
+    }
+  elseif alarmType == 3 and config[id].value == nil then
+    -- Migração das versões antigas, que salvavam o texto em config[id].text.
+    config[id].value = config[id].text or defaultValue or ""
+    config[id].text = nil
+  end
+
+  widget.tick:setText(title)
+  widget.tick:setChecked(config[id].enabled)
+  widget.tick:setTooltip(tooltip)
+  
+  widget.tick.onClick = function()
+    config[id].enabled = not config[id].enabled
+    widget.tick:setChecked(config[id].enabled)
+  end
+
+  if alarmType == 2 then
+    widget.value:setValue(config[id].value)
+    widget.value.onValueChange = function(widget, value)
+      config[id].value = value
+    end
+  elseif alarmType == 3 then
+    widget.text:setText(config[id].value)
+    widget.text.onTextChange = function(widget, newText)
+      config[id].value = newText
+    end
+  end
+
+end
+
+-- settings
+addAlarm("ignoreFriends", "Ignore Friends", true, 1, 2)
+addAlarm("flashClient", "Flash Client", true, 1, 2)
+addAlarm("alarmIcon", "Create Icon", true, 1, 2)
+
+-- alarm list
+addAlarm("lowSupplies", "Low Supplies", false, 1, 1, "You have to configure 'Supply Settings' in CaveBot.")
+addAlarm("lowHealth", "Low Health", 20, 2, 1)
+addAlarm("lowMana", "Low Mana", 20, 2, 1)
+addAlarm("damageTaken", "Damage Taken", false, 1, 1)
+addAlarm("playerAttack", "Player Attack", false, 1, 1)
+
+UI.Separator(window.list)
+
+addAlarm("privateMsg", "Private Message", false, 1, 1)
+addAlarm("defaultMsg", "Default Message", false, 1, 1)
+addAlarm("customMessage", "Custom Message:", "", 3, 1, "You can add text, that if found in any incoming message will trigger alert.\n You can add many, just separate them by comma.")
+
+UI.Separator(window.list)
+
+addAlarm("creatureDetected", "Creature Detected", false, 1, 1)
+addAlarm("playerDetected", "Player Detected", false, 1, 1)
+addAlarm("gmDetected", "GM Detected", false, 1, 1, "Detects visible or talking staff names using common prefixes: GM, [GM], CM, [CM], GOD and [GOD].")
+addAlarm("creatureName", "Creature Name:", "", 3, 1, "You can add a name or part of it, that if found in any visible creature name will trigger alert.\nYou can add many, just separate them by comma.")
+
+
+local function isGmName(name)
+  name = tostring(name or ""):trim():lower()
+  if name:len() == 0 then return false end
+
+  -- Detecta cargos comuns com ou sem colchetes.
+  -- Ex.: GM Thiago, [GM] Thiago, ADM Thiago, [ADM] Thiago.
+  local roles = {
+    "gm",
+    "cm",
+    "god",
+    "adm",
+    "admin",
+    "dono",
+    "owner",
+    "tutor",
+    "gamemaster",
+  }
+
+  for _, role in ipairs(roles) do
+    if name == role then
+      return true
+    end
+
+    if name:match("^%[" .. role .. "%]%s*") then
+      return true
+    end
+
+    if name:match("^" .. role .. "[%s%-%_]") then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- Permite que um alarme dispare imediatamente após carregar o script.
+local lastCall = now - 2000
+local function alarm(file, windowText)
+  if now - lastCall < 2000 then return end -- 2s delay
+  lastCall = now
+
+  if not g_resources.fileExists(file) then
+    file = "/sounds/alarm.ogg"
+  end
+  
+  if file == "/sounds/alarm.ogg" then
+    lastCall = now + 4000 -- alarm.ogg length is 6s
+  end
+  
+  if modules.game_bot.g_app.getOs() == "windows" and config.flashClient.enabled then
+    g_window.flash()
+  end
+  g_window.setTitle(player:getName() .. " - " .. windowText)
+  playSound(file)
+end
+
+-- damage taken & custom message
+onTextMessage(function(mode, text)
+  if not config.enabled then return end
+  if mode == 22 and config.damageTaken.enabled then
+    return alarm(soundFiles.damageTaken, "Damage Received!")
+  end
+
+  if config.customMessage.enabled then
+    local alertText = config.customMessage.value
+    if alertText:len() > 0 then
+      text = text:lower()
+      local parts = string.split(alertText, ",")
+
+      for i=1,#parts do
+        local part = parts[i]
+        part = part:trim()
+        part = part:lower()
+
+        if part:len() > 0 and text:find(part, 1, true) then
+          return alarm(soundFiles.customMessage, "Special Message!")
+        end
+      end
+    end
+  end
+end)
+
+-- default, private message & custom message
+onTalk(function(name, level, mode, text, channelId, pos)
+  if not config.enabled then return end
+  if name == player:getName() then return end -- ignore self messages
+
+  if config.gmDetected.enabled and isGmName(name) then
+    return alarm(soundFiles.gmDetected, "GM Detected!")
+  end
+
+  if config.ignoreFriends.enabled and isFriend(name) then return end -- ignore friends if enabled
+
+  if mode == 1 and config.defaultMsg.enabled then
+    return alarm(soundFiles.defaultMsg, "Default Message!")
+  end
+
+  if mode == 4 and config.privateMsg.enabled then
+    return alarm(soundFiles.privateMsg, "Private Message!")
+  end
+
+  if config.customMessage.enabled then
+    local alertText = config.customMessage.value
+    if alertText:len() > 0 then
+      text = text:lower()
+      local parts = string.split(alertText, ",")
+
+      for i=1,#parts do
+        local part = parts[i]
+        part = part:trim()
+        part = part:lower()
+
+        if part:len() > 0 and text:find(part, 1, true) then
+          return alarm(soundFiles.customMessage, "Special Message!")
+        end
+      end
+    end
+  end
+end)
+
+-- health, mana, specs & supplies
+macro(500, function() 
+  if not config.enabled then return end
+  if config.lowHealth.enabled then
+    if hppercent() < config.lowHealth.value then
+      return alarm(soundFiles.lowHealth, "Low Health!")
+    end
+  end
+
+  if config.lowMana.enabled then
+    if manapercent() < config.lowMana.value then
+      return alarm(soundFiles.lowMana, "Low Mana!")
+    end
+  end
+
+  if config.lowSupplies.enabled then
+    if hasSupplies() ~= true then
+      return alarm(soundFiles.lowSupplies, "Low Supplies!")
+    end
+  end
+
+  for _, spec in ipairs(getSpectators()) do
+    if not spec:isLocalPlayer() then
+      local specName = spec:getName() or ""
+
+      -- GM sempre é verificado antes do filtro de amigos.
+      if spec:isPlayer() and config.gmDetected.enabled and isGmName(specName) then
+        return alarm(soundFiles.gmDetected, "GM Detected!")
+      end
+
+      local ignoredFriend = config.ignoreFriends.enabled and isFriend(spec)
+      if not ignoredFriend then
+        if config.creatureDetected.enabled then
+          return alarm(soundFiles.creatureDetected, "Creature Detected!")
+        end
+
+        if spec:isPlayer() then
+          if spec:isTimedSquareVisible() and config.playerAttack.enabled then
+            return alarm(soundFiles.playerAttack, "Player Attack!")
+          end
+          if config.playerDetected.enabled then
+            return alarm(soundFiles.playerDetected, "Player Detected!")
+          end
+        end
+
+        if config.creatureName.enabled and config.creatureName.value:len() > 0 then
+          local name = specName:lower()
+          local fragments = string.split(config.creatureName.value, ",")
+
+          for _, fragment in ipairs(fragments) do
+            local frag = fragment:trim():lower()
+            if frag:len() > 0 and name:find(frag, 1, true) then
+              return alarm(soundFiles.creatureName, "Special Creature Detected!")
+            end
+          end
+        end
+      end
+    end
+  end
+end)
+
+Alarms = {} -- global table
+
+Alarms.isOff = function()
+  return not config.enabled
+end
+
+Alarms.isOn = function()
+  return config.enabled
+end
+
+Alarms.setOff = function()
+  config.enabled = false
+  ui.title:setOn(config.enabled)
+end
+
+Alarms.setOn = function()
+  config.enabled = true
+  ui.title:setOn(config.enabled)
+end
+
+-- icon
+if true then
+  aIcon = addIcon("aI",{text="Alarms",switchable=false,moveable=true}, function()
+    if Alarms.isOff() then 
+      Alarms.setOn()
+    else 
+      Alarms.setOff()
+    end
+  end)
+  aIcon:setSize({height=30,width=50})
+  aIcon.text:setFont('verdana-11px-rounded')
+  aIcon:breakAnchors()
+  aIcon:move(200,135)
+  aIcon:hide()
+
+  macro(50,function()
+    local a = config.alarmIcon.enabled
+    if a then
+      aIcon:show()
+      if Alarms.isOn() then
+        aIcon.text:setColoredText({"Alarms\n","white","ON","green"})
+      else
+        aIcon.text:setColoredText({"Alarms\n","white","OFF","red"})
+      end
+    else
+      aIcon:hide()
+    end
+  end)
+end
+
+UI.Separator()]=]
+FILES["vBot/alarms.otui"] = [[AlarmCheckBox < Panel
+  height: 20
+  margin-top: 2
+
+  CheckBox
+    id: tick
+    anchors.fill: parent
+    margin-top: 4
+    font: verdana-11px-rounded
+    text: Player Attack
+    text-offset: 17 -3
+
+AlarmCheckBoxAndSpinBox < Panel
+  height: 20
+  margin-top: 2
+
+  CheckBox
+    id: tick
+    anchors.fill: parent
+    anchors.right: next.left
+    margin-top: 4
+    font: verdana-11px-rounded
+    text: Player Attack
+    text-offset: 17 -3
+
+  SpinBox
+    id: value
+    anchors.top: parent.top
+    margin-top: 1
+    margin-bottom: 1
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+    width: 40
+    minimum: 1
+    maximum: 100
+    step: 1
+    editable: true
+    focusable: true
+
+AlarmCheckBoxAndTextEdit < Panel
+  height: 20
+  margin-top: 2
+
+  CheckBox
+    id: tick
+    anchors.fill: parent
+    anchors.right: next.left
+    margin-top: 4
+    font: verdana-11px-rounded
+    text: Creature Name
+    text-offset: 17 -3
+
+  BotTextEdit
+    id: text
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    width: 160
+    font: terminus-10px
+    margin-top: 1
+    margin-bottom: 1
+
+AlarmsWindow < MainWindow
+  !text: tr('Alarms')
+  size: 340 465
+  padding: 15
+  @onEscape: self:hide()
+
+  FlatPanel
+    id: list
+    anchors.fill: parent
+    anchors.bottom: settingsList.top
+    margin-bottom: 20
+    margin-top: 10
+    layout: verticalBox
+    padding: 10
+    padding-top: 5
+
+  FlatPanel
+    id: settingsList
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: separator.top
+    margin-bottom: 5
+    margin-top: 10
+    padding: 5
+    padding-left: 10
+    layout: 
+      type: verticalBox
+      fit-children: true
+
+  Label
+    anchors.verticalCenter: settingsList.top
+    anchors.left: settingsList.left
+    margin-left: 5
+    width: 200
+    text: Alarms Settings
+    font: verdana-11px-rounded
+    color: #9f5031
+
+  Label
+    anchors.verticalCenter: list.top
+    anchors.left: list.left
+    margin-left: 5
+    width: 200
+    text: Active Alarms
+    font: verdana-11px-rounded
+    color: #9f5031
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  ResizeBorder
+    id: bottomResizeBorder
+    anchors.fill: separator
+    height: 3
+    minimum: 260
+    maximum: 600
+    margin-left: 3
+    margin-right: 3
+    background: #ffffff88  
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-right: 5
+    @onClick: self:getParent():hide()]]
+FILES["vBot/cavebot.lua"] = [=[-- Cavebot by otclient@otclient.ovh
+-- visit http://bot.otclient.ovh/
+
+local cavebotTab = "Cave"
+local targetingTab = storage.coreSettings.joinBot and "Cave" or "Target"
+storage.cavebotCompat = storage.cavebotCompat or {}
+local restoreFullFromBisect = storage.loaderCompat and storage.loaderCompat.mode == "loadedCoreCave"
+
+if restoreFullFromBisect then
+  storage.cavebotCompat.safeMode = false
+  storage.cavebotCompat.stage = "full"
+  storage.cavebotCompat.loadTargetBot = true
+  storage.cavebotCompat.loadMainUi = true
+  storage.cavebotCompat.loadMainRuntime = true
+  storage.cavebotCompat.setupEditor = true
+  storage.cavebotCompat.setupConfigUi = true
+  storage.cavebotCompat.setupExtensions = true
+  storage.cavebotCompat.bindMainConfig = true
+  storage.cavebotCompat.enableSupportModules = nil
+  storage.cavebotCompat.enableSensitiveModules = nil
+  storage.cavebotCompat.enableTargetBotBisect = nil
+  if storage._configs then
+    if storage._configs.cavebot_configs then
+      storage._configs.cavebot_configs.enabled = true
+    end
+    if storage._configs.targetbot_configs then
+      storage._configs.targetbot_configs.enabled = true
+    end
+  end
+end
+
+if storage.cavebotCompat.safeMode == nil then
+  storage.cavebotCompat.safeMode = true
+end
+if storage.cavebotCompat.stage == nil then
+  storage.cavebotCompat.stage = "full"
+end
+if storage.cavebotCompat.loadTargetBot == nil then
+  storage.cavebotCompat.loadTargetBot = true
+end
+if storage.cavebotCompat.loadMainUi == nil then
+  storage.cavebotCompat.loadMainUi = true
+end
+if storage.cavebotCompat.loadMainRuntime == nil then
+  storage.cavebotCompat.loadMainRuntime = true
+end
+local cavebotCompat = storage.cavebotCompat
+local targetBotBisect = cavebotCompat.stage == "coreOnly"
+  and cavebotCompat.loadMainUi
+  and not cavebotCompat.loadMainRuntime
+  and cavebotCompat.loadTargetBot == false
+  and cavebotCompat.safeMode == true
+
+if cavebotCompat.enableTargetBotBisect == nil and targetBotBisect then
+  cavebotCompat.enableTargetBotBisect = true
+end
+
+local function shouldLoadCavebotModule(module)
+  if cavebotCompat.stage == "coreOnly" then
+    local coreModules = {
+      ["/cavebot/actions.lua"] = true,
+      ["/cavebot/config.lua"] = true,
+      ["/cavebot/editor.lua"] = true,
+      ["/cavebot/example_functions.lua"] = true,
+      ["/cavebot/recorder.lua"] = true,
+      ["/cavebot/walking.lua"] = true,
+      ["/cavebot/cavebot.lua"] = true,
+    }
+    if cavebotCompat.enableSupportModules then
+      coreModules["/cavebot/sell_all.lua"] = true
+      coreModules["/cavebot/depositor.lua"] = true
+      coreModules["/cavebot/buy_supplies.lua"] = true
+      coreModules["/cavebot/supply_check.lua"] = true
+      coreModules["/cavebot/travel.lua"] = true
+      coreModules["/cavebot/doors.lua"] = true
+      coreModules["/cavebot/pos_check.lua"] = true
+      coreModules["/cavebot/withdraw.lua"] = true
+      coreModules["/cavebot/inbox_withdraw.lua"] = true
+      coreModules["/cavebot/bank.lua"] = true
+      coreModules["/cavebot/clear_tile.lua"] = true
+      coreModules["/cavebot/tasker.lua"] = true
+      coreModules["/cavebot/imbuing.lua"] = true
+    end
+    return coreModules[module] == true
+  elseif cavebotCompat.stage == "supportOnly" then
+    local supportModules = {
+      ["/cavebot/sell_all.lua"] = true,
+      ["/cavebot/depositor.lua"] = true,
+      ["/cavebot/buy_supplies.lua"] = true,
+      ["/cavebot/supply_check.lua"] = true,
+      ["/cavebot/travel.lua"] = true,
+      ["/cavebot/doors.lua"] = true,
+      ["/cavebot/pos_check.lua"] = true,
+      ["/cavebot/withdraw.lua"] = true,
+      ["/cavebot/inbox_withdraw.lua"] = true,
+      ["/cavebot/bank.lua"] = true,
+      ["/cavebot/clear_tile.lua"] = true,
+      ["/cavebot/tasker.lua"] = true,
+      ["/cavebot/imbuing.lua"] = true,
+    }
+    return supportModules[module] == true
+  end
+
+  return true
+end
+
+local function loadCavebotModule(module)
+  if shouldLoadCavebotModule(module) then
+    dofile(module)
+  end
+end
+
+setDefaultTab(cavebotTab)
+CaveBot.Extensions = {}
+importStyle("/cavebot/cavebot.otui")
+importStyle("/cavebot/config.otui")
+importStyle("/cavebot/editor.otui")
+loadCavebotModule("/cavebot/actions.lua")
+loadCavebotModule("/cavebot/config.lua")
+loadCavebotModule("/cavebot/editor.lua")
+loadCavebotModule("/cavebot/example_functions.lua")
+loadCavebotModule("/cavebot/recorder.lua")
+loadCavebotModule("/cavebot/walking.lua")
+if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
+  dofile("/cavebot/minimap.lua")
+end
+-- in this section you can add extensions, check extension_template.lua
+local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+
+local path = "/bot/" .. configName .. "/cavebot/extensions"
+if not g_resources.directoryExists(path) then
+  g_resources.makeDir(path)
+end
+
+local extFiles = g_resources.listDirectoryFiles(path, false, false)
+for i, file in ipairs(extFiles) do
+  local ext = file:split(".")
+  if ext[#ext]:lower() == "lua"  then
+    dofile('/cavebot/extensions/'..file)
+  end
+end
+--dofile("/cavebot/extension_template.lua")
+loadCavebotModule("/cavebot/sell_all.lua")
+loadCavebotModule("/cavebot/depositor.lua")
+loadCavebotModule("/cavebot/buy_supplies.lua")
+loadCavebotModule("/cavebot/supply_check.lua")
+loadCavebotModule("/cavebot/travel.lua")
+loadCavebotModule("/cavebot/doors.lua")
+loadCavebotModule("/cavebot/pos_check.lua")
+loadCavebotModule("/cavebot/withdraw.lua")
+loadCavebotModule("/cavebot/inbox_withdraw.lua")
+if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
+  dofile("/cavebot/lure.lua")
+end
+loadCavebotModule("/cavebot/bank.lua")
+loadCavebotModule("/cavebot/clear_tile.lua")
+loadCavebotModule("/cavebot/tasker.lua")
+loadCavebotModule("/cavebot/imbuing.lua")
+if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
+  dofile("/cavebot/stand_lure.lua")
+end
+-- main cavebot file, must be last
+loadCavebotModule("/cavebot/cavebot.lua")
+
+setDefaultTab(targetingTab)
+if cavebotCompat.loadTargetBot or cavebotCompat.enableTargetBotBisect then
+  if storage.coreSettings.joinBot then UI.Label("-- [[ TargetBot ]] --") end
+  TargetBot = {} -- global namespace
+  importStyle("/targetbot/looting.otui")
+  importStyle("/targetbot/target.otui")
+  importStyle("/targetbot/creature_editor.otui")
+  dofile("/targetbot/creature.lua")
+  dofile("/targetbot/creature_attack.lua")
+  dofile("/targetbot/creature_editor.lua")
+  dofile("/targetbot/creature_priority.lua")
+  dofile("/targetbot/looting.lua")
+  dofile("/targetbot/walking.lua")
+  -- main targetbot file, must be last
+  dofile("/targetbot/target.lua")
+end
+]=]
+FILES["vBot/cavebot_control_panel.lua"] = [=[setDefaultTab("Cave")
+
+g_ui.loadUIFromString([[
+CaveBotControlPanel < Panel
+  margin-top: 5
+  layout:
+    type: verticalBox
+    fit-children: true
+
+  HorizontalSeparator
+  
+  Label
+    text-align: center
+    text: CaveBot Control Panel
+    font: verdana-11px-rounded
+    margin-top: 3
+
+  HorizontalSeparator
+    
+  Panel
+    id: buttons
+    margin-top: 2
+    layout:
+      type: grid
+      cell-size: 86 20
+      cell-spacing: 1
+      flow: true
+      fit-children: true
+
+  HorizontalSeparator
+    margin-top: 3
+]])
+
+local panel = UI.createWidget("CaveBotControlPanel")
+
+storage.caveBot = {
+  forceRefill = false,
+  backStop = false,
+  backTrainers = false,
+  backOffline = false
+}
+
+-- [[ B U T T O N S ]] --
+
+local forceRefill = UI.Button("Force Refill", function(widget)
+    storage.caveBot.forceRefill = true
+    print("[CaveBot] Going back on refill on next supply check.")
+end, panel.buttons)
+forceRefill:setTooltip('Force leave hunt in the next supply check')
+
+local backStop = UI.Button("Back & Stop", function(widget)
+    storage.caveBot.backStop = true
+    print("[CaveBot] Going back to city on next supply check and turning off CaveBot on depositer action.")
+end, panel.buttons)
+backStop:setTooltip('Turn OFF CaveBot after deposit.')
+
+local backTrainers = UI.Button("To Trainers", function(widget)
+    storage.caveBot.backTrainers = true
+    print("[CaveBot] Going back to city on next supply check and going to label 'toTrainers' on depositer action.")
+end, panel.buttons)
+backTrainers:setTooltip("Go to label 'toTrainers' after deposit.")
+
+local backOffline = UI.Button("Offline", function(widget)
+    storage.caveBot.backOffline = true
+    print("[CaveBot] Going back to city on next supply check and going to label 'toOfflineTraining' on depositer action.")
+end, panel.buttons)
+backOffline:setTooltip("Go to label 'toOfflineTraining' after deposit.")]=]
+FILES["vBot/configs.lua"] = [=[--[[ 
+    Configs for modules
+    Based on Kondrah storage method  
+--]]
+local configName = modules.game_bot.contentsPanel.config:getCurrentOption().text
+
+-- make vBot config dir
+if not g_resources.directoryExists("/bot/".. configName .."/vBot_configs/") then
+  g_resources.makeDir("/bot/".. configName .."/vBot_configs/")
+end
+
+-- make profile dirs
+for i=1,10 do
+  local path = "/bot/".. configName .."/vBot_configs/profile_"..i
+  if not g_resources.directoryExists(path) then
+    g_resources.makeDir(path)
+  end
+end
+
+local profile = g_settings.getNumber('profile')
+
+HealBotConfig = {}
+local healBotFile = "/bot/" .. configName .. "/vBot_configs/profile_".. profile .. "/HealBot.json"
+AttackBotConfig = {}
+local attackBotFile = "/bot/" .. configName .. "/vBot_configs/profile_".. profile .. "/AttackBot.json"
+SuppliesConfig = {}
+local suppliesFile = "/bot/" .. configName .. "/vBot_configs/profile_".. profile .. "/Supplies.json"
+
+
+--healbot
+if g_resources.fileExists(healBotFile) then
+    local status, result = pcall(function() 
+      return json.decode(g_resources.readFileContents(healBotFile)) 
+    end)
+    if not status then
+      return onError("Error while reading config file (" .. healBotFile .. "). To fix this problem you can delete HealBot.json. Details: " .. result)
+    end
+    HealBotConfig = result
+end
+
+--attackbot
+if g_resources.fileExists(attackBotFile) then
+    local status, result = pcall(function() 
+      return json.decode(g_resources.readFileContents(attackBotFile)) 
+    end)
+    if not status then
+      return onError("Error while reading config file (" .. attackBotFile .. "). To fix this problem you can delete HealBot.json. Details: " .. result)
+    end
+    AttackBotConfig = result
+end
+
+--supplies
+if g_resources.fileExists(suppliesFile) then
+    local status, result = pcall(function() 
+      return json.decode(g_resources.readFileContents(suppliesFile)) 
+    end)
+    if not status then
+      return onError("Error while reading config file (" .. suppliesFile .. "). To fix this problem you can delete HealBot.json. Details: " .. result)
+    end
+    SuppliesConfig = result
+end
+
+function vBotConfigSave(file)
+  -- file can be either
+  --- heal
+  --- atk
+  --- supply
+  local configFile 
+  local configTable
+  if not file then return end
+  file = file:lower()
+  if file == "heal" then
+      configFile = healBotFile
+      configTable = HealBotConfig
+  elseif file == "atk" then
+      configFile = attackBotFile
+      configTable = AttackBotConfig
+  elseif file == "supply" then
+      configFile = suppliesFile
+      configTable = SuppliesConfig
+  else
+    return
+  end
+
+  local status, result = pcall(function() 
+    return json.encode(configTable, 2) 
+  end)
+  if not status then
+    return onError("Error while saving config. it won't be saved. Details: " .. result)
+  end
+  
+  if result:len() > 100 * 1024 * 1024 then
+    return onError("config file is too big, above 100MB, it won't be saved")
+  end
+
+  g_resources.writeFileContents(configFile, result)
+end]=]
+FILES["vBot/core_settings.lua"] = [[setDefaultTab("Cave")
+
+local panelName = "coreSettings"
+storage[panelName] = storage[panelName] or {}
+local settings = storage[panelName]
+
+local defaults = {
+  pathfinding = true,
+  talkDelay = 1000,
+  looting = 40,
+  lootDelay = 200,
+  huntRoutes = 50,
+  killUnder = 1,
+  gotoMaxDistance = 30,
+  lootLast = true,
+  joinBot = false,
+  reachable = false,
+  ignoreCreatures = "deer,rabbit",
+  showTargetPriority = false,
+  machete = 3308,
+}
+
+for key, value in pairs(defaults) do
+  if settings[key] == nil then
+    settings[key] = value
+  end
+end
+
+CoreBotSettingsWindow = UI.createWindow('CoreBotSettingsWindow', rootWidget)
+CoreBotSettingsWindow:hide()
+CoreBotSettingsWindow.closeButton.onClick = function()
+  CoreBotSettingsWindow:hide()
+end
+
+local leftPanel = CoreBotSettingsWindow.content.left
+local rightPanel = CoreBotSettingsWindow.content.right
+
+local function addCheckBox(id, title, dest, tooltip)
+  local widget = UI.createWidget('CoreSettingsCheckBox', dest)
+  widget:setText(title)
+  widget:setTooltip(tooltip or "")
+  widget:setOn(settings[id] == true)
+  widget.onClick = function()
+    widget:setOn(not widget:isOn())
+    settings[id] = widget:isOn()
+  end
+end
+
+local function addItem(id, title, dest, tooltip)
+  local widget = UI.createWidget('CoreSettingsItem', dest)
+  widget.text:setText(title)
+  widget.text:setTooltip(tooltip or "")
+  widget.item:setTooltip(tooltip or "")
+  widget.item:setItemId(settings[id])
+  widget.item.onItemChange = function(itemWidget)
+    settings[id] = itemWidget:getItemId()
+  end
+end
+
+local function addTextEdit(id, title, dest, tooltip)
+  local widget = UI.createWidget('CoreSettingsTextEdit', dest)
+  widget.text:setText(title)
+  widget.text:setTooltip(tooltip or "")
+  widget.textEdit:setText(tostring(settings[id] or ""))
+  widget.textEdit.onTextChange = function(_, value)
+    settings[id] = value
+  end
+end
+
+local function addScrollBar(id, title, minValue, maxValue, dest, tooltip)
+  local widget = UI.createWidget('CoreSettingsScrollBar', dest)
+  widget.text:setTooltip(tooltip or "")
+  widget.scroll:setRange(minValue, maxValue)
+  widget.scroll:setTooltip(tooltip or "")
+
+  if maxValue - minValue > 1000 then
+    widget.scroll:setStep(100)
+  elseif maxValue - minValue > 100 then
+    widget.scroll:setStep(10)
+  end
+
+  widget.scroll.onValueChange = function(_, value)
+    widget.text:setText(title .. ": " .. value)
+    if value == 0 and id ~= "huntRoutes" then
+      value = 1
+    end
+    settings[id] = value
+  end
+
+  widget.scroll:setValue(tonumber(settings[id]) or minValue)
+  widget.scroll.onValueChange(widget.scroll, widget.scroll:getValue())
+end
+
+local button = UI.Button('Core Bot Settings', function()
+  CoreBotSettingsWindow:show()
+  CoreBotSettingsWindow:raise()
+  CoreBotSettingsWindow:focus()
+end)
+button:setColor('orange')
+button:setImageColor('#2de0d7')
+button:setFont('verdana-11px-rounded')
+UI.Separator()
+
+addScrollBar('talkDelay', 'Global NPC Talk Delay', 0, 2000, leftPanel,
+  'Delay between CaveBot NPC dialogue actions, in milliseconds.')
+addScrollBar('looting', 'Max Loot Distance', 0, 50, leftPanel,
+  'Corpses farther than this distance are ignored by TargetBot looting.')
+addScrollBar('lootDelay', 'Loot Delay', 0, 2000, leftPanel,
+  'Time to wait for a corpse container to open, in milliseconds.')
+addScrollBar('huntRoutes', 'Hunting Rounds Limit', 0, 300, leftPanel,
+  'Round limit used by supply checks. Zero disables the round limit.')
+addScrollBar('killUnder', 'Kill Monsters Below', 0, 100, leftPanel,
+  'Forces configured targets to be finished below this health percentage.')
+addScrollBar('gotoMaxDistance', 'Max GoTo Distance', 0, 127, leftPanel,
+  'Maximum waypoint distance CaveBot will attempt to reach.')
+addTextEdit('ignoreCreatures', 'Ignore Creatures', leftPanel,
+  'Creature names separated by commas.')
+addItem('machete', 'Furniture Break Item', leftPanel,
+  'Item used by CaveBot when it needs to cut blocking furniture.')
+
+addCheckBox('pathfinding', 'CaveBot Pathfinding', rightPanel,
+  'Search for another reachable waypoint after repeated failed GoTo attempts.')
+addCheckBox('lootLast', 'Start Loot From Last Corpse', rightPanel,
+  'Loot the newest registered corpse first.')
+addCheckBox('joinBot', 'Join TargetBot and CaveBot', rightPanel,
+  'Show TargetBot controls in the Cave tab.')
+addCheckBox('reachable', 'Target Only Pathable Mobs', rightPanel,
+  'Ignore configured creatures that cannot be reached.')
+addCheckBox('showTargetPriority', 'Show Target Priority', rightPanel,
+  'Display TargetBot priority information above creatures.')
+]]
+FILES["vBot/core_settings.otui"] = [[CoreSettingsScrollBar < Panel
+  height: 28
+  margin-top: 3
+
+  UIWidget
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 3
+    minimum: 0
+    maximum: 10
+    step: 1
+
+CoreSettingsTextEdit < Panel
+  height: 40
+  margin-top: 7
+
+  UIWidget
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+
+  TextEdit
+    id: textEdit
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    text-align: center
+
+CoreSettingsItem < Panel
+  height: 34
+  margin-top: 7
+  margin-left: 25
+  margin-right: 25
+
+  UIWidget
+    id: text
+    anchors.left: parent.left
+    anchors.verticalCenter: next.verticalCenter
+
+  BotItem
+    id: item
+    anchors.top: parent.top
+    anchors.right: parent.right
+
+CoreSettingsCheckBox < BotSwitch
+  height: 20
+  margin-top: 7
+
+CoreBotSettingsWindow < MainWindow
+  !text: tr('Core Bot Settings')
+  size: 470 380
+  padding: 25
+  @onEscape: self:hide()
+
+  Label
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: parent.top
+    text-align: center
+    text: < Values >
+
+  Label
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    text: < Options >
+
+  VerticalScrollBar
+    id: contentScroll
+    anchors.top: prev.bottom
+    anchors.right: parent.right
+    anchors.bottom: separator.top
+    step: 28
+    pixels-scroll: true
+    margin-right: -10
+    margin-top: 5
+    margin-bottom: 5
+
+  ScrollablePanel
+    id: content
+    anchors.top: prev.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: separator.top
+    vertical-scrollbar: contentScroll
+    margin-bottom: 10
+
+    Panel
+      id: left
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.horizontalCenter
+      margin-top: 5
+      margin-left: 10
+      margin-right: 10
+      layout:
+        type: verticalBox
+        fit-children: true
+
+    Panel
+      id: right
+      anchors.top: parent.top
+      anchors.left: parent.horizontalCenter
+      anchors.right: parent.right
+      margin-top: 5
+      margin-left: 10
+      margin-right: 10
+      layout:
+        type: verticalBox
+        fit-children: true
+
+    VerticalSeparator
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.left: parent.horizontalCenter
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  ResizeBorder
+    id: bottomResizeBorder
+    anchors.fill: separator
+    height: 3
+    minimum: 260
+    maximum: 650
+    margin-left: 3
+    margin-right: 3
+    background: #ffffff88
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-right: 5
+]]
+FILES["vBot/depositer_config.lua"] = [[setDefaultTab("Cave")
+
+local panelName = "specialDeposit"
+local depositerPanel
+
+UI.Button("Stashing Settings", function()
+  depositerPanel:show()
+  depositerPanel:raise()
+  depositerPanel:focus()
+end)
+
+if not storage[panelName] then
+  storage[panelName] = {
+    items = {},
+    storeItems = {},
+    removeItems = {},
+    lootContainers = {},
+    delay = 300,
+    height = 310
+  }
+end
+
+local config = storage[panelName]
+config.items = config.items or {}
+config.storeItems = config.storeItems or {}
+config.removeItems = config.removeItems or {}
+config.lootContainers = config.lootContainers or {}
+config.delay = tonumber(config.delay) or 300
+if not config.height or config.height < 240 or config.height > 380 then
+  config.height = 310
+end
+
+local function normalizeContainerItems(list)
+  for index, entry in ipairs(list) do
+    if type(entry) == "number" then
+      list[index] = {id=entry, count=0}
+    elseif type(entry) == "table" then
+      entry.id = tonumber(entry.id) or 0
+      entry.count = tonumber(entry.count) or 0
+    end
+  end
+end
+
+normalizeContainerItems(config.storeItems)
+normalizeContainerItems(config.removeItems)
+normalizeContainerItems(config.lootContainers)
+
+depositerPanel = UI.createWindow("DepositerPanel", rootWidget)
+depositerPanel:hide()
+depositerPanel:setHeight(config.height or 310)
+
+depositerPanel.CloseButton.onClick = function()
+  depositerPanel:hide()
+end
+
+depositerPanel.onGeometryChange = function(widget, old, new)
+  if old.height == 0 then return end
+  config.height = new.height
+end
+
+local function attachContainer(target, items, onChange)
+  local container = UI.Container(function(widget, newItems)
+    normalizeContainerItems(newItems)
+    onChange(newItems)
+  end, true)
+
+  container:setHeight(35)
+  container:setWidth(230)
+  container:setItems(items)
+  container:setParent(target)
+  container:setMarginTop(3)
+  container:setMarginLeft(3)
+  return container
+end
+
+attachContainer(depositerPanel.addContainer, config.storeItems, function(items)
+  config.storeItems = items
+end)
+
+attachContainer(depositerPanel.removeContainer, config.removeItems, function(items)
+  config.removeItems = items
+end)
+
+attachContainer(depositerPanel.lootContainer, config.lootContainers, function(items)
+  config.lootContainers = items
+end)
+
+depositerPanel.delayValue:setText(tostring(config.delay))
+depositerPanel.delayValue.onTextChange = function(widget, text)
+  local value = tonumber(text)
+  if value then
+    config.delay = math.max(0, value)
+  end
+end
+
+function getStashingIndex(id)
+  for _, v in pairs(config.items) do
+    if v.id == id then
+      return v.index - 1
+    end
+  end
+end
+
+function getStowAllSettings()
+  return config
+end
+
+UI.Separator()
+UI.Label("Sell Exeptions")
+
+if type(storage.cavebotSell) ~= "table" then
+  storage.cavebotSell = {23544, 3081}
+end
+
+local sellContainer = UI.Container(function(widget, items)
+  storage.cavebotSell = items
+end, true)
+sellContainer:setHeight(35)
+sellContainer:setItems(storage.cavebotSell)
+]]
+FILES["vBot/depositer_config.otui"] = [[DepositerPanel < MainWindow
+  size: 245 310
+  !text: tr('Stashing Settings')
+  @onEscape: self:hide()
+
+  UIWidget
+    id: addTitle
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 16
+    text: Adicionar
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae
+
+  Panel
+    id: addContainer
+    image-source: /images/ui/panel_flat
+    image-border: 1
+    anchors.top: prev.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 42
+
+  UIWidget
+    id: removeTitle
+    anchors.top: addContainer.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 16
+    margin-top: 10
+    text: Remover
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae
+
+  Panel
+    id: removeContainer
+    image-source: /images/ui/panel_flat
+    image-border: 1
+    anchors.top: prev.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 42
+
+  UIWidget
+    id: lootTitle
+    anchors.top: removeContainer.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 16
+    margin-top: 10
+    text: Loot Container
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae
+
+  Panel
+    id: lootContainer
+    image-source: /images/ui/panel_flat
+    image-border: 1
+    anchors.top: prev.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 42
+
+  UIWidget
+    id: delayTitle
+    anchors.top: lootContainer.bottom
+    anchors.left: parent.left
+    margin-top: 12
+    width: 80
+    height: 20
+    text: Delay:
+    text-align: left
+    font: verdana-11px-rounded
+    color: #aeaeae
+
+  BotTextEdit
+    id: delayValue
+    anchors.top: delayTitle.top
+    anchors.left: delayTitle.right
+    anchors.right: parent.right
+    height: 20
+    text: 300
+    font: verdana-11px-rounded
+
+  ResizeBorder
+    id: bottomResizeBorder
+    anchors.fill: next
+    height: 3
+    minimum: 180
+    maximum: 800
+    margin-left: 3
+    margin-right: 3
+    background: #ffffff88
+
+  HorizontalSeparator
+    id: sep
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: CloseButton.top
+    margin-bottom: 8    
+
+  Button
+    id: CloseButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-right: 5
+]]
+FILES["vBot/eat_food.lua"] = [[setDefaultTab("HP")
+-- UI.Separator()
+if type(storage.foodItems) ~= "table" then
+  storage.foodItems = {3607, 3592, 3600, 3601, 3725, 3582, 3577, 3578, 3583, 3723, 3731, 3732, 3595, 3593}
+end
+
+macro(5000, "Eat Food", function()
+  if player:getRegenerationTime() > 400 or not storage.foodItems[1] then return end
+  -- search for food in containers
+  for _, container in pairs(g_game.getContainers()) do
+    for __, item in ipairs(container:getItems()) do
+      for i, foodItem in ipairs(storage.foodItems) do
+        if item:getId() == foodItem.id then
+          return g_game.use(item)
+        end
+      end
+    end
+  end
+end)
+
+local foodContainer = UI.Container(function(widget, items)
+  storage.foodItems = items
+end, true)
+foodContainer:setHeight(35)
+foodContainer:setItems(storage.foodItems)
+
+macro(5000, "Conjure Food", function()
+  if player:getRegenerationTime() <= 400 then
+      cast("exevo pan", 5000)
+  end
+end)
+
+UI.Separator()]]
+FILES["vBot/equip.lua"] = [[-- config
+setDefaultTab("HP")
+-- UI.Separator()
+local scripts = 2 -- if you want more auto equip panels you can change 2 to higher value
+
+-- script by kondrah, don't edit below unless you know what you are doing
+local label = UI.Label("Simple Equipper")
+
+if type(storage.autoEquip) ~= "table" then
+  storage.autoEquip = {}
+end
+for i=1,scripts do
+  if not storage.autoEquip[i] then
+    storage.autoEquip[i] = {on=false, title="Auto Equip", item1=i == 1 and 3052 or 0, item2=i == 1 and 3089 or 0, slot=i == 1 and 9 or 0}
+  end
+  UI.TwoItemsAndSlotPanel(storage.autoEquip[i], function(widget, newParams)
+    storage.autoEquip[i] = newParams
+  end)
+end
+macro(250, function()
+  local containers = g_game.getContainers()
+  for index, autoEquip in ipairs(storage.autoEquip) do
+    if autoEquip.on then
+      local slotItem = getSlot(autoEquip.slot)
+      if not slotItem or (slotItem:getId() ~= autoEquip.item1 and slotItem:getId() ~= autoEquip.item2) then
+        for _, container in pairs(containers) do
+          for __, item in ipairs(container:getItems()) do
+            if item:getId() == autoEquip.item1 or item:getId() == autoEquip.item2 then
+              g_game.move(item, {x=65535, y=autoEquip.slot, z=0}, item:getCount())
+              delay(1000) -- don't call it too often      
+              return
+            end
+          end
+        end
+      end
+    end
+  end
+end)
+
+UI.Separator()]]
+FILES["vBot/friend_healer.lua"] = [=[setDefaultTab("Hp")
+local panelName = "newHealer"
+local ui = setupUI([[
+Panel
+  height: 19
+
+  BotSwitch
+    id: title
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    !text: tr('Friend Healer')
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 17
+    text: Setup
+      
+]])
+ui:setId(panelName)
+
+-- validate current settings
+if not storage[panelName] or not storage[panelName].priorities then
+    storage[panelName] = nil
+end
+
+if not storage[panelName] then
+    storage[panelName] = {
+        enabled = false,
+        customPlayers = {},
+        vocations = {},
+        groups = {},
+        sCheckRL = false,
+        priorities = {
+
+            {name="Custom Spell",           enabled=false, custom=true},
+            {name="Exura Gran Sio",         enabled=true,              strong = true},
+            {name="Exura Sio",              enabled=true,                            normal = true},
+            {name="Exura Gran Mas Res",     enabled=true,                                          area = true},
+            {name="Health Item",            enabled=true,                                                      health=true},
+            {name="Mana Item",              enabled=true,                                                                  mana=true}
+
+        },
+        settings = {
+
+            {type="HealItem",       text="Mana Item ",                   value=268},
+            {type="HealScroll",     text="Item Range: ",                 value=6},
+            {type="HealItem",       text="Health Item ",                 value=3160},
+            {type="HealScroll",     text="Mas Res Players: ",            value=2},
+            {type="HealScroll",     text="Heal Friend at: ",             value=80},
+            {type="HealScroll",     text="Use Gran Sio at: ",            value=80},
+            {type="HealScroll",     text="Min Player HP%: ",             value=80},
+            {type="HealScroll",     text="Min Player MP%: ",             value=50},
+            {type="HealScroll",     text="My HP for Mas Res: ",          value=80},
+
+        },
+        conditions = {
+            knights = true,
+            paladins = true,
+            druids = false,
+            sorcerers = false,
+            party = true,
+            guild = false,
+            botserver = false,
+            friends = false
+        }
+    }
+end
+
+local config = storage[panelName]
+
+-- v15: keep old setting indexes stable and append the local-player Mas Res HP.
+if not config.settings[9] then
+    config.settings[9] = {
+        type = "HealScroll",
+        text = "My HP for Mas Res: ",
+        value = tonumber(config.settings[5] and config.settings[5].value) or 80
+    }
+else
+    config.settings[9].type = "HealScroll"
+    config.settings[9].text = "My HP for Mas Res: "
+    config.settings[9].value = tonumber(config.settings[9].value) or 80
+end
+
+-- The required amount now counts every injured target, including the local player.
+if config.settings[4] then config.settings[4].text = "Mas Res targets: " end
+
+local function cleanPlayerName(name)
+    local clean = tostring(name or ""):trim()
+    clean = clean:gsub("%s+", " ")
+    return clean
+end
+
+local function normalizePlayerName(name)
+    return cleanPlayerName(name):lower()
+end
+
+-- Migrate old custom-player entries. Older versions stored HP percentages and
+-- could also save a leading space before the character name.
+local migratedCustomPlayers = {}
+for savedName, savedValue in pairs(config.customPlayers or {}) do
+    local sourceName = type(savedValue) == "string" and savedValue or savedName
+    local displayName = cleanPlayerName(sourceName)
+    if displayName:len() > 0 then
+        migratedCustomPlayers[normalizePlayerName(displayName)] = displayName
+    end
+end
+config.customPlayers = migratedCustomPlayers
+
+-- Clarify that these limits protect the local player; they are not target HP.
+if config.settings[7] then config.settings[7].text = "Pause if my HP <= " end
+if config.settings[8] then config.settings[8].text = "Pause if my MP <= " end
+
+local function isCustomPlayer(name)
+    return config.customPlayers[normalizePlayerName(name)] ~= nil
+end
+
+local healerWindow = UI.createWindow('FriendHealer')
+healerWindow:hide()
+healerWindow:setId(panelName)
+
+ui.title:setOn(config.enabled)
+ui.title.onClick = function(widget)
+    config.enabled = not config.enabled
+    widget:setOn(config.enabled)
+end
+
+ui.edit.onClick = function()
+    healerWindow:show()
+    healerWindow:raise()
+    healerWindow:focus()
+end
+
+-- Modified by F.Almeida
+-- Switch, stop in PZ
+healerWindow.sCheckRL:setOn(config.sCheckRL)
+healerWindow.sCheckRL.onClick = function(widget)
+  config.sCheckRL = not config.sCheckRL
+  widget:setOn(config.sCheckRL)
+end
+
+local conditions = healerWindow.conditions
+local targetSettings = healerWindow.targetSettings
+local customList = healerWindow.customList
+local priority = healerWindow.priority
+
+customList.addPanel.name:setText("friend name")
+
+-- Custom players are an explicit allow-list. They use the same global
+-- Heal Friend / Gran Sio percentages as every other eligible player.
+local function createCustomPlayerEntry(key, displayName)
+    local widget = UI.createWidget("HealerPlayerEntry", customList.playerList.list)
+    widget.customPlayerKey = key
+    widget:setText(displayName)
+    widget.remove.onClick = function()
+        config.customPlayers[key] = nil
+        widget:destroy()
+    end
+    return widget
+end
+
+local customPlayerKeys = {}
+for key in pairs(config.customPlayers) do
+    table.insert(customPlayerKeys, key)
+end
+table.sort(customPlayerKeys, function(a, b)
+    return config.customPlayers[a]:lower() < config.customPlayers[b]:lower()
+end)
+
+for _, key in ipairs(customPlayerKeys) do
+    createCustomPlayerEntry(key, config.customPlayers[key])
+end
+
+local function clearFields()
+    customList.addPanel.name:setText("friend name")
+end
+
+customList.addPanel.add.onClick = function()
+    local displayName = cleanPlayerName(customList.addPanel.name:getText())
+    local key = normalizePlayerName(displayName)
+
+    if displayName:len() == 0 or key == "friend name" then
+        return warn("[Friend Healer] Please enter friend name to be added!")
+    end
+
+    local existing = config.customPlayers[key] ~= nil
+    config.customPlayers[key] = displayName
+
+    if existing then
+        for _, child in ipairs(customList.playerList.list:getChildren()) do
+            if child.customPlayerKey == key then
+                child:setText(displayName)
+                clearFields()
+                return
+            end
+        end
+    end
+
+    createCustomPlayerEntry(key, displayName)
+    clearFields()
+end
+
+local function validate(widget, category)
+    local list = widget:getParent()
+    local label = list:getParent().title
+    -- 1 - priorities | 2 - vocation
+    category = category or 0
+
+    label:setColor("#dfdfdf")
+    label:setTooltip("")
+
+    local checked = false
+    for _, child in ipairs(list:getChildren()) do
+        if category == 1 then
+            checked = child.enabled and child.enabled:isChecked() or false
+        else
+            checked = child:isChecked()
+        end
+
+        if checked then
+            break
+        end
+    end
+
+    if not checked then
+        label:setColor("#d9321f")
+        label:setTooltip("! WARNING ! \nNo category selected!")
+    else
+        label:setColor("#dfdfdf")
+        label:setTooltip("")
+    end
+end
+-- targetSettings
+targetSettings.vocations.box.knights:setChecked(config.conditions.knights)
+targetSettings.vocations.box.knights.onClick = function(widget)
+    config.conditions.knights = not config.conditions.knights
+    widget:setChecked(config.conditions.knights)
+    validate(widget, 2)
+end
+
+targetSettings.vocations.box.paladins:setChecked(config.conditions.paladins)
+targetSettings.vocations.box.paladins.onClick = function(widget)
+    config.conditions.paladins = not config.conditions.paladins
+    widget:setChecked(config.conditions.paladins)
+    validate(widget, 2)
+end
+
+targetSettings.vocations.box.druids:setChecked(config.conditions.druids)
+targetSettings.vocations.box.druids.onClick = function(widget)
+    config.conditions.druids = not config.conditions.druids
+    widget:setChecked(config.conditions.druids)
+    validate(widget, 2)
+end
+
+targetSettings.vocations.box.sorcerers:setChecked(config.conditions.sorcerers)
+targetSettings.vocations.box.sorcerers.onClick = function(widget)
+    config.conditions.sorcerers = not config.conditions.sorcerers
+    widget:setChecked(config.conditions.sorcerers)
+    validate(widget, 2)
+end
+
+targetSettings.groups.box.friends:setChecked(config.conditions.friends)
+targetSettings.groups.box.friends.onClick = function(widget)
+    config.conditions.friends = not config.conditions.friends
+    widget:setChecked(config.conditions.friends)
+    validate(widget)
+end
+
+targetSettings.groups.box.party:setChecked(config.conditions.party)
+targetSettings.groups.box.party.onClick = function(widget)
+    config.conditions.party = not config.conditions.party
+    widget:setChecked(config.conditions.party)
+    validate(widget)
+end
+
+targetSettings.groups.box.guild:setChecked(config.conditions.guild)
+targetSettings.groups.box.guild.onClick = function(widget)
+    config.conditions.guild = not config.conditions.guild
+    widget:setChecked(config.conditions.guild)
+    validate(widget)
+end
+
+targetSettings.groups.box.botserver:setChecked(config.conditions.botserver)
+targetSettings.groups.box.botserver.onClick = function(widget)
+    config.conditions.botserver = not config.conditions.botserver
+    widget:setChecked(config.conditions.botserver)
+    validate(widget)
+end
+
+validate(targetSettings.vocations.box.knights)
+validate(targetSettings.groups.box.friends)
+validate(targetSettings.vocations.box.sorcerers, 2)
+
+-- conditions
+-- Keep the stored indexes stable while displaying related Mas Res settings together.
+local settingDisplayOrder = {1, 2, 3, 4, 5, 9, 6, 7, 8}
+
+for _, settingIndex in ipairs(settingDisplayOrder) do
+    local setting = config.settings[settingIndex]
+    local widget = UI.createWidget(setting.type, conditions.box)
+    local text = setting.text
+    local val = tonumber(setting.value) or 0
+    local compactSlider = settingIndex == 2 or settingIndex == 4 -- range/count, not percentages
+
+    widget.text:setText(text)
+
+    if setting.type == "HealScroll" then
+        widget.text:setText(text .. val .. (compactSlider and "" or "%"))
+        widget.scroll:setValue(val)
+        widget.scroll.onValueChange = function(scroll, value)
+            setting.value = value
+            widget.text:setText(text .. value .. (compactSlider and "" or "%"))
+        end
+
+        if compactSlider then
+            widget.scroll:setMaximum(10)
+        else
+            widget.scroll:setMaximum(100)
+        end
+    else
+        widget.item:setItemId(val)
+        widget.item:setShowCount(false)
+        widget.item.onItemChange = function(itemWidget)
+            setting.value = itemWidget:getItemId()
+        end
+    end
+end
+
+
+
+-- priority and toggles
+local function setCrementalButtons()
+    local children = priority.list:getChildren()
+    for i, child in ipairs(children) do
+        if i > 1 then child.increment:enable() else child.increment:disable() end
+        if i < #children then child.decrement:enable() else child.decrement:disable() end
+    end
+end
+
+for i, action in ipairs(config.priorities) do
+    local widget = UI.createWidget("PriorityEntry", priority.list)
+
+    widget:setText(action.name)
+    widget.increment.onClick = function()
+        local index = priority.list:getChildIndex(widget)
+        local table = config.priorities
+
+        priority.list:moveChildToIndex(widget, index-1)
+        table[index], table[index-1] = table[index-1], table[index]
+        setCrementalButtons()
+    end
+    widget.decrement.onClick = function()
+        local index = priority.list:getChildIndex(widget)
+        local table = config.priorities
+
+        priority.list:moveChildToIndex(widget, index+1)
+        table[index], table[index+1] = table[index+1], table[index]
+        setCrementalButtons()
+    end
+    widget.enabled:setChecked(action.enabled)
+    widget:setColor(action.enabled and "#98BF64" or "#dfdfdf")
+    widget.enabled.onClick = function()
+        action.enabled = not action.enabled
+        widget:setColor(action.enabled and "#98BF64" or "#dfdfdf")
+        widget.enabled:setChecked(action.enabled)
+        validate(widget, 1)  
+    end
+    if action.custom then
+        widget.onDoubleClick = function()
+            local window = modules.client_textedit.show(widget, {title = "Custom Spell", description = "Enter below formula for a custom healing spell"})
+            schedule(50, function() 
+              window:raise()
+              window:focus() 
+            end)
+        end
+        widget.onTextChange = function(widget,text)
+            action.name = text
+        end
+        widget:setTooltip("Double click to set spell formula.")
+    end
+
+    if i == #config.priorities then
+        validate(widget, 1)
+        setCrementalButtons()
+    end
+end
+
+local lastItemUse = now
+
+local function isPriorityEnabled(flag)
+    for _, action in ipairs(config.priorities) do
+        if action.enabled and action[flag] then
+            return true
+        end
+    end
+    return false
+end
+
+local function friendHealerAction(spec, targetsInRange, onlyArea)
+    local hasTarget = spec ~= nil
+    local name = hasTarget and spec:getName() or ""
+    local health = hasTarget and (tonumber(spec:getHealthPercent()) or 100) or 100
+    local mana = hasTarget and (tonumber(spec:getManaPercent()) or 100) or 100
+    local dist = hasTarget and distanceFromPlayer(spec:getPosition()) or 99
+    targetsInRange = targetsInRange or 0
+
+    local masResAmount = tonumber(config.settings[4].value) or 2
+    local itemRange = tonumber(config.settings[2].value) or 6
+    local healItem = config.settings[3].value
+    local manaItem = config.settings[1].value
+    local normalHeal = tonumber(config.settings[5].value) or 80
+    local strongHeal = tonumber(config.settings[6].value) or normalHeal
+    strongHeal = math.min(strongHeal, normalHeal)
+    local ignoreRL = not config.sCheckRL
+
+    for _, action in ipairs(config.priorities) do
+        if action.enabled then
+            -- Mas Res does not require a selected friend; this lets the local
+            -- player trigger it when counted by My HP for Mas Res.
+            if action.area and targetsInRange >= masResAmount and canCast("exura gran mas res", ignoreRL) then
+                return say("exura gran mas res")
+            end
+
+            if hasTarget and not onlyArea then
+                -- Mana Item intentionally shares the global Friend percentage.
+                if action.mana and findItem(manaItem) and mana <= normalHeal and dist <= itemRange and now - lastItemUse > 1000 then
+                    lastItemUse = now
+                    return useWith(manaItem, spec)
+                end
+
+                if action.health and findItem(healItem) and health <= normalHeal and dist <= itemRange and now - lastItemUse > 1000 then
+                    lastItemUse = now
+                    return useWith(healItem, spec)
+                end
+
+                if action.strong and health <= strongHeal and canCast("exura gran sio", ignoreRL) then
+                    return say('exura gran sio "' .. name)
+                end
+
+                if (action.normal or action.custom) and health <= normalHeal then
+                    local spell = tostring(action.name or ""):trim()
+                    if spell:len() > 0 and canCast(spell, ignoreRL) then
+                        return say(spell .. ' "' .. name)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function passesVocationFilter(spec, customPlayer)
+    if customPlayer then
+        return true
+    end
+
+    -- Vocation filtering remains compatible with any text overlay supplied by the client
+    -- or another module, but no longer depends on the removed Extras player scanner.
+    local specText = tostring(spec:getText() or "")
+    if specText:len() == 0 then
+        return true
+    end
+
+    if specText:find("EK", 1, true) then return config.conditions.knights end
+    if specText:find("RP", 1, true) then return config.conditions.paladins end
+    if specText:find("ED", 1, true) then return config.conditions.druids end
+    if specText:find("MS", 1, true) then return config.conditions.sorcerers end
+    return true
+end
+
+local function matchesSelectedGroup(spec)
+    local name = spec:getName()
+    local okParty = config.conditions.party and spec:isPartyMember()
+    local okFriend = config.conditions.friends and isFriend(spec)
+    local okGuild = config.conditions.guild and spec:getEmblem() == 1
+    local okBotServer = config.conditions.botserver
+        and vBot
+        and vBot.BotServerMembers
+        and vBot.BotServerMembers[name] ~= nil
+
+    return okParty or okFriend or okGuild or okBotServer
+end
+
+local function getCandidateInfo(spec, manaActionEnabled)
+    if spec:isLocalPlayer() or not spec:isPlayer() then
+        return nil
+    end
+
+    local name = spec:getName()
+    local customPlayer = isCustomPlayer(name)
+
+    -- A custom player is an explicit allow-list entry and therefore bypasses
+    -- group and vocation filters. Everyone still needs line of sight.
+    if not customPlayer and not matchesSelectedGroup(spec) then
+        return nil
+    end
+    if not passesVocationFilter(spec, customPlayer) then
+        return nil
+    end
+    if not spec:canShoot() then
+        return nil
+    end
+
+    local health = tonumber(spec:getHealthPercent()) or 100
+    local mana = tonumber(spec:getManaPercent()) or 100
+    local normalHeal = tonumber(config.settings[5].value) or 80
+    local needsHealth = health <= normalHeal
+    local needsMana = manaActionEnabled and mana <= normalHeal
+
+    if not needsHealth and not needsMana then
+        return nil
+    end
+
+    local dist = distanceFromPlayer(spec:getPosition())
+    local score = needsHealth and health or (1000 + mana)
+
+    return {
+        creature = spec,
+        health = health,
+        mana = mana,
+        dist = dist,
+        needsHealth = needsHealth,
+        needsMana = needsMana,
+        score = score
+    }
+end
+
+macro(100, function()
+    if not config.enabled then return end
+    if modules.game_cooldown.isGroupCooldownIconActive(2) then return end
+
+    local minHp = tonumber(config.settings[7].value) or 0
+    local minMp = tonumber(config.settings[8].value) or 0
+    local myHp = hppercent()
+    local myMp = manapercent()
+    local myMasResHp = tonumber(config.settings[9].value) or 80
+    local selfNeedsMasRes = myHp <= myMasResHp
+
+    -- Low mana still pauses every friend-heal action. Low HP pauses targeted
+    -- friend healing, but an eligible Mas Res is allowed because it heals us too.
+    if myMp <= minMp then return end
+    local onlyArea = myHp <= minHp
+
+    local manaActionEnabled = isPriorityEnabled("mana")
+    local healTarget = nil
+    local inMasResRange = selfNeedsMasRes and 1 or 0
+
+    for _, spec in ipairs(getSpectators()) do
+        local info = getCandidateInfo(spec, manaActionEnabled)
+        if info then
+            if info.needsHealth and info.dist <= 3 then
+                inMasResRange = inMasResRange + 1
+            end
+
+            if not healTarget
+                or info.score < healTarget.score
+                or (info.score == healTarget.score and info.dist < healTarget.dist) then
+                healTarget = info
+            end
+        end
+    end
+
+    if onlyArea then
+        if selfNeedsMasRes then
+            return friendHealerAction(nil, inMasResRange, true)
+        end
+        return
+    end
+
+    if healTarget or selfNeedsMasRes then
+        return friendHealerAction(healTarget and healTarget.creature or nil, inMasResRange, false)
+    end
+end)
+]=]
+FILES["vBot/friend_healer.otui"] = [[CategoryCheckBox < CheckBox
+  font: verdana-11px-rounded
+  margin-top: 3
+
+  $checked:
+    color: #98BF64
+
+ToolTipLabel < UIWidget
+  font: verdana-11px-rounded
+  color: #dfdfdf
+  height: 14
+  text-align: center
+
+HealScroll < Panel
+  height: 43
+
+  ToolTipLabel
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: text.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 100
+    step: 1
+
+HealItem < Panel
+  height: 43
+
+  BotItem
+    id: item
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    size: 34 34
+
+  ToolTipLabel
+    id: text
+    anchors.left: item.right
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    margin-left: 7
+    text-align: left
+    text-wrap: true
+
+HealerPlayerEntry < Label
+  background-color: alpha
+  text-offset: 5 1
+  focusable: true
+  height: 18
+  font: verdana-11px-rounded
+  text-align: left
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    size: 16 16
+    margin-right: 2
+    text: X
+    tooltip: Remove player from the list
+
+PriorityEntry < ToolTipLabel
+  background-color: alpha
+  text-offset: 20 1
+  focusable: true
+  height: 19
+  font: verdana-11px-rounded
+  text-align: left
+
+  $focus:
+    background-color: #00000055
+
+  CheckBox
+    id: enabled
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    size: 15 15
+    margin-left: 3
+
+  Button
+    id: increment
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    size: 16 16
+    margin-right: 2
+    text: +
+    tooltip: Increase priority
+
+  Button
+    id: decrement
+    anchors.right: increment.left
+    anchors.verticalCenter: parent.verticalCenter
+    size: 16 16
+    margin-right: 2
+    text: -
+    tooltip: Decrease priority
+
+Groups < FlatPanel
+  size: 170 100
+  padding: 5
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Groups
+    tooltip: Custom players are always eligible.
+
+  HorizontalSeparator
+    anchors.top: title.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+  Panel
+    id: box
+    anchors.top: prev.bottom
+    margin-top: 2
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    padding: 2
+    layout:
+      type: verticalBox
+
+    CategoryCheckBox
+      id: friends
+      text: Friends
+
+    CategoryCheckBox
+      id: party
+      text: Party Members
+
+    CategoryCheckBox
+      id: guild
+      text: Guild Members
+
+    CategoryCheckBox
+      id: botserver
+      text: BotServer Members
+
+Vocations < FlatPanel
+  size: 120 100
+  padding: 5
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Vocations
+
+  HorizontalSeparator
+    anchors.top: title.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+  Panel
+    id: box
+    anchors.top: prev.bottom
+    margin-top: 2
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    padding: 2
+    layout:
+      type: verticalBox
+
+    CategoryCheckBox
+      id: knights
+      text: Knights
+
+    CategoryCheckBox
+      id: paladins
+      text: Paladins
+
+    CategoryCheckBox
+      id: druids
+      text: Druids
+
+    CategoryCheckBox
+      id: sorcerers
+      text: Sorcerers
+
+TargetSettings < Panel
+  size: 320 145
+  padding: 6
+  padding-top: 4
+  image-source: /images/ui/window
+  image-border: 6
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Eligible Heal Targets
+
+  Groups
+    id: groups
+    anchors.top: title.bottom
+    margin-top: 8
+    anchors.left: parent.left
+    margin-left: 4
+
+  Vocations
+    id: vocations
+    anchors.left: groups.right
+    margin-left: 6
+    anchors.verticalCenter: groups.verticalCenter
+
+Priority < Panel
+  size: 220 150
+  padding: 6
+  padding-top: 4
+  image-source: /images/ui/window
+  image-border: 6
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Healing Priority
+
+  TextList
+    id: list
+    anchors.top: title.bottom
+    margin-top: 5
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    padding-top: 1
+
+PlayerList < Panel
+  height: 112
+  image-source: /images/ui/window
+  image-border: 6
+  padding: 3
+
+  TextList
+    id: list
+    anchors.fill: parent
+    padding-top: 2
+    vertical-scrollbar: listScrollBar
+
+  VerticalScrollBar
+    id: listScrollBar
+    anchors.top: list.top
+    anchors.bottom: list.bottom
+    anchors.right: list.right
+    step: 18
+    pixels-scroll: true
+
+AddPlayer < Panel
+  height: 68
+
+  ToolTipLabel
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Add or update a custom player
+    tooltip: Uses the global Heal Friend and Gran Sio percentages.
+
+  TextEdit
+    id: name
+    anchors.top: prev.bottom
+    margin-top: 7
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 20
+    font: verdana-11px-rounded
+    text-align: center
+    text: friend name
+
+  Button
+    id: add
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: name.bottom
+    margin-top: 6
+    height: 20
+    font: verdana-11px-rounded
+    text: Add Player
+
+CustomList < Panel
+  size: 220 225
+  padding: 6
+  padding-top: 4
+  image-source: /images/ui/window
+  image-border: 6
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Custom Players
+    tooltip: Custom players are always eligible and use the global healing percentages.
+
+  PlayerList
+    id: playerList
+    anchors.top: title.bottom
+    margin-top: 6
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+  HorizontalSeparator
+    anchors.top: playerList.bottom
+    margin-top: 6
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+  AddPlayer
+    id: addPanel
+    anchors.top: prev.bottom
+    margin-top: 5
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+
+Conditions < Panel
+  size: 320 470
+  padding: 6
+  padding-top: 4
+  image-source: /images/ui/window
+  image-border: 6
+
+  ToolTipLabel
+    id: title
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.top: parent.top
+    text: Items and Healing Conditions
+
+  Panel
+    id: box
+    anchors.top: title.bottom
+    margin-top: 7
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    padding: 3
+    layout:
+      type: grid
+      cell-size: 300 43
+      cell-spacing: 6
+      num-columns: 1
+
+FriendHealer < MainWindow
+  !text: tr('Friend Healer')
+  size: 570 705
+  padding-top: 30
+  @onEscape: self:hide()
+
+  Priority
+    id: priority
+    anchors.top: parent.top
+    anchors.left: parent.left
+
+  CustomList
+    id: customList
+    anchors.top: priority.bottom
+    margin-top: 10
+    anchors.left: priority.left
+
+  Conditions
+    id: conditions
+    anchors.top: parent.top
+    anchors.right: parent.right
+
+  TargetSettings
+    id: targetSettings
+    anchors.top: conditions.bottom
+    margin-top: 10
+    anchors.right: conditions.right
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  BotSwitch
+    id: sCheckRL
+    !text: tr('Check RL Conditions')
+    anchors.left: parent.left
+    anchors.verticalCenter: closeButton.verticalCenter
+    size: 145 20
+    font: verdana-11px-rounded
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 60 21
+    @onClick: self:getParent():hide()
+]]
+FILES["vBot/items.lua"] = [[LootItems = {
+    ["gold coin"] = 1,
+    ["platinum coin"] = 100,
+    ["crystal coin"] = 10000,
+    ["abyss hammer"] = 20000,
+    ["acorn"] = 10,
+    ["albino plate"] = 1500,
+    ["alloy legs"] = 11000,
+    ["alptramun's toothbrush"] = 270000,
+    ["amber"] = 20000,
+    ["amber staff"] = 8000,
+    ["amber with a bug"] = 41000,
+    ["amber with a dragonfly"] = 56000,
+    ["ancient amulet"] = 200,
+    ["ancient belt buckle"] = 260,
+    ["ancient coin"] = 350,
+    ["ancient liche bone"] = 28000,
+    ["ancient shield"] = 900,
+    ["ancient stone"] = 200,
+    ["angel figurine"] = 36000,
+    ["angelic axe"] = 5000,
+    ["ankh"] = 100,
+    ["antlers"] = 50,
+    ["ape fur"] = 120,
+    ["apron"] = 1300,
+    ["arbalest"] = 42000,
+    ["arcane staff"] = 42000,
+    ["assassin dagger"] = 20000,
+    ["axe"] = 7,
+    ["axe ring"] = 100,
+    ["baby seal doll"] = 20000,
+    ["badger boots"] = 7500,
+    ["badger fur"] = 15,
+    ["bamboo stick"] = 30,
+    ["banana sash"] = 55,
+    ["banana staff"] = 1000,
+    ["bandana"] = 150,
+    ["bar of gold"] = 10000,
+    ["basalt fetish"] = 210,
+    ["basalt figurine"] = 160,
+    ["bast skirt"] = 750,
+    ["bat decoration"] = 2000,
+    ["bat wing"] = 50,
+    ["battle axe"] = 80,
+    ["battle hammer"] = 120,
+    ["battle shield"] = 95,
+    ["battle stone"] = 290,
+    ["batwing hat"] = 8000,
+    ["bear paw"] = 100,
+    ["beast's nightmare-cushion"] = 630000,
+    ["beastslayer axe"] = 1500,
+    ["bed of nails"] = 500,
+    ["beer tap"] = 50,
+    ["beetle carapace"] = 200,
+    ["beetle necklace"] = 1500,
+    ["behemoth claw"] = 2000,
+    ["behemoth trophy"] = 20000,
+    ["bejeweled ship's telescope"] = 20000,
+    ["berserk potion"] = 500,
+    ["berserker"] = 40000,
+    ["black hood"] = 190,
+    ["black pearl"] = 280,
+    ["black shield"] = 800,
+    ["black wool"] = 300,
+    ["blacksteel sword"] = 6000,
+    ["blade of corruption"] = 60000,
+    ["blazing bone"] = 610,
+    ["blessed sceptre"] = 40000,
+    ["blood preservation"] = 320,
+    ["blood tincture in a vial"] = 360,
+    ["bloody dwarven beard"] = 110,
+    ["bloody edge"] = 30000,
+    ["bloody pincers"] = 100,
+    ["bloody tears"] = 70000,
+    ["blue crystal shard"] = 1500,
+    ["blue crystal splinter"] = 400,
+    ["blue gem"] = 5000,
+    ["blue glass plate"] = 60,
+    ["blue goanna scale"] = 230,
+    ["blue legs"] = 15000,
+    ["blue piece of cloth"] = 200,
+    ["blue robe"] = 10000,
+    ["blue rose"] = 250,
+    ["boggy dreads"] = 200,
+    ["bola"] = 35,
+    ["bone club"] = 5,
+    ["bone fetish"] = 150,
+    ["bone shield"] = 80,
+    ["bone shoulderplate"] = 150,
+    ["bone sword"] = 20,
+    ["bone toothpick"] = 150,
+    ["bonebeast trophy3"] = 6000,
+    ["bonebreaker"] = 10000,
+    ["bonecarving knife"] = 190,
+    ["bonelord eye"] = 80,
+    ["bonelord helmet"] = 2200,
+    ["bonelord shield"] = 1200,
+    ["bones of zorvorax"] = 10000,
+    ["bony tail"] = 210,
+    ["book of necromantic rituals"] = 180,
+    ["book of prayers"] = 120,
+    ["book page"] = 640,
+    ["boots of haste"] = 30000,
+    ["bow"] = 100,
+    ["bowl of terror sweat"] = 500,
+    ["brain head's giant neuron"] = 100000,
+    ["brain head's left hemisphere"] = 90000,
+    ["brain head's right hemisphere"] = 50000,
+    ["brass armor"] = 150,
+    ["brass helmet"] = 30,
+    ["brass legs"] = 49,
+    ["brass shield"] = 25,
+    ["bright bell"] = 220,
+    ["bright sword"] = 6000,
+    ["brimstone fangs"] = 380,
+    ["brimstone shell"] = 210,
+    ["broadsword"] = 500,
+    ["broken crossbow"] = 30,
+    ["broken draken mail"] = 340,
+    ["broken gladiator shield"] = 190,
+    ["broken halberd"] = 100,
+    ["broken helmet"] = 20,
+    ["broken key ring"] = 8000,
+    ["broken longbow"] = 120,
+    ["broken ring of ending"] = 4000,
+    ["broken shamanic staff"] = 35,
+    ["broken slicer"] = 120,
+    ["broken throwing axe"] = 230,
+    ["broken visor"] = 1900,
+    ["bronze amulet"] = 50,
+    ["brooch of embracement"] = 14000,
+    ["brown crystal splinter"] = 400,
+    ["brown piece of cloth"] = 100,
+    ["brutetamer's staff"] = 1500,
+    ["buckle"] = 7000,
+    ["bullseye potion"] = 500,
+    ["bunch of ripe rice"] = 75,
+    ["bunch of troll hair"] = 30,
+    ["bundle of cursed straw"] = 800,
+    ["butcher's axe"] = 18000,
+    ["calopteryx cape"] = 15000,
+    ["capricious heart"] = 2100,
+    ["capricious robe"] = 1200,
+    ["carapace shield"] = 32000,
+    ["carlin sword"] = 118,
+    ["carniphila seeds"] = 50,
+    ["carrion worm fang"] = 35,
+    ["castle shield"] = 5000,
+    ["cat's paw"] = 2000,
+    ["cave devourer eyes"] = 550,
+    ["cave devourer legs"] = 350,
+    ["cave devourer maw"] = 600,
+    ["cavebear skull"] = 550,
+    ["centipede leg"] = 28,
+    ["ceremonial ankh"] = 20000,
+    ["chain armor"] = 70,
+    ["chain bolter"] = 40000,
+    ["chain helmet"] = 17,
+    ["chain legs"] = 25,
+    ["chaos mace"] = 9000,
+    ["charmer's tiara"] = 900,
+    ["chasm spawn abdomen"] = 240,
+    ["chasm spawn head"] = 850,
+    ["chasm spawn tail"] = 120,
+    ["cheese cutter"] = 50,
+    ["cheesy figurine"] = 150,
+    ["chicken feather"] = 30,
+    ["chitinous mouth"] = 10000,
+    ["claw of 'the noxious spawn'"] = 15000,
+    ["cliff strider claw"] = 800,
+    ["closed trap"] = 75,
+    ["club"] = 1,
+    ["club ring"] = 100,
+    ["coal"] = 20,
+    ["coat"] = 1,
+    ["cobra crest"] = 650,
+    ["cobra crown"] = 50000,
+    ["cobra tongue"] = 15,
+    ["coconut shoes"] = 500,
+    ["collar of blue plasma"] = 6000,
+    ["collar of green plasma"] = 6000,
+    ["collar of red plasma"] = 6000,
+    ["colourful feather"] = 110,
+    ["colourful feathers"] = 400,
+    ["colourful snail shell"] = 250,
+    ["compass"] = 45,
+    ["composite hornbow"] = 25000,
+    ["compound eye"] = 150,
+    ["condensed energy"] = 260,
+    ["copper shield"] = 50,
+    ["coral brooch"] = 750,
+    ["corrupted flag"] = 700,
+    ["countess sorrow's frozen tear"] = 50000,
+    ["cow bell"] = 120,
+    ["cowtana"] = 2500,
+    ["crab pincers"] = 35,
+    ["cracked alabaster vase"] = 180,
+    ["cranial basher"] = 30000,
+    ["crawler head plating"] = 210,
+    ["crawler's essence"] = 3700,
+    ["crest of the deep seas"] = 10000,
+    ["crocodile boots"] = 1000,
+    ["crossbow"] = 120,
+    ["crowbar"] = 50,
+    ["crown"] = 2700,
+    ["crown armor"] = 12000,
+    ["crown helmet"] = 2500,
+    ["crown legs"] = 12000,
+    ["crown shield"] = 8000,
+    ["cruelty's chest"] = 720000,
+    ["cruelty's claw"] = 640000,
+    ["crunor idol"] = 30000,
+    ["crusader helmet"] = 6000,
+    ["crystal bone"] = 250,
+    ["crystal crossbow"] = 35000,
+    ["crystal mace"] = 12000,
+    ["crystal necklace"] = 400,
+    ["crystal of balance"] = 1000,
+    ["crystal of focus"] = 2000,
+    ["crystal of power"] = 3000,
+    ["crystal pedestal"] = 500,
+    ["crystal ring"] = 250,
+    ["crystal sword"] = 600,
+    ["crystal wand"] = 10000,
+    ["crystalline armor"] = 16000,
+    ["crystalline spikes"] = 440,
+    ["crystallized anger"] = 400,
+    ["cultish mask"] = 280,
+    ["cultish robe"] = 150,
+    ["cultish symbol"] = 500,
+    ["curious matter"] = 430,
+    ["cursed bone"] = 6000,
+    ["cursed shoulder spikes"] = 320,
+    ["cyan crystal fragment"] = 800,
+    ["cyclops toe"] = 55,
+    ["cyclops trophy"] = 500,
+    ["dagger"] = 2,
+    ["damaged armor plates"] = 280,
+    ["damaged worm head"] = 8000,
+    ["damselfly eye"] = 25,
+    ["damselfly wing"] = 20,
+    ["dandelion seeds"] = 200,
+    ["dangerous proto matter"] = 300,
+    ["daramian mace"] = 110,
+    ["daramian waraxe"] = 1000,
+    ["dark armor"] = 400,
+    ["dark bell"] = 250,
+    ["dark helmet"] = 250,
+    ["dark mushroom"] = 100,
+    ["dark rosary"] = 48,
+    ["dark shield"] = 400,
+    ["dead rat"] = 1,
+    ["dead weight"] = 450,
+    ["death ring"] = 1000,
+    ["deepling axe"] = 40000,
+    ["deepling breaktime snack"] = 90,
+    ["deepling claw"] = 430,
+    ["deepling guard belt buckle"] = 230,
+    ["deepling ridge"] = 360,
+    ["deepling scales"] = 80,
+    ["deepling squelcher"] = 7000,
+    ["deepling staff"] = 4000,
+    ["deepling warts"] = 180,
+    ["deeptags"] = 290,
+    ["deepworm jaws"] = 500,
+    ["deepworm spike roots"] = 650,
+    ["deepworm spikes"] = 800,
+    ["deer trophy3"] = 3000,
+    ["demon dust"] = 300,
+    ["demon helmet"] = 40000,
+    ["demon horn"] = 1000,
+    ["demon shield"] = 30000,
+    ["demon trophy"] = 40000,
+    ["demonbone amulet"] = 32000,
+    ["demonic essence"] = 1000,
+    ["demonic finger"] = 1000,
+    ["demonic skeletal hand"] = 80,
+    ["demonrage sword"] = 36000,
+    ["depth calcei"] = 25000,
+    ["depth galea"] = 35000,
+    ["depth lorica"] = 30000,
+    ["depth ocrea"] = 16000,
+    ["depth scutum"] = 36000,
+    ["devil helmet"] = 1000,
+    ["diabolic skull"] = 19000,
+    ["diamond"] = 15000,
+    ["diamond sceptre"] = 3000,
+    ["diremaw brainpan"] = 350,
+    ["diremaw legs"] = 270,
+    ["dirty turban"] = 120,
+    ["disgusting trophy"] = 3000,
+    ["distorted heart"] = 2100,
+    ["distorted robe"] = 1200,
+    ["divine plate"] = 55000,
+    ["djinn blade"] = 15000,
+    ["doll"] = 200,
+    ["double axe"] = 260,
+    ["doublet"] = 3,
+    ["downy feather"] = 20,
+    ["dowser"] = 35,
+    ["drachaku"] = 10000,
+    ["dracola's eye"] = 50000,
+    ["dracoyle statue"] = 5000,
+    ["dragon blood"] = 700,
+    ["dragon claw"] = 8000,
+    ["dragon figurine"] = 45000,
+    ["dragon hammer"] = 2000,
+    ["dragon lance"] = 9000,
+    ["dragon lord trophy"] = 10000,
+    ["dragon necklace"] = 100,
+    ["dragon priest's wandtip"] = 175,
+    ["dragon robe"] = 50000,
+    ["dragon scale mail"] = 40000,
+    ["dragon shield"] = 4000,
+    ["dragon slayer"] = 15000,
+    ["dragon tongue"] = 550,
+    ["dragonbone staff"] = 3000,
+    ["dragon's tail"] = 100,
+    ["draken boots"] = 40000,
+    ["draken sulphur"] = 550,
+    ["draken trophy"] = 15000,
+    ["draken wristbands"] = 430,
+    ["drakinata"] = 10000,
+    ["draptor scales"] = 800,
+    ["dreaded cleaver"] = 10000,
+    ["dream essence egg"] = 205,
+    ["dung ball"] = 130,
+    ["dwarven armor"] = 30000,
+    ["dwarven axe"] = 1500,
+    ["dwarven legs"] = 40000,
+    ["dwarven ring"] = 100,
+    ["dwarven shield"] = 100,
+    ["earflap"] = 40,
+    ["earth blacksteel sword"] = 6000,
+    ["earth cranial basher"] = 30000,
+    ["earth crystal mace"] = 12000,
+    ["earth dragon slayer"] = 15000,
+    ["earth headchopper"] = 6000,
+    ["earth heroic axe"] = 30000,
+    ["earth knight axe"] = 2000,
+    ["earth mystic blade"] = 30000,
+    ["earth orcish maul"] = 6000,
+    ["earth relic sword"] = 25000,
+    ["earth spike sword"] = 1000,
+    ["earth war axe"] = 12000,
+    ["earth war hammer"] = 1200,
+    ["ectoplasmic sushi"] = 300,
+    ["egg of the many"] = 15000,
+    ["elder bonelord tentacle"] = 150,
+    ["elite draken mail"] = 50000,
+    ["elven amulet"] = 100,
+    ["elven astral observer"] = 90,
+    ["elven hoof"] = 115,
+    ["elven scouting glass"] = 50,
+    ["elvish bow"] = 2000,
+    ["elvish talisman"] = 45,
+    ["emerald bangle"] = 800,
+    ["empty honey glass"] = 270,
+    ["empty potion flask"] = 5,
+    ["enchanted chicken wing"] = 20000,
+    ["energy ball"] = 300,
+    ["energy blacksteel sword"] = 6000,
+    ["energy cranial basher"] = 30000,
+    ["energy crystal mace"] = 12000,
+    ["energy dragon slayer"] = 15000,
+    ["energy headchopper"] = 6000,
+    ["energy heroic axe"] = 30000,
+    ["energy knight axe"] = 2000,
+    ["energy mystic blade"] = 30000,
+    ["energy orcish maul"] = 6000,
+    ["energy relic sword"] = 25000,
+    ["energy ring"] = 100,
+    ["energy spike sword"] = 1000,
+    ["energy vein"] = 270,
+    ["energy war axe"] = 12000,
+    ["energy war hammer"] = 1200,
+    ["ensouled essence"] = 820,
+    ["epee"] = 8000,
+    ["essence of a bad dream"] = 360,
+    ["ethno coat"] = 200,
+    ["execowtioner axe"] = 12000,
+    ["executioner"] = 55000,
+    ["explorer brooch"] = 50,
+    ["eye of a deepling"] = 150,
+    ["eye of a weeper"] = 650,
+    ["eye of corruption"] = 390,
+    ["fafnar symbol"] = 950,
+    ["fairy wings"] = 200,
+    ["falcon crest"] = 650,
+    ["feather headdress"] = 850,
+    ["fern"] = 20,
+    ["fiery blacksteel sword"] = 6000,
+    ["fiery cranial basher"] = 30000,
+    ["fiery crystal mace"] = 12000,
+    ["fiery dragon slayer"] = 15000,
+    ["fiery headchopper"] = 6000,
+    ["fiery heart"] = 375,
+    ["fiery heroic axe"] = 30000,
+    ["fiery knight axe"] = 2000,
+    ["fiery mystic blade"] = 30000,
+    ["fiery orcish maul"] = 6000,
+    ["fiery relic sword"] = 25000,
+    ["fiery spike sword"] = 1000,
+    ["fiery war axe"] = 12000,
+    ["fiery war hammer"] = 1200,
+    ["fig leaf"] = 200,
+    ["figurine of cruelty"] = 3100000,
+    ["figurine of greed"] = 2900000,
+    ["figurine of hatred"] = 2700000,
+    ["figurine of malice"] = 2800000,
+    ["figurine of megalomania"] = 5000000,
+    ["figurine of spite"] = 3000000,
+    ["fir cone"] = 25,
+    ["fire axe"] = 8000,
+    ["fire mushroom"] = 200,
+    ["fire sword"] = 1000,
+    ["fish fin"] = 150,
+    ["fishing rod"] = 40,
+    ["flask of embalming fluid"] = 30,
+    ["flask of warrior's sweat"] = 10000,
+    ["flintstone"] = 800,
+    ["flower dress"] = 1000,
+    ["flower wreath"] = 500,
+    ["focus cape"] = 6000,
+    ["fox paw"] = 100,
+    ["frazzle skin"] = 400,
+    ["frazzle tongue"] = 700,
+    ["frost giant pelt"] = 160,
+    ["frosty ear of a troll"] = 30,
+    ["frosty heart"] = 280,
+    ["frozen lightning"] = 270,
+    ["frozen starlight"] = 20000,
+    ["fur armor"] = 5000,
+    ["fur boots"] = 2000,
+    ["fur shred"] = 200,
+    ["furry club"] = 1000,
+    ["garlic necklace"] = 50,
+    ["gauze bandage"] = 90,
+    ["gear crystal"] = 200,
+    ["gear wheel"] = 500,
+    ["gearwheel chain"] = 5000,
+    ["gemmed figurine"] = 3500,
+    ["geomancer's robe"] = 80,
+    ["geomancer's staff"] = 120,
+    ["ghastly dragon head"] = 700,
+    ["ghostly tissue"] = 90,
+    ["ghoul snack"] = 60,
+    ["giant amethyst"] = 60000,
+    ["giant crab pincer"] = 950,
+    ["giant emerald"] = 90000,
+    ["giant eye"] = 380,
+    ["giant ruby"] = 70000,
+    ["giant sapphire"] = 50000,
+    ["giant shimmering pearl"] = 3000,
+    ["giant smithhammer"] = 250,
+    ["giant sword"] = 17000,
+    ["giant tentacle"] = 10000,
+    ["giant topaz"] = 80000,
+    ["girlish hair decoration"] = 30,
+    ["glacial rod"] = 6500,
+    ["glacier amulet"] = 1500,
+    ["glacier kilt"] = 11000,
+    ["glacier mask"] = 2500,
+    ["glacier robe"] = 11000,
+    ["glacier shoes"] = 2500,
+    ["gland"] = 500,
+    ["glistening bone"] = 250,
+    ["glob of acid slime"] = 25,
+    ["glob of mercury"] = 20,
+    ["glob of tar"] = 30,
+    ["gloom wolf fur"] = 70,
+    ["glooth amulet"] = 2000,
+    ["glooth axe"] = 1500,
+    ["glooth blade"] = 1500,
+    ["glooth cape"] = 7000,
+    ["glooth club"] = 1500,
+    ["glooth whip"] = 2500,
+    ["glorious axe"] = 3000,
+    ["glowing rune"] = 350,
+    ["goanna claw"] = 260,
+    ["goanna meat"] = 190,
+    ["goat grass"] = 50,
+    ["goblet of gloom"] = 12000,
+    ["goblin ear"] = 20,
+    ["gold ingot"] = 5000,
+    ["gold nugget"] = 850,
+    ["gold ring"] = 8000,
+    ["golden amulet"] = 2000,
+    ["golden armor"] = 20000,
+    ["golden brush"] = 250,
+    ["golden fafnar trophy"] = 10000,
+    ["golden figurine"] = 3000,
+    ["golden legs"] = 30000,
+    ["golden lotus brooch"] = 270,
+    ["golden mask"] = 38000,
+    ["golden mug"] = 250,
+    ["golden sickle"] = 1000,
+    ["goo shell"] = 4000,
+    ["goosebump leather"] = 650,
+    ["grant of arms"] = 950,
+    ["grasshopper legs"] = 15000,
+    ["grave flower"] = 25,
+    ["greed's arm"] = 950000,
+    ["green bandage"] = 180,
+    ["green crystal fragment"] = 800,
+    ["green crystal shard"] = 1500,
+    ["green crystal splinter"] = 400,
+    ["green dragon leather"] = 100,
+    ["green dragon scale"] = 100,
+    ["green gem"] = 5000,
+    ["green glass plate"] = 180,
+    ["green mushroom"] = 100,
+    ["green piece of cloth"] = 200,
+    ["greenwood coat"] = 50000,
+    ["griffin shield"] = 3000,
+    ["grimace"] = 120000,
+    ["gruesome fan"] = 15000,
+    ["guardian axe"] = 9000,
+    ["guardian boots"] = 35000,
+    ["guardian halberd"] = 11000,
+    ["guardian shield"] = 2000,
+    ["guidebook"] = 200,
+    ["hailstorm rod"] = 3000,
+    ["hair of a banshee"] = 350,
+    ["halberd"] = 400,
+    ["half-digested piece of meat"] = 55,
+    ["half-digested stones"] = 40,
+    ["half-eaten brain"] = 85,
+    ["ham"] = 4,
+    ["hammer of wrath"] = 30000,
+    ["hand"] = 1450,
+    ["hand axe"] = 4,
+    ["hardened bone"] = 70,
+    ["harpoon of a giant snail"] = 15000,
+    ["hatched rorc egg"] = 30,
+    ["hatchet"] = 25,
+    ["haunted blade"] = 8000,
+    ["haunted piece of wood"] = 115,
+    ["hazardous heart"] = 5000,
+    ["hazardous robe"] = 3000,
+    ["head"] = 3500,
+    ["headchopper"] = 6000,
+    ["heat core"] = 10000,
+    ["heaven blossom"] = 50,
+    ["heavy mace"] = 50000,
+    ["heavy machete"] = 90,
+    ["heavy trident"] = 2000,
+    ["hellhound slobber"] = 500,
+    ["hellspawn tail"] = 475,
+    ["helmet of the lost"] = 2000,
+    ["hemp rope"] = 350,
+    ["heroic axe"] = 30000,
+    ["hexagonal ruby"] = 30000,
+    ["hibiscus dress"] = 3000,
+    ["hideous chunk"] = 510,
+    ["hieroglyph banner"] = 500,
+    ["high guard flag"] = 550,
+    ["high guard shoulderplates"] = 130,
+    ["hive bow"] = 28000,
+    ["hive scythe"] = 17000,
+    ["hollow stampor hoof"] = 400,
+    ["holy ash"] = 160,
+    ["holy orchid"] = 90,
+    ["honeycomb"] = 40,
+    ["horn"] = 300,
+    ["horn of kalyassa"] = 10000,
+    ["horoscope"] = 40,
+    ["horseman helmet"] = 280,
+    ["huge chunk of crude iron"] = 15000,
+    ["huge shell"] = 15000,
+    ["huge spiky snail shell"] = 8000,
+    ["humongous chunk"] = 540,
+    ["hunter's quiver"] = 80,
+    ["hunting spear"] = 25,
+    ["hydra egg"] = 500,
+    ["hydra head"] = 600,
+    ["ice flower"] = 370,
+    ["ice rapier"] = 1000,
+    ["icy blacksteel sword"] = 6000,
+    ["icy cranial basher"] = 30000,
+    ["icy crystal mace"] = 12000,
+    ["icy dragon slayer"] = 15000,
+    ["icy headchopper"] = 6000,
+    ["icy heroic axe"] = 30000,
+    ["icy knight axe"] = 2000,
+    ["icy mystic blade"] = 30000,
+    ["icy orcish maul"] = 6000,
+    ["icy relic sword"] = 25000,
+    ["icy spike sword"] = 1000,
+    ["icy war axe"] = 12000,
+    ["icy war hammer"] = 1200,
+    ["incantation notes"] = 90,
+    ["infernal heart"] = 2100,
+    ["infernal robe"] = 1200,
+    ["inkwell"] = 8,
+    ["instable proto matter"] = 300,
+    ["iron helmet"] = 150,
+    ["iron ore"] = 500,
+    ["ivory carving"] = 300,
+    ["ivory comb"] = 8000,
+    ["izcandar's snow globe"] = 180000,
+    ["izcandar's sundial"] = 225000,
+    ["jacket"] = 1,
+    ["jade hammer"] = 25000,
+    ["jade hat"] = 9000,
+    ["jagged sickle"] = 150000,
+    ["jaws"] = 3900,
+    ["jewelled belt"] = 180,
+    ["katana"] = 35,
+    ["katex' blood"] = 210,
+    ["key to the drowned library"] = 330,
+    ["knight armor"] = 5000,
+    ["knight axe"] = 2000,
+    ["knight legs"] = 5000,
+    ["kollos shell"] = 420,
+    ["kongra's shoulderpad"] = 100,
+    ["krimhorn helmet"] = 200,
+    ["lamassu hoof"] = 330,
+    ["lamassu horn"] = 240,
+    ["lancer beetle shell"] = 80,
+    ["lancet"] = 90,
+    ["lavos armor"] = 16000,
+    ["leaf legs"] = 500,
+    ["leather armor"] = 12,
+    ["leather boots"] = 2,
+    ["leather harness"] = 750,
+    ["leather helmet"] = 4,
+    ["leather legs"] = 9,
+    ["legion helmet"] = 22,
+    ["legionnaire flags"] = 500,
+    ["leopard armor"] = 300,
+    ["leviathan's amulet"] = 3000,
+    ["life crystal"] = 50,
+    ["life preserver"] = 300,
+    ["life ring"] = 50,
+    ["light shovel"] = 300,
+    ["lightning boots"] = 2500,
+    ["lightning headband"] = 2500,
+    ["lightning legs"] = 11000,
+    ["lightning pendant"] = 1500,
+    ["lightning robe"] = 11000,
+    ["lion cloak patch"] = 190,
+    ["lion crest"] = 270,
+    ["lion figurine"] = 10000,
+    ["lion seal"] = 210,
+    ["lion trophy3"] = 3000,
+    ["lion's mane"] = 60,
+    ["little bowl of myrrh"] = 500,
+    ["lizard essence"] = 300,
+    ["lizard heart"] = 530,
+    ["lizard leather"] = 150,
+    ["lizard scale"] = 120,
+    ["lizard trophy"] = 8000,
+    ["longing eyes"] = 8000,
+    ["longsword"] = 51,
+    ["lost basher's spike"] = 280,
+    ["lost bracers"] = 140,
+    ["lost husher's staff"] = 250,
+    ["lost soul"] = 120,
+    ["luminescent crystal pickaxe"] = 50,
+    ["luminous orb"] = 1000,
+    ["lump of dirt"] = 10,
+    ["lump of earth"] = 130,
+    ["lunar staff"] = 5000,
+    ["mace"] = 30,
+    ["machete"] = 6,
+    ["mad froth"] = 80,
+    ["magic light wand"] = 35,
+    ["magic plate armor"] = 90000,
+    ["magic sulphur"] = 8000,
+    ["magma amulet"] = 1500,
+    ["magma boots"] = 2500,
+    ["magma clump"] = 570,
+    ["magma coat"] = 11000,
+    ["magma legs"] = 11000,
+    ["magma monocle"] = 2500,
+    ["malice's horn"] = 620000,
+    ["malice's spine"] = 850000,
+    ["malofur's lunchbox"] = 240000,
+    ["mammoth fur cape"] = 6000,
+    ["mammoth fur shorts"] = 850,
+    ["mammoth tusk"] = 100,
+    ["mammoth whopper"] = 300,
+    ["mantassin tail"] = 280,
+    ["manticore ear"] = 310,
+    ["manticore tail"] = 220,
+    ["marlin trophy"] = 5000,
+    ["marsh stalker beak"] = 65,
+    ["marsh stalker feather"] = 50,
+    ["mastermind potion"] = 500,
+    ["mastermind shield"] = 50000,
+    ["maxilla"] = 250,
+    ["maxxenius head"] = 500000,
+    ["meat"] = 2,
+    ["meat hammer"] = 60,
+    ["medal of valiance"] = 410000,
+    ["medusa shield"] = 9000,
+    ["megalomania's essence"] = 1900000,
+    ["megalomania's skull"] = 1500000,
+    ["mercenary sword"] = 12000,
+    ["metal bat"] = 9000,
+    ["metal spats"] = 2000,
+    ["metal spike"] = 320,
+    ["might ring"] = 250,
+    ["milk churn"] = 100,
+    ["mind stone"] = 100,
+    ["mino lance"] = 7000,
+    ["mino shield"] = 3000,
+    ["minotaur horn"] = 75,
+    ["minotaur leather"] = 80,
+    ["minotaur trophy"] = 500,
+    ["miraculum"] = 60,
+    ["mirror"] = 10,
+    ["model ship"] = 1000,
+    ["modified crossbow"] = 10000,
+    ["mooh'tah plate"] = 6000,
+    ["moohtant cudgel"] = 14000,
+    ["moonlight rod"] = 200,
+    ["moonstone"] = 13000,
+    ["morbid tapestry"] = 30000,
+    ["morgaroth's heart"] = 15000,
+    ["morning star"] = 100,
+    ["mould heart"] = 2100,
+    ["mould robe"] = 1200,
+    ["mr. punish's handcuffs"] = 50000,
+    ["muck rod"] = 6000,
+    ["mucus plug"] = 500,
+    ["mutated bat ear"] = 420,
+    ["mutated flesh"] = 50,
+    ["mutated rat tail"] = 150,
+    ["mycological bow"] = 35000,
+    ["mysterious fetish"] = 50,
+    ["mystic blade"] = 30000,
+    ["mystic turban"] = 150,
+    ["mystical hourglass"] = 700,
+    ["naginata"] = 2000,
+    ["necklace of the deep"] = 3000,
+    ["necromantic robe"] = 250,
+    ["necrotic rod"] = 1000,
+    ["nettle blossom"] = 75,
+    ["nettle spit"] = 25,
+    ["nightmare blade"] = 35000,
+    ["noble amulet"] = 430000,
+    ["noble armor"] = 900,
+    ["noble axe"] = 10000,
+    ["noble cape"] = 425000,
+    ["noble turban"] = 430,
+    ["norse shield"] = 1500,
+    ["northwind rod"] = 1500,
+    ["nose ring"] = 2000,
+    ["obsidian lance"] = 500,
+    ["odd organ"] = 410,
+    ["ogre ear stud"] = 180,
+    ["ogre nose ring"] = 210,
+    ["old parchment"] = 500,
+    ["onyx chip"] = 500,
+    ["onyx flail"] = 22000,
+    ["onyx pendant"] = 3500,
+    ["opal"] = 500,
+    ["orange mushroom"] = 150,
+    ["orb"] = 750,
+    ["orc leather"] = 30,
+    ["orc tooth"] = 150,
+    ["orc trophy3"] = 1000,
+    ["orcish axe"] = 350,
+    ["orcish gear"] = 85,
+    ["orcish maul"] = 6000,
+    ["orichalcum pearl"] = 40,
+    ["oriental shoes"] = 15000,
+    ["ornamented axe"] = 20000,
+    ["ornamented shield"] = 1500,
+    ["ornate chestplate"] = 60000,
+    ["ornate crossbow"] = 12000,
+    ["ornate legs"] = 40000,
+    ["ornate locket"] = 18000,
+    ["ornate mace"] = 42000,
+    ["ornate shield"] = 42000,
+    ["orshabaal's brain"] = 12000,
+    ["pair of hellflayer horns"] = 1300,
+    ["pair of iron fists"] = 4000,
+    ["pair of old bracers"] = 500,
+    ["paladin armor"] = 15000,
+    ["pale worm's scalp"] = 489000,
+    ["panda teddy"] = 30000,
+    ["panther head"] = 750,
+    ["panther paw"] = 300,
+    ["patch of fine cloth"] = 1350,
+    ["patched boots"] = 2000,
+    ["peacock feather fan"] = 350,
+    ["pelvis bone"] = 30,
+    ["perfect behemoth fang"] = 250,
+    ["pet pig"] = 1500,
+    ["petrified scream"] = 250,
+    ["phantasmal hair"] = 500,
+    ["pharaoh banner"] = 1000,
+    ["pharaoh sword"] = 23000,
+    ["phoenix shield"] = 16000,
+    ["pick"] = 15,
+    ["piece of archer armor"] = 20,
+    ["piece of crocodile leather"] = 15,
+    ["piece of dead brain"] = 420,
+    ["piece of draconian steel"] = 3000,
+    ["piece of hell steel"] = 500,
+    ["piece of hellfire armor"] = 550,
+    ["piece of massacre's shell"] = 50000,
+    ["piece of royal steel"] = 10000,
+    ["piece of scarab shell"] = 45,
+    ["piece of swampling wood"] = 30,
+    ["piece of warrior armor"] = 50,
+    ["pieces of magic chalk"] = 210,
+    ["pig foot"] = 10,
+    ["pile of grave earth"] = 25,
+    ["pirate boots"] = 3000,
+    ["pirate hat"] = 1000,
+    ["pirate knee breeches"] = 200,
+    ["pirate shirt"] = 500,
+    ["pirate voodoo doll"] = 500,
+    ["plagueroot offshoot"] = 280000,
+    ["plasma pearls"] = 250,
+    ["plasmatic lightning"] = 270,
+    ["plate armor"] = 400,
+    ["plate legs"] = 115,
+    ["plate shield"] = 45,
+    ["platinum amulet"] = 2500,
+    ["poison dagger"] = 50,
+    ["poison gland"] = 210,
+    ["poison spider shell"] = 10,
+    ["poisonous slime"] = 50,
+    ["polar bear paw"] = 30,
+    ["pool of chitinous glue"] = 480,
+    ["porcelain mask"] = 2000,
+    ["powder herb"] = 10,
+    ["power ring"] = 50,
+    ["prismatic quartz"] = 450,
+    ["pristine worm head"] = 15000,
+    ["protection amulet"] = 100,
+    ["protective charm"] = 60,
+    ["pulverized ore"] = 400,
+    ["purified soul"] = 530,
+    ["purple robe"] = 110,
+    ["purple tome"] = 2000,
+    ["quara bone"] = 500,
+    ["quara eye"] = 350,
+    ["quara pincers"] = 410,
+    ["quara tentacle"] = 140,
+    ["queen's sceptre"] = 20000,
+    ["quill"] = 1100,
+    ["rabbit's foot"] = 50,
+    ["ragnir helmet"] = 400,
+    ["rainbow quartz"] = 500,
+    ["rapier"] = 5,
+    ["rare earth"] = 80,
+    ["ratana"] = 500,
+    ["ravenous circlet"] = 220000,
+    ["red crystal fragment"] = 800,
+    ["red dragon leather"] = 200,
+    ["red dragon scale"] = 200,
+    ["red gem"] = 1000,
+    ["red goanna scale"] = 270,
+    ["red hair dye"] = 40,
+    ["red lantern"] = 250,
+    ["red piece of cloth"] = 300,
+    ["red tome"] = 2000,
+    ["relic sword"] = 25000,
+    ["rhino hide"] = 175,
+    ["rhino horn"] = 265,
+    ["rhino horn carving"] = 300,
+    ["rift bow"] = 45000,
+    ["rift crossbow"] = 45000,
+    ["rift lance"] = 30000,
+    ["rift shield"] = 50000,
+    ["ring of blue plasma"] = 8000,
+    ["ring of green plasma"] = 8000,
+    ["ring of healing"] = 100,
+    ["ring of red plasma"] = 8000,
+    ["ring of the sky"] = 30000,
+    ["ripper lance"] = 500,
+    ["rod"] = 2200,
+    ["roots"] = 1200,
+    ["rope"] = 15,
+    ["rope belt"] = 66,
+    ["rorc egg"] = 120,
+    ["rorc feather"] = 70,
+    ["rotten heart"] = 74000,
+    ["rotten piece of cloth"] = 30,
+    ["royal axe"] = 40000,
+    ["royal helmet"] = 30000,
+    ["royal tapestry"] = 1000,
+    ["rubber cap"] = 11000,
+    ["ruby necklace"] = 2000,
+    ["runed sword"] = 45000,
+    ["ruthless axe"] = 45000,
+    ["sabre"] = 12,
+    ["sabretooth"] = 400,
+    ["sacred tree amulet"] = 3000,
+    ["safety pin"] = 120,
+    ["sai"] = 16500,
+    ["salamander shield"] = 280,
+    ["sample of monster blood"] = 250,
+    ["sandcrawler shell"] = 20,
+    ["sapphire hammer"] = 7000,
+    ["scale armor"] = 75,
+    ["scale of corruption"] = 680,
+    ["scale of gelidrazah"] = 10000,
+    ["scarab amulet"] = 200,
+    ["scarab pincers"] = 280,
+    ["scarab shield"] = 2000,
+    ["scimitar"] = 150,
+    ["scorpion tail"] = 25,
+    ["scroll of heroic deeds"] = 230,
+    ["scythe"] = 10,
+    ["scythe leg"] = 450,
+    ["sea horse figurine"] = 42000,
+    ["sea serpent scale"] = 520,
+    ["sea serpent trophy"] = 10000,
+    ["seeds"] = 150,
+    ["sentinel shield"] = 120,
+    ["serpent sword"] = 900,
+    ["shadow herb"] = 20,
+    ["shadow sceptre"] = 10000,
+    ["shaggy tail"] = 25,
+    ["shamanic hood"] = 45,
+    ["shamanic talisman"] = 200,
+    ["shard"] = 2000,
+    ["shimmering beetles"] = 150,
+    ["shiny stone"] = 500,
+    ["shockwave amulet"] = 3000,
+    ["short sword"] = 10,
+    ["shovel"] = 8,
+    ["sickle"] = 3,
+    ["sight of surrender's eye"] = 3000,
+    ["signet ring"] = 480000,
+    ["silencer claws"] = 390,
+    ["silencer resonating chamber"] = 600,
+    ["silken bookmark"] = 1300,
+    ["silkweaver bow"] = 12000,
+    ["silky fur"] = 35,
+    ["silver amulet"] = 50,
+    ["silver brooch"] = 150,
+    ["silver dagger"] = 500,
+    ["silver fafnar trophy"] = 1000,
+    ["silver hand mirror"] = 10000,
+    ["simple dress"] = 50,
+    ["single human eye"] = 1000,
+    ["skeleton decoration"] = 3000,
+    ["skull belt"] = 80,
+    ["skull coin"] = 12000,
+    ["skull fetish"] = 250,
+    ["skull helmet"] = 40000,
+    ["skull of ratha"] = 250,
+    ["skull shatterer"] = 170,
+    ["skull staff"] = 6000,
+    ["skullcracker armor"] = 18000,
+    ["skunk tail"] = 50,
+    ["slime mould"] = 175,
+    ["slimy leg"] = 4500,
+    ["sling herb"] = 10,
+    ["small amethyst"] = 200,
+    ["small axe"] = 5,
+    ["small diamond"] = 300,
+    ["small emerald"] = 250,
+    ["small enchanted amethyst"] = 200,
+    ["small enchanted emerald"] = 250,
+    ["small enchanted ruby"] = 250,
+    ["small enchanted sapphire"] = 250,
+    ["small energy ball"] = 250,
+    ["small flask of eyedrops"] = 95,
+    ["small notebook"] = 480,
+    ["small oil lamp"] = 150,
+    ["small pitchfork"] = 70,
+    ["small ruby"] = 250,
+    ["small sapphire"] = 250,
+    ["small topaz"] = 200,
+    ["snake skin"] = 400,
+    ["snakebite rod"] = 100,
+    ["sniper gloves"] = 2000,
+    ["soldier helmet"] = 16,
+    ["solid rage"] = 310,
+    ["some grimeleech wings"] = 1200,
+    ["soul orb"] = 25,
+    ["soul stone"] = 6000,
+    ["souleater trophy"] = 7500,
+    ["spark sphere"] = 350,
+    ["sparkion claw"] = 290,
+    ["sparkion legs"] = 310,
+    ["sparkion stings"] = 280,
+    ["sparkion tail"] = 300,
+    ["spear"] = 3,
+    ["spectral gold nugget"] = 500,
+    ["spectral silver nugget"] = 250,
+    ["spellsinger's seal"] = 280,
+    ["spellweaver's robe"] = 12000,
+    ["sphinx feather"] = 470,
+    ["sphinx tiara"] = 360,
+    ["spider fangs"] = 10,
+    ["spider silk"] = 100,
+    ["spidris mandible"] = 450,
+    ["spike shield"] = 250,
+    ["spike sword"] = 240,
+    ["spiked iron ball"] = 100,
+    ["spiked squelcher"] = 5000,
+    ["spiky club"] = 300,
+    ["spirit cloak"] = 350,
+    ["spirit container"] = 40000,
+    ["spite's spirit"] = 840000,
+    ["spitter nose"] = 340,
+    ["spooky blue eye"] = 95,
+    ["spool of yarn"] = 1000,
+    ["springsprout rod"] = 3600,
+    ["srezz' eye"] = 300,
+    ["stampor horn"] = 280,
+    ["stampor talons"] = 150,
+    ["star amulet"] = 500,
+    ["star herb"] = 15,
+    ["statue of abyssador"] = 4000,
+    ["statue of deathstrike"] = 3000,
+    ["statue of devovorga"] = 1500,
+    ["statue of gnomevil"] = 2000,
+    ["stealth ring"] = 200,
+    ["steel boots"] = 30000,
+    ["steel helmet"] = 293,
+    ["steel shield"] = 80,
+    ["stone herb"] = 20,
+    ["stone nose"] = 590,
+    ["stone skin amulet"] = 500,
+    ["stone wing"] = 120,
+    ["stonerefiner's skull"] = 100,
+    ["strand of medusa hair"] = 600,
+    ["strange helmet"] = 500,
+    ["strange proto matter"] = 300,
+    ["strange symbol"] = 200,
+    ["strange talisman"] = 30,
+    ["striped fur"] = 50,
+    ["studded armor"] = 25,
+    ["studded club"] = 10,
+    ["studded helmet"] = 20,
+    ["studded legs"] = 15,
+    ["studded shield"] = 16,
+    ["stuffed dragon"] = 6000,
+    ["sulphurous stone"] = 100,
+    ["swamp grass"] = 20,
+    ["swamplair armor"] = 16000,
+    ["swampling club"] = 40,
+    ["swampling moss"] = 20,
+    ["swarmer antenna"] = 130,
+    ["sword"] = 25,
+    ["sword ring"] = 100,
+    ["tail of corruption"] = 240,
+    ["talon"] = 320,
+    ["tarantula egg"] = 80,
+    ["tarnished rhino figurine"] = 320,
+    ["tattered piece of robe"] = 120,
+    ["taurus mace"] = 500,
+    ["telescope eye"] = 1600,
+    ["tempest shield"] = 35000,
+    ["templar scytheblade"] = 200,
+    ["tentacle piece"] = 5000,
+    ["terra amulet"] = 1500,
+    ["terra boots"] = 2500,
+    ["terra hood"] = 2500,
+    ["terra legs"] = 11000,
+    ["terra mantle"] = 11000,
+    ["terra rod"] = 2000,
+    ["terramite eggs"] = 50,
+    ["terramite legs"] = 60,
+    ["terramite shell"] = 170,
+    ["terrorbird beak"] = 95,
+    ["thaian sword"] = 16000,
+    ["the avenger"] = 42000,
+    ["the handmaiden's protector"] = 50000,
+    ["the imperor's trident"] = 50000,
+    ["the ironworker"] = 50000,
+    ["the justice seeker"] = 40000,
+    ["the plasmother's remains"] = 50000,
+    ["thick fur"] = 150,
+    ["thorn"] = 100,
+    ["throwing knife"] = 2,
+    ["tiger eye"] = 350,
+    ["time ring"] = 100,
+    ["titan axe"] = 4000,
+    ["token of love"] = 440000,
+    ["tooth file"] = 60,
+    ["tooth of tazhadur"] = 10000,
+    ["torn shirt"] = 250,
+    ["tortoise shield"] = 150,
+    ["tower shield"] = 8000,
+    ["trapped bad dream monster"] = 900,
+    ["trashed draken boots"] = 40000,
+    ["tribal mask"] = 250,
+    ["troll green"] = 25,
+    ["trollroot"] = 50,
+    ["trophy of jaul"] = 4000,
+    ["trophy of obujos"] = 3000,
+    ["trophy of tanjis"] = 2000,
+    ["tunnel tyrant head"] = 500,
+    ["tunnel tyrant shell"] = 700,
+    ["turtle shell"] = 90,
+    ["tusk"] = 100,
+    ["tusk shield"] = 850,
+    ["twiceslicer"] = 28000,
+    ["twin hooks"] = 500,
+    ["two handed sword"] = 450,
+    ["undead heart"] = 200,
+    ["underworld rod"] = 4400,
+    ["unholy bone"] = 480,
+    ["unholy book"] = 30000,
+    ["unicorn figurine"] = 50000,
+    ["urmahlullu's mane"] = 490000,
+    ["urmahlullu's paw"] = 245000,
+    ["urmahlullu's tail"] = 210000,
+    ["utua's poison"] = 230,
+    ["vampire dust"] = 100,
+    ["vampire shield"] = 15000,
+    ["vampire teeth"] = 275,
+    ["vampire's cape chain"] = 150,
+    ["veal"] = 40,
+    ["vein of ore"] = 330,
+    ["velvet tapestry"] = 800,
+    ["venison"] = 55,
+    ["vexclaw talon"] = 1100,
+    ["vial"] = 5,
+    ["vial of hatred"] = 737000,
+    ["vibrant heart"] = 2100,
+    ["vibrant robe"] = 1200,
+    ["viking helmet"] = 66,
+    ["viking shield"] = 85,
+    ["vile axe"] = 30000,
+    ["violet crystal shard"] = 1500,
+    ["violet gem"] = 10000,
+    ["violet glass plate"] = 2150,
+    ["volatile proto matter"] = 300,
+    ["voodoo doll"] = 400,
+    ["wailing widow's necklace"] = 3000,
+    ["walnut"] = 80,
+    ["wand of cosmic energy"] = 2000,
+    ["wand of decay"] = 1000,
+    ["wand of defiance"] = 6500,
+    ["wand of draconia"] = 1500,
+    ["wand of dragonbreath"] = 200,
+    ["wand of everblazing"] = 6000,
+    ["wand of inferno"] = 3000,
+    ["wand of starstorm"] = 3600,
+    ["wand of voodoo"] = 4400,
+    ["wand of vortex"] = 100,
+    ["war axe"] = 12000,
+    ["war crystal"] = 460,
+    ["war hammer"] = 470,
+    ["war horn"] = 8000,
+    ["warmaster's wristguards"] = 200,
+    ["warrior helmet"] = 5000,
+    ["warrior's axe"] = 11000,
+    ["warrior's shield"] = 9000,
+    ["warwolf fur"] = 30,
+    ["waspoid claw"] = 320,
+    ["waspoid wing"] = 190,
+    ["watch"] = 6,
+    ["watermelon tourmaline"] = 30000,
+    ["weaver's wandtip"] = 250,
+    ["wedding ring"] = 100,
+    ["werebadger claws"] = 160,
+    ["werebadger skull"] = 185,
+    ["werebadger trophy"] = 9000,
+    ["werebear fur"] = 185,
+    ["werebear skull"] = 195,
+    ["werebear trophy"] = 11000,
+    ["wereboar hooves"] = 175,
+    ["wereboar loincloth"] = 1500,
+    ["wereboar trophy"] = 10000,
+    ["wereboar tusks"] = 165,
+    ["werefox tail"] = 200,
+    ["werefox trophy"] = 9000,
+    ["werehyaena nose"] = 220,
+    ["werehyaena talisman"] = 350,
+    ["werehyaena trophy"] = 12000,
+    ["werewolf amulet"] = 3000,
+    ["werewolf fangs"] = 180,
+    ["werewolf fur"] = 380,
+    ["white deer antlers"] = 400,
+    ["white deer skin"] = 245,
+    ["white gem"] = 12000,
+    ["white pearl"] = 160,
+    ["white piece of cloth"] = 100,
+    ["white silk flower"] = 9000,
+    ["widow's mandibles"] = 110,
+    ["wild flowers"] = 120,
+    ["wimp tooth chain"] = 120,
+    ["windborn colossus armor"] = 50000,
+    ["winged tail"] = 800,
+    ["winter wolf fur"] = 20,
+    ["witch broom"] = 60,
+    ["witch hat"] = 5000,
+    ["withered pauldrons"] = 850,
+    ["withered scalp"] = 900,
+    ["wolf paw"] = 70,
+    ["wolf tooth chain"] = 100,
+    ["wolf trophy"] = 3000,
+    ["wood"] = 5,
+    ["wood mushroom"] = 15,
+    ["wooden hammer"] = 15,
+    ["wooden shield"] = 5,
+    ["wool"] = 15,
+    ["writhing brain"] = 370000,
+    ["writhing heart"] = 185000,
+    ["wyrm scale"] = 400,
+    ["wyvern fang"] = 1500,
+    ["wyvern talisman"] = 265,
+    ["yellow gem"] = 1000,
+    ["yellow piece of cloth"] = 150,
+    ["yielocks"] = 600,
+    ["yielowax"] = 600,
+    ["yirkas' egg"] = 280,
+    ["young lich worm"] = 25000,
+    ["zaoan armor"] = 14000,
+    ["zaoan halberd"] = 500,
+    ["zaoan helmet"] = 45000,
+    ["zaoan legs"] = 14000,
+    ["zaoan robe"] = 12000,
+    ["zaoan shoes"] = 5000,
+    ["zaoan sword"] = 30000,
+    ["zaogun flag"] = 600,
+    ["zaogun shoulderplates"] = 150,
+
+    -- 12.70
+    ["carnisylvan bark"] = 230,
+    ["carnisylvan finger"] = 250,
+    ["human teeth"] = 2000,
+    ["abomination's eye"] = 650000,
+    ["abomination's tail"] = 700000,
+    ["abomination's tongue"] = 950000,
+    ["afflicted strider head"] = 900,
+    ["afflicted strider worms"] = 500,
+    ["bashmu fang"] = 600,
+    ["bashmu feather"] = 350,
+    ["bashmu tongue"] = 400,
+    ["blemished spawn abdomen"] = 550,
+    ["blemished spawn head"] = 800,
+    ["blemished spawn tail"] = 1000,
+    ["brainstealer's brain"] = 300000,
+    ["brainstealer's brainwave"] = 440000,
+    ["brainstealer's tissue"] = 240000,
+    ["cave chimera head"] = 1200,
+    ["cave chimera leg"] = 650,
+    ["curl of hair"] = 320000,
+    ["eyeless devourer legs"] = 650,
+    ["eyeless devourer maw"] = 420,
+    ["eyeless devourer tongue"] = 900,
+    ["girtablilu warrior carapace"] = 520,
+    ["lavafungus head"] = 900,
+    ["lavafungus ring"] = 390,
+    ["lavaworm jaws"] = 1100,
+    ["lavaworm spike roots"] = 600,
+    ["lavaworm spikes"] = 750,
+    ["old girtablilu carapace"] = 570,
+    ["old royal diary"] = 220000,
+    ["scorpion charm"] = 620,
+    ["tremendous tyrant head"] = 930,
+    ["tremendous tyrant shell"] = 740,
+    ["varnished diremaw brainpan"] = 750,
+    ["varnished diremaw legs"] = 670,
+    ["streaked devourer eyes"] = 500,
+    ["streaked devourer legs"] = 600,
+    ["streaked devourer maw"] = 400,
+    ["eldritch crystal"] = 48000,
+
+    -- supplies
+    ["mana potion"] = 56,
+    ["strong mana potion"] = 93,
+    ["great mana potion"] = 144,
+    ["ultimate mana potion"] = 438,
+    ["health potion"] = 50,
+    ["strong health potion"] = 115,
+    ["great health potion"] = 225,
+    ["ultimate health potion"] = 379,
+    ["supreme health potion"] = 625,
+    ["great spirit potion"] = 228,
+    ["ultimate spirit potion"] = 438,
+    -- runes
+    ["cure poison rune"] = 65,
+    ["poison field rune"] = 21,
+    ["fire field rune"] = 28,
+    ["intense healing rune"] = 95,
+    ["destroy field rune"] = 15,
+    ["energy field rune"] = 38,
+    ["stalagmite rune"] = 12,
+    ["heavy magic missile rune"] = 12,
+    ["disintegrate rune"] = 26,
+    ["ultimate healing rune"] = 175,
+    ["poison bomb rune"] = 85,
+    ["animate death rune"] = 375,
+    ["chameleon rune"] = 210,
+    ["fireball rune"] = 30,
+    ["holy missile rune"] = 16,
+    ["icicle rune"] = 30,
+    ["stone shower rune"] = 37,
+    ["thunderstorm rune"] = 47,
+    ["avalanche rune"] = 57,
+    ["great fireball rune"] = 57,
+    ["convince creature rune"] = 80,
+    ["fire bomb rune"] = 147,
+    ["poison wall rune"] = 52,
+    ["explosion rune"] = 31,
+    ["fire wall rune"] = 61,
+    ["soulfire rune"] = 46,
+    ["wild growth rune"] = 160,
+    ["magic wall rune"] = 116,
+    ["energy wall rune"] = 85,
+    ["energy bomb rune"] = 203,
+    ["sudden death rune"] = 135,
+    ["paralyse rune"] = 700,
+
+    ["envenomed arrow"] = 12,
+    ["flaming arrow"] = 5,
+    ["flash arrow"] = 5,
+    ["onyx arrow"] = 7,
+    ["poison arrow"] = 1,
+    ["shiver arrow"] = 5,
+    ["simple arrow"] = 2,
+    ["sniper arrow"] = 5,
+    ["tarsal arrow"] = 6,
+    ["arrow"] = 3,
+    ["burst arrow"] = 0,
+    ["crystalline arrow"] = 20,
+    ["diamond arrow"] = 100,
+    ["earth arrow"] = 5,
+    ["infernal bolt"] = 12,
+    ["piercing bolt"] = 5,
+    ["power bolt"] = 7,
+    ["prismatic bolt"] = 20,
+    ["spectral bolt"] = 70,
+    ["vortex bolt"] = 6,
+    ["bolt"] = 4,
+    ["drill bolt"] = 12,
+}
+
+WasteItems = {
+    -- supplies
+    ["mana potion"] = 268,
+    ["strong mana potion"] = 237,
+    ["great mana potion"] = 238,
+    ["ultimate mana potion"] = 23373,
+    ["health potion"] = 266,
+    ["strong health potion"] = 236,
+    ["great health potion"] = 239,
+    ["ultimate health potion"] = 7643,
+    ["supreme health potion"] = 23375,
+    ["great spirit potion"] = 7642,
+    ["ultimate spirit potion"] = 23374,
+    -- ammo
+    ["envenomed arrow"] = 16143,
+    ["flaming arrow"] = 763,
+    ["flash arrow"] = 761,
+    ["onyx arrow"] = 7365,
+    ["poison arrow"] = 3448,
+    ["shiver arrow"] = 762,
+    ["simple arrow"] = 21470,
+    ["sniper arrow"] = 7364,
+    ["tarsal arrow"] = 14251,
+    ["arrow"] = 3447,
+    ["burst arrow"] = 3449,
+    ["crystalline arrow"] = 15793,
+    ["diamond arrow"] = 35901,
+    ["earth arrow"] = 774,
+    ["infernal bolt"] = 6528,
+    ["piercing bolt"] = 7363,
+    ["power bolt"] = 3450,
+    ["prismatic bolt"] = 16141,
+    ["spectral bolt"] = 35902,
+    ["vortex bolt"] = 14252,
+    ["bolt"] = 3446,
+    ["drill bolt"] = 16142,
+    -- runes
+    ["cure poison rune"] = 3153,
+    ["poison field rune"] = 3172,
+    ["fire field rune"] = 3188,
+    ["intense healing rune"] = 3152,
+    ["destroy field rune"] = 3148,
+    ["energy field rune"] = 3164,
+    ["stalagmite rune"] = 3179,
+    ["heavy magic missile rune"] = 3198,
+    ["disintegrate rune"] = 3197,
+    ["ultimate healing rune"] = 3160,
+    ["poison bomb rune"] = 3173,
+    ["animate death rune"] = 3203,
+    ["chameleon rune"] = 3178,
+    ["fireball rune"] = 3189,
+    ["holy missile rune"] = 3182,
+    ["icicle rune"] = 3158,
+    ["stone shower rune"] = 3175,
+    ["thunderstorm rune"] = 3202,
+    ["avalanche rune"] = 3161,
+    ["great fireball rune"] = 3191,
+    ["convince creature rune"] = 3177,
+    ["fire bomb rune"] = 3192,
+    ["poison wall rune"] = 3176,
+    ["explosion rune"] = 3200,
+    ["fire wall rune"] = 3190,
+    ["soulfire rune"] = 3195,
+    ["wild growth rune"] = 3156,
+    ["magic wall rune"] = 3180,
+    ["energy wall rune"] = 3166,
+    ["energy bomb rune"] = 3149,
+    ["sudden death rune"] = 3155,
+    ["paralyse rune"] = 3165
+}]]
+FILES["vBot/main.lua"] = [[Global = {}
+Global.useIds = { 34847, 1764, 21051, 30823, 6264, 5282, 20453, 20454, 20474, 11708, 11705, 
+6257, 6256, 2772, 27260, 2773, 1632, 1633, 1948, 435, 6252, 6253, 5007, 4911, 
+1629, 1630, 5108, 5107, 5281, 1968, 435, 1948, 5542, 31116, 31120, 30742, 31115, 
+31118, 20474, 5737, 5736, 5734, 5733, 31202, 31228, 31199, 31200, 33262, 30824, 
+5125, 5126, 5116, 5117, 8257, 8258, 8255, 8256, 5120, 30777, 30776, 23873, 23877,
+5736, 6264, 31262, 31130, 31129, 6250, 6249, 5122, 30049, 7131, 7132, 7727 }
+Global.shovelIds = { 606, 593, 867, 608 }
+Global.ropeIds = { 17238, 12202, 12935, 386, 421, 21966, 14238 }
+Global.macheteIds = { 2130, 3696 }
+Global.scytheIds = { 3653 }
+
+Global.PVPoffsetDirections = {
+  [North] = { 0, -2 },
+  [East] = { 2, 0 },
+  [South] = { 0, 2 },
+  [West] = { -2, 0 },
+  [NorthEast] = { 1, -1 },
+  [SouthEast] = { 1, 1 },
+  [SouthWest] = { -1, 1 },
+  [NorthWest] = { -1, -1 }
+}
+]]
+FILES["vBot/mana_train.lua"] = [[setDefaultTab("HP")
+UI.Separator()
+
+UI.Label("Mana Training:")
+if type(storage.manaTrain) ~= "table" then
+  storage.manaTrain = {on=false, title="MP%", text="utevo lux", min=90, max=100}
+end
+
+local manatrainmacro = macro(1000, function()
+  if TargetBot and TargetBot.isActive() then return end -- pause when attacking
+  local mana = math.min(100, math.floor(100 * (player:getMana() / player:getMaxMana())))
+  if storage.manaTrain.max >= mana and mana >= storage.manaTrain.min then
+    say(storage.manaTrain.text)
+  end
+end)
+manatrainmacro.setOn(storage.manaTrain.on)
+
+UI.DualScrollPanel(storage.manaTrain, function(widget, newParams) 
+  storage.manaTrain = newParams
+  manatrainmacro.setOn(storage.manaTrain.on)
+end)
+
+-- UI.Separator()
+
+-- UI.Label("Mana Training 2")
+if type(storage.manaTrain2) ~= "table" then
+  storage.manaTrain2 = {on=false, title="MP%", text="utani hur", min=80, max=100}
+end
+
+local manatrainmacro2 = macro(1000, function()
+  if TargetBot and TargetBot.isActive() then return end -- pause when attacking
+  local mana2 = math.min(100, math.floor(100 * (player:getMana() / player:getMaxMana())))
+  if storage.manaTrain2.max >= mana2 and mana2 >= storage.manaTrain2.min then
+    say(storage.manaTrain2.text)
+  end
+end)
+manatrainmacro2.setOn(storage.manaTrain2.on)
+
+UI.DualScrollPanel(storage.manaTrain2, function(widget, newParams) 
+  storage.manaTrain2 = newParams
+  manatrainmacro2.setOn(storage.manaTrain2.on)
+end)
+
+UI.Separator()]]
+FILES["vBot/new_cavebot_lib.lua"] = [=[CaveBot = {} -- global namespace
+
+-------------------------------------------------------------------
+-- CaveBot lib 1.0
+-- Contains a universal set of functions to be used in CaveBot
+
+----------------------[[ basic assumption ]]-----------------------
+-- in general, functions cannot be slowed from within, only externally, by event calls, delays etc.
+-- considering that and the fact that there is no while loop, every function return action
+-- thus, functions will need to be verified outside themselfs or by another function
+-- overall tips to creating extension:
+--   - functions return action(nil) or true(done)
+--   - extensions are controlled by retries var
+-------------------------------------------------------------------
+
+-- local variables, constants and functions, used by global functions
+local LOCKERS_LIST = {3497, 3498, 3499, 3500}
+local LOCKER_ACCESSTILE_MODIFIERS = {
+    [3497] = {0,-1},
+    [3498] = {1,0},
+    [3499] = {0,1},
+    [3500] = {-1,0}
+}
+
+local function CaveBotConfigParse()
+	local name = storage["_configs"]["targetbot_configs"]["selected"]
+    if not name then 
+        return warn("[vBot] Please create a new TargetBot config and reset bot")
+    end
+	local file = configDir .. "/targetbot_configs/" .. name .. ".json"
+	local data = g_resources.readFileContents(file)
+	return Config.parse(data)['looting']
+end
+
+local function getNearTiles(pos)
+    if type(pos) ~= "table" then
+        pos = pos:getPosition()
+    end
+
+    local tiles = {}
+    local dirs = {
+        {-1, 1},
+        {0, 1},
+        {1, 1},
+        {-1, 0},
+        {1, 0},
+        {-1, -1},
+        {0, -1},
+        {1, -1}
+    }
+    for i = 1, #dirs do
+        local tile =
+            g_map.getTile(
+            {
+                x = pos.x - dirs[i][1],
+                y = pos.y - dirs[i][2],
+                z = pos.z
+            }
+        )
+        if tile then
+            table.insert(tiles, tile)
+        end
+    end
+
+    return tiles
+end
+
+-- ##################### --
+-- [[ Information class ]] --
+-- ##################### --
+
+--- global variable to reflect current CaveBot status
+CaveBot.Status = "waiting"
+
+--- Parses config and extracts loot list.
+-- @return table
+function CaveBot.GetLootItems()
+    local t = CaveBotConfigParse() and CaveBotConfigParse()["items"] or nil
+
+    local returnTable = {}
+    if type(t) == "table" then
+        for i, item in pairs(t) do
+            table.insert(returnTable, item["id"])
+        end
+    end
+
+    return returnTable
+end
+
+
+--- Checks whether player has any visible items to be stashed
+-- @return boolean
+function CaveBot.HasLootItems()
+    for _, container in pairs(getContainers()) do
+        local name = container:getName():lower()
+        if not name:find("depot") and not name:find("your inbox") then
+            for _, item in pairs(container:getItems()) do
+                local id = item:getId()
+                if table.find(CaveBot.GetLootItems(), id) then
+                    return true
+                end
+            end
+        end
+    end
+end
+
+--- Parses config and extracts loot containers.
+-- @return table
+function CaveBot.GetLootContainers()
+    local t = CaveBotConfigParse() and CaveBotConfigParse()["containers"] or nil
+
+    local returnTable = {}
+    if type(t) == "table" then
+        for i, container in pairs(t) do
+            table.insert(returnTable, container["id"])
+        end
+    end
+
+    return returnTable
+end
+
+--- Information about open containers.
+-- @param amount is boolean
+-- @return table or integer
+function CaveBot.GetOpenedLootContainers(containerTable)
+    local containers = CaveBot.GetLootContainers()
+
+    local t = {}
+    for i, container in pairs(getContainers()) do
+        local containerId = container:getContainerItem():getId()
+        if table.find(containers, containerId) then
+            table.insert(t, container)
+        end
+    end
+
+    return containerTable and t or #t
+end
+
+--- Some actions needs to be additionally slowed down in case of high ping.
+-- Maximum at 2000ms in case of lag spike.
+-- @param multiplayer is integer
+-- @return void
+function CaveBot.PingDelay(multiplayer)
+    multiplayer = multiplayer or 1
+    if ping() and ping() > 150 then -- in most cases ping above 150 affects CaveBot
+        local value = math.min(ping() * multiplayer, 2000)
+        return delay(value)
+    end
+end
+
+-- ##################### --
+-- [[ Container class ]] --
+-- ##################### --
+
+--- Closes any loot container that is open.
+-- @return void or boolean
+function CaveBot.CloseLootContainer()
+    local containers = CaveBot.GetLootContainers()
+
+    for i, container in pairs(getContainers()) do
+        local containerId = container:getContainerItem():getId()
+        if table.find(containers, containerId) then
+            return g_game.close(container)
+        end
+    end
+
+    return true
+end
+
+function CaveBot.CloseAllLootContainers()
+    local containers = CaveBot.GetLootContainers()
+
+    for i, container in pairs(getContainers()) do
+        local containerId = container:getContainerItem():getId()
+        if table.find(containers, containerId) then
+            g_game.close(container)
+        end
+    end
+
+    return true
+end
+
+--- Opens any loot container that isn't already opened.
+-- @return void or boolean
+function CaveBot.OpenLootContainer()
+    local containers = CaveBot.GetLootContainers()
+
+    local t = {}
+    for i, container in pairs(getContainers()) do
+        local containerId = container:getContainerItem():getId()
+        table.insert(t, containerId)
+    end
+
+    for _, container in pairs(getContainers()) do
+        for _, item in pairs(container:getItems()) do
+            local id = item:getId()
+            if table.find(containers, id) and not table.find(t, id) then
+                return g_game.open(item)
+            end
+        end
+    end
+
+    return true
+end
+
+-- ##################### --
+-- [[[ Position class ]] --
+-- ##################### --
+
+--- Compares distance between player position and given pos.
+-- @param position is table
+-- @param distance is integer
+-- @return boolean
+function CaveBot.MatchPosition(position, distance)
+    local pPos = player:getPosition()
+    distance = distance or 1
+    return getDistanceBetween(pPos, position) <= distance
+end
+
+--- Stripped down to take less space.
+-- Use only to safe position, like pz movement or reaching npc.
+-- Needs to be called between 200-500ms to achieve fluid movement.
+-- @param position is table
+-- @param distance is integer
+-- @return void
+function CaveBot.GoTo(position, precision)
+    if not precision then
+        precision = 3
+    end
+    return CaveBot.walkTo(position, 20, {ignoreCreatures = true, precision = precision})
+end
+
+--- Finds position of npc by name and reaches its position.
+-- @return void(acion) or boolean
+function CaveBot.ReachNPC(name)
+    name = name:lower()
+    
+    local npc = nil
+    for i, spec in pairs(getSpectators()) do
+        if spec:isNpc() and spec:getName():lower() == name then
+            npc = spec
+        end
+    end
+
+    if not CaveBot.MatchPosition(npc:getPosition(), 3) then
+        CaveBot.GoTo(npc:getPosition())
+    else
+        return true
+    end
+end
+
+-- ##################### --
+-- [[[[ Depot class ]]]] --
+-- ##################### --
+
+--- Reaches closest locker.
+-- @return void(acion) or boolean
+
+local depositerLockerTarget = nil
+local depositerLockerReachRetries = 0
+function CaveBot.ReachDepot()
+    local pPos = player:getPosition()
+    local tiles = getNearTiles(player:getPosition())
+
+    for i, tile in pairs(tiles) do
+        for i, item in pairs(tile:getItems()) do
+            if table.find(LOCKERS_LIST, item:getId()) then
+                depositerLockerTarget = nil
+                depositerLockerReachRetries = 0
+                return true -- if near locker already then return function
+            end
+        end
+    end
+
+    if depositerLockerReachRetries > 20 then
+        depositerLockerTarget = nil
+        depositerLockerReachRetries = 0
+    end
+
+    local candidates = {}
+
+    if not depositerLockerTarget or distanceFromPlayer(depositerLockerTarget, pPos) > 12 then
+        for i, tile in pairs(g_map.getTiles(posz())) do
+            local tPos = tile:getPosition()
+            for i, item in pairs(tile:getItems()) do
+                if table.find(LOCKERS_LIST, item:getId()) then
+                    local lockerTilePos = tile:getPosition()
+                          lockerTilePos.x = lockerTilePos.x + LOCKER_ACCESSTILE_MODIFIERS[item:getId()][1]
+                          lockerTilePos.y = lockerTilePos.y + LOCKER_ACCESSTILE_MODIFIERS[item:getId()][2]
+                    local lockerTile = g_map.getTile(lockerTilePos)
+                    if not lockerTile:hasCreature() then
+                        if findPath(pos(), tPos, 20, {ignoreNonPathable = false, precision = 1, ignoreCreatures = true}) then
+                            local distance = getDistanceBetween(tPos, pPos)
+                            table.insert(candidates, {pos=tPos, dist=distance})
+                        end
+                    end
+                end
+            end
+        end
+
+        if #candidates > 1 then
+            table.sort(candidates, function(a,b) return a.dist < b.dist end)
+        end
+    end
+
+    depositerLockerTarget = depositerLockerTarget or candidates[1].pos
+
+    if depositerLockerTarget then
+        if not CaveBot.MatchPosition(depositerLockerTarget) then
+            depositerLockerReachRetries = depositerLockerReachRetries + 1
+            return CaveBot.GoTo(depositerLockerTarget, 1)
+        else
+            depositerLockerReachRetries = 0
+            depositerLockerTarget = nil
+            return true
+        end
+    end
+end
+
+--- Opens locker item.
+-- @return void(acion) or boolean
+function CaveBot.OpenLocker()
+    local pPos = player:getPosition()
+    local tiles = getNearTiles(player:getPosition())
+
+    local locker = getContainerByName("Locker")
+    if not locker then
+        for i, tile in pairs(tiles) do
+            for i, item in pairs(tile:getItems()) do
+                if table.find(LOCKERS_LIST, item:getId()) then
+                    local topThing = tile:getTopUseThing()
+                    if not topThing:isNotMoveable() then
+                        g_game.move(topThing, pPos, topThing:getCount())
+                    else
+                        return g_game.open(item)
+                    end
+                end
+            end
+        end
+    else
+        return true
+    end
+end
+
+--- Opens depot chest.
+-- @return void(acion) or boolean
+function CaveBot.OpenDepotChest()
+    local depot = getContainerByName("Depot chest")
+    if not depot then
+        local locker = getContainerByName("Locker")
+        if not locker then
+            return CaveBot.OpenLocker()
+        end
+        for i, item in pairs(locker:getItems()) do
+            if item:getId() == 3502 then
+                return g_game.open(item, locker)
+            end
+        end
+    else
+        return true
+    end
+end
+
+--- Opens inbox inside locker.
+-- @return void(acion) or boolean
+function CaveBot.OpenInbox()
+    local inbox = getContainerByName("Your inbox")
+    if not inbox then
+        local locker = getContainerByName("Locker")
+        if not locker then
+            return CaveBot.OpenLocker()
+        end
+        for i, item in pairs(locker:getItems()) do
+            if item:getId() == 12902 then
+                return g_game.open(item)
+            end
+        end
+    else
+        return true
+    end
+end
+
+--- Opens depot box of given number.
+-- @param index is integer
+-- @return void or boolean
+function CaveBot.OpenDepotBox(index)
+    local depot = getContainerByName("Depot chest")
+    if not depot then
+        return CaveBot.ReachAndOpenDepot()
+    end
+
+    local foundParent = false
+    for i, container in pairs(getContainers()) do
+        if container:getName():lower():find("depot box") then
+            foundParent = container
+            break
+        end
+    end
+    if foundParent then return true end
+
+    for i, container in pairs(depot:getItems()) do
+        if i == index then
+            return g_game.open(container)
+        end
+    end
+end
+
+--- Reaches and opens depot.
+-- Combined for shorthand usage.
+-- @return boolean whether succeed to reach and open depot
+function CaveBot.ReachAndOpenDepot()
+    if CaveBot.ReachDepot() and CaveBot.OpenDepotChest() then 
+        return true 
+    end
+    return false
+end
+
+--- Reaches and opens imbox.
+-- Combined for shorthand usage.
+-- @return boolean whether succeed to reach and open depot
+function CaveBot.ReachAndOpenInbox()
+    if CaveBot.ReachDepot() and CaveBot.OpenInbox() then 
+        return true 
+    end
+    return false
+end
+
+--- Stripped down function to stash item.
+-- @param item is object
+-- @param index is integer
+-- @param destination is object
+-- @return void
+function CaveBot.StashItem(item, index, destination)
+    destination = destination or getContainerByName("Depot chest")
+    if not destination then return false end
+
+    return g_game.move(item, destination:getSlotPosition(index), item:getCount())
+end
+
+--- Withdraws item from depot chest or mail inbox.
+-- main function for depositer/withdrawer
+-- @param id is integer
+-- @param amount is integer
+-- @param fromDepot is boolean or integer
+-- @param destination is object
+-- @return void
+function CaveBot.WithdrawItem(id, amount, fromDepot, destination)
+    if destination and type(destination) == "string" then
+        destination = getContainerByName(destination)
+    end
+    local itemCount = itemAmount(id)
+    local depot
+    for i, container in pairs(getContainers()) do
+        if container:getName():lower():find("depot box") or container:getName():lower():find("your inbox") then
+            depot = container
+            break
+        end
+    end
+    if not depot then
+        if fromDepot then
+            if not CaveBot.OpenDepotBox(fromDepot) then return end
+        else
+            return CaveBot.ReachAndOpenInbox()
+        end
+        return
+    end
+    if not destination then
+        for i, container in pairs(getContainers()) do
+            if container:getCapacity() > #container:getItems() and not string.find(container:getName():lower(), "quiver") and not string.find(container:getName():lower(), "depot") and not string.find(container:getName():lower(), "loot") and not string.find(container:getName():lower(), "inbox") then
+                destination = container
+            end
+        end
+    end
+
+    if itemCount >= amount then 
+        return true 
+    end
+
+    local toMove = amount - itemCount
+    for i, item in pairs(depot:getItems()) do
+        if item:getId() == id then
+            return g_game.move(item, destination:getSlotPosition(destination:getItemsCount()), math.min(toMove, item:getCount()))
+        end
+    end
+end
+
+-- ##################### --
+-- [[[[[ Talk class ]]]] --
+-- ##################### --
+
+--- Controlled by event caller.
+-- Simple way to build npc conversations instead of multiline overcopied code.
+-- @return void
+function CaveBot.Conversation(...)
+    local expressions = {...}
+    local delay = storage.coreSettings.talkDelay or 1000
+
+    local talkDelay = 0
+    for i, expr in ipairs(expressions) do
+        schedule(talkDelay, function() NPC.say(expr) end)
+        talkDelay = talkDelay + delay
+    end
+end
+
+--- Says hi trade to NPC.
+-- Used as shorthand to open NPC trade window.
+-- @return void
+function CaveBot.OpenNpcTrade()
+    return CaveBot.Conversation("hi", "trade")
+end
+
+--- Says hi destination yes to NPC.
+-- Used as shorthand to travel.
+-- @param destination is string
+-- @return void
+function CaveBot.Travel(destination)
+    return CaveBot.Conversation("hi", destination, "yes")
+end]=]
+FILES["vBot/playerlist.lua"] = [=[--[[
+  configuration for check players
+  example made on server Gunzodus
+
+  example link for player overview:
+  https://www.gunzodus.net/character/show/Sir_Vithrax
+
+  *note that space in character name was replaced with underscore (_) - this character will be important
+
+  in this case:
+  link = "https://www.gunzodus.net/character/show/" -- everything with all the characters up to the start of the name
+  spacing = "_" -- space replacement in character name
+]]
+
+local link = "https://www.gunzodus.net/character/show/"
+local spacing = "_"
+
+
+
+-- do not edit below
+setDefaultTab("Tools")
+local tabs = {"Friends", "Enemies", "BlackList"}
+local panelName = "playerList"
+local colors = {"#03C04A", "#fc4c4e", "orange"}
+
+if not storage[panelName] then
+    storage[panelName] = {
+      enemyList = {},
+      friendList = {},
+      blackList = {},
+      groupMembers = true,
+      outfits = false,
+      marks = false,
+      highlight = false
+    }
+end
+
+local config = storage[panelName]
+local playerTables = {config.friendList, config.enemyList, config.blackList}
+
+-- functions
+local function clearCachedPlayers()
+  CachedFriends = {}
+  CachedEnemies = {}
+end
+
+local refreshStatus = function()
+    for _, spec in ipairs(getSpectators()) do
+      if spec:isPlayer() and not spec:isLocalPlayer() then
+        if config.outfits then
+          local specOutfit = spec:getOutfit()
+          if isFriend(spec:getName()) then
+            if config.highlight then
+              spec:setMarked('#0000FF')
+            end
+            specOutfit.head = 88
+            specOutfit.body = 88
+            specOutfit.legs = 88
+            specOutfit.feet = 88
+            if vBot.BotServerMembers[1] and storage.BOTserver.outfit then
+              local voc = vBot.BotServerMembers[spec:getName()]
+              specOutfit.addons = 3 
+              if voc == 1 then
+                specOutfit.type = 131
+              elseif voc == 2 then
+                specOutfit.type = 129
+              elseif voc == 3 then
+                specOutfit.type = 130
+              elseif voc == 4 then
+                specOutfit.type = 144
+              end
+            end
+            spec:setOutfit(specOutfit)
+          elseif isEnemy(spec:getName()) then
+            if config.highlight then
+              spec:setMarked('#FF0000')
+            end
+            specOutfit.head = 94
+            specOutfit.body = 94
+            specOutfit.legs = 94
+            specOutfit.feet = 94
+            spec:setOutfit(specOutfit)
+          end
+        end
+      end
+    end
+end
+refreshStatus()
+
+local checkStatus = function(creature)
+    if not creature:isPlayer() or creature:isLocalPlayer() then return end
+  
+    local specName = creature:getName()
+    local specOutfit = creature:getOutfit()
+  
+    if isFriend(specName) then
+      if config.highlight then
+        creature:setMarked('#0000FF')
+      end
+      if config.outfits then
+        specOutfit.head = 88
+        specOutfit.body = 88
+        specOutfit.legs = 88
+        specOutfit.feet = 88
+        if vBot.BotServerMembers[1] and storage.BOTserver.outfit then
+          local voc = vBot.BotServerMembers[creature:getName()]
+          specOutfit.addons = 3 
+          if voc == 1 then
+            specOutfit.type = 131
+          elseif voc == 2 then
+            specOutfit.type = 129
+          elseif voc == 3 then
+            specOutfit.type = 130
+          elseif voc == 4 then
+            specOutfit.type = 144
+          end
+        end
+        creature:setOutfit(specOutfit)
+      end
+    elseif isEnemy(specName) then
+      if config.highlight then
+        creature:setMarked('#FF0000')
+      end
+      if config.outfits then
+        specOutfit.head = 94
+        specOutfit.body = 94
+        specOutfit.legs = 94
+        specOutfit.feet = 94
+        creature:setOutfit(specOutfit)
+      end
+    end
+end
+
+
+rootWidget = g_ui.getRootWidget()
+if rootWidget then
+    local ListWindow = UI.createWindow('PlayerListWindow', rootWidget)
+    ListWindow:hide()
+
+    UI.Button("Player Lists", function() 
+        ListWindow:show()
+        ListWindow:raise()
+        ListWindow:focus()
+    end)
+
+    -- settings
+    ListWindow.settings.Members:setChecked(config.groupMembers)
+    ListWindow.settings.Members.onClick = function(widget)
+      config.groupMembers = not config.groupMembers
+      if not config.groupMembers then
+        clearCachedPlayers()
+      end
+      refreshStatus()
+      widget:setChecked(config.groupMembers)
+    end
+    ListWindow.settings.Outfit:setChecked(config.outfits)
+    ListWindow.settings.Outfit.onClick = function(widget)
+      config.outfits = not config.outfits
+      widget:setChecked(config.outfits)
+      refreshStatus()
+    end
+    ListWindow.settings.NeutralsAreEnemy:setChecked(config.marks)
+    ListWindow.settings.NeutralsAreEnemy.onClick = function(widget)
+      config.marks = not config.marks
+      widget:setChecked(config.marks)
+    end
+    ListWindow.settings.Highlight:setChecked(config.highlight)
+    ListWindow.settings.Highlight.onClick = function(widget)
+      config.highlight = not config.highlight
+      widget:setChecked(config.highlight)
+    end
+
+    ListWindow.settings.AutoAdd:setChecked(config.autoAdd)
+    ListWindow.settings.AutoAdd.onClick = function(widget)
+      config.autoAdd = not config.autoAdd
+      widget:setChecked(config.autoAdd)
+    end
+
+    local TabBar = ListWindow.tmpTabBar
+    TabBar:setContentWidget(ListWindow.tmpTabContent)
+    local blacklistList
+
+    for v = 1, 3 do
+        local listPanel = g_ui.createWidget("tPanel") -- Creates Panel
+        local playerList = playerTables[v]
+        listPanel:setId(tabs[v].."Tab")
+        TabBar:addTab(tabs[v], listPanel)
+
+        -- elements
+        local addButton = listPanel.add
+        local nameTab = listPanel.name
+        local list = listPanel.list
+        if v == 3 then
+          blacklistList = list
+        end
+
+        for i, name in ipairs(playerList) do
+            local label = UI.createWidget("PlayerLabel", list)
+            label:setText(name)
+            label.remove.onClick = function()
+                table.remove(playerList, table.find(playerList, name))
+                label:destroy()
+                clearCachedPlayers()
+                refreshStatus()
+            end
+            label.onMouseRelease = function(widget, mousePos, mouseButton)
+              if mouseButton == 2 then
+                local child = rootWidget:recursiveGetChildByPos(mousePos)
+                if child == widget then
+                  local menu = g_ui.createWidget('PopupMenu')
+                  menu:setId("blzMenu")
+                  menu:setGameMenu(true)
+                  menu:addOption('Check Player', function()
+                    local name = widget:getText():gsub(" ", spacing)
+                    g_platform.openUrl(link..name)
+                  end, "")
+                  menu:addOption('Copy Name', function()
+                    g_window.setClipboardText(widget:getText())
+                  end, "")
+                  menu:display(mousePos)
+                  return true
+                end
+              end
+            end
+        end
+
+        local tabButton = TabBar.buttonsPanel:getChildren()[v]
+
+        tabButton.onStyleApply = function(widget)
+            if TabBar:getCurrentTab() == widget then
+                widget:setColor(colors[v])
+            end 
+        end
+
+        -- callbacks
+        addButton.onClick = function()
+            local names = string.split(nameTab:getText(), ",")
+
+            if #names == 0 then
+              warn("vBot[PlayerList]: Name is missing!")
+              return
+            end
+
+            for i=1,#names do
+              local name = names[i]:trim()
+              if name:len() == 0 then
+                  warn("vBot[PlayerList]: Name is missing!")
+              else
+                  if not table.find(playerList, name) then
+                      table.insert(playerList, name)
+                      local label = UI.createWidget("PlayerLabel", list)
+                      label:setText(name)
+                      label.remove.onClick = function()
+                          table.remove(playerList, table.find(playerList, name))
+                          label:destroy()
+                      end
+                      label.onMouseRelease = function(widget, mousePos, mouseButton)
+                        if mouseButton == 2 then
+                          local child = rootWidget:recursiveGetChildByPos(mousePos)
+                          if child == widget then
+                            local menu = g_ui.createWidget('PopupMenu')
+                            menu:setId("blzMenu")
+                            menu:setGameMenu(true)
+                            menu:addOption('Check Player', function()
+                              local name = widget:getText():gsub(" ", "_")
+                              local link = "https://www.gunzodus.net/character/show/"
+                              g_platform.openUrl(link..name)
+                            end, "")
+                            menu:addOption('Copy Name', function()
+                              g_window.setClipboardText(widget:getText())
+                            end, "")
+                            menu:display(mousePos)
+                            return true
+                          end
+                        end
+                      end
+                      nameTab:setText("")
+                  else
+                      warn("vBot[PlayerList]: Player ".. name .." is already added!")
+                      nameTab:setText("")
+                  end
+                  clearCachedPlayers()
+                  refreshStatus()
+              end
+            end
+        end
+
+        nameTab.onKeyPress = function(widget, keyCode, keyboardModifiers)
+          if keyCode ~= 5 then
+            return false
+          end
+          addButton.onClick()
+          return true
+        end
+    end
+
+    function addBlackListPlayer(name)
+      if table.find(config.blackList, name) then return end
+
+      table.insert(config.blackList, name)
+      local label = UI.createWidget("PlayerLabel", blacklistList)
+      label:setText(name)
+      label.remove.onClick = function()
+          table.remove(playerList, table.find(playerList, name))
+          label:destroy()
+      end
+      label.onMouseRelease = function(widget, mousePos, mouseButton)
+        if mouseButton == 2 then
+          local child = rootWidget:recursiveGetChildByPos(mousePos)
+          if child == widget then
+            local menu = g_ui.createWidget('PopupMenu')
+            menu:setId("blzMenu")
+            menu:setGameMenu(true)
+            menu:addOption('Check Player', function()
+              local name = widget:getText():gsub(" ", "_")
+              local link = "https://www.gunzodus.net/character/show/"
+              g_platform.openUrl(link..name)
+            end, "")
+            menu:addOption('Copy Name', function()
+              g_window.setClipboardText(widget:getText())
+            end, "")
+            menu:display(mousePos)
+            return true
+          end
+        end
+      end
+    end
+end
+
+onTextMessage(function(mode,text)
+  if not config.autoAdd then return end
+  if CaveBot.isOff() or TargetBot.isOff() then return end
+  if not text:find("Warning! The murder of") then return end
+
+    text = string.split(text, "Warning! The murder of ")[1]
+    text = string.split(text, " was not justified.")[1]
+
+    addBlackListPlayer(text)
+end)
+
+onCreatureAppear(function(creature)
+    checkStatus(creature)
+  end)
+  
+onPlayerPositionChange(function(x,y)
+  if x.z ~= y.z then
+    schedule(20, function()
+      refreshStatus()
+    end)
+  end
+end)
+-- UI.Separator()]=]
+FILES["vBot/playerlist.otui"] = [[PlayerLabel < UIWidget
+  background-color: alpha
+  text-offset: 3 1
+  focusable: true
+  height: 16
+  font: verdana-11px-rounded
+  text-align: left
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    !text: tr('X')
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    width: 14
+    height: 14
+    margin-right: 15
+    text-align: center
+    text-offset: 0 1
+    tooltip: Remove profile from the list.
+
+SettingCheckBox < CheckBox
+  text-wrap: true
+  text-auto-resize: true
+  margin-top: 3
+  font: verdana-11px-rounded
+
+Settings < FlatPanel
+  padding: 6
+  layout:
+    type: verticalBox
+
+  Label
+    text: Additional Settings
+    text-align: center
+    font: verdana-11px-rounded
+
+  HorizontalSeparator
+
+  SettingCheckBox
+    id: Members
+    margin-top: 6
+    text: Consider group members as friends.
+
+  SettingCheckBox
+    id: Outfit
+    text: Color listed player outfits to red or blue.
+
+  SettingCheckBox
+    id: NeutralsAreEnemy
+    text: Consider every non friend player as enemy.
+
+  SettingCheckBox
+    id: Highlight
+    text: Hightlight listed players in red or blue color.
+
+  SettingCheckBox
+    id: AutoAdd
+    text: Automatically add killed players while cave botting to blacklist.
+
+tPanel < Panel
+  margin: 3
+  padding: 3
+
+  TextList
+    id: list
+    height: 200
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    vertical-scrollbar: listScrollBar
+
+  VerticalScrollBar
+    id: listScrollBar
+    anchors.top: list.top
+    anchors.bottom: list.bottom
+    anchors.right: list.right
+    step: 14
+    pixels-scroll: true
+
+  TextEdit
+    id: name
+    anchors.top: list.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+  Button
+    id: add
+    text: Add Player
+    anchors.top: prev.bottom
+    margin-top: 3
+    anchors.left: parent.left
+    anchors.right: parent.right
+    font: verdana-11px-rounded
+
+PlayerListWindow < MainWindow
+  !text: tr('Player List')
+  size: 405 356
+  @onEscape: self:hide()
+
+  TabBar
+    id: tmpTabBar
+    anchors.top: parent.top
+    anchors.left: parent.left
+    width: 180
+
+  FlatPanel
+    id: tmpTabContent
+    anchors.top: tmpTabBar.bottom
+    anchors.left: parent.left
+    width: 180
+    anchors.bottom: separator.top
+    margin-bottom: 5
+
+  VerticalSeparator
+    id: verticalSep
+    anchors.top: parent.top
+    anchors.bottom: separator.top
+    margin-bottom: 5
+    anchors.horizontalCenter: parent.horizontalCenter
+
+  Settings
+    id: settings
+    anchors.left: prev.right
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.bottom: next.top
+    margin: 3
+    margin-left: 6
+    margin-bottom: 4
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-top: 15
+    margin-right: 5
+    @onClick: self:getParent():hide()]]
+FILES["vBot/quiver_manager.lua"] = [=[setDefaultTab("Tools")
+
+local panelName = "quiverManagerUI"
+local idSlots = 4
+
+if type(storage[panelName]) ~= "table" then
+  storage[panelName] = {
+    enabled = false,
+    quiverIds = {0, 0, 0, 0},
+    ammoIds = {0, 0, 0, 0},
+    ammoContainerId = 0,
+    min = 50,
+    max = 200
+  }
+end
+
+local config = storage[panelName]
+
+local function clamp(value, minValue, maxValue)
+  value = tonumber(value) or minValue
+  if value < minValue then return minValue end
+  if value > maxValue then return maxValue end
+  return value
+end
+
+local function normalizeIdList(list, legacyValue)
+  local result = {}
+  if type(list) == "table" then
+    for i = 1, idSlots do
+      result[i] = tonumber(list[i]) or 0
+    end
+  else
+    result[1] = tonumber(legacyValue) or 0
+    for i = 2, idSlots do
+      result[i] = 0
+    end
+  end
+  return result
+end
+
+local hold = false
+
+config.enabled = config.enabled == true
+config.quiverIds = normalizeIdList(config.quiverIds, config.quiverId)
+config.ammoIds = normalizeIdList(config.ammoIds, config.ammoId)
+config.ammoContainerId = tonumber(config.ammoContainerId) or 0
+config.min = clamp(config.min or 50, 0, 1000)
+config.max = clamp(config.max or 200, 0, 1000)
+if config.max < config.min then
+  config.max = config.min
+end
+config.quiverId = nil
+config.ammoId = nil
+
+local mainPanel = setupUI([[
+Panel
+  height: 25
+
+  BotSwitch
+    id: enabled
+    anchors.top: parent.top
+    anchors.left: parent.left
+    width: 125
+    height: 20
+    text-align: center
+    text: Quiver Manager
+
+  Button
+    id: setup
+    anchors.top: parent.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 4
+    height: 20
+    text: Setup
+
+  HorizontalSeparator
+    anchors.top: enabled.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 4
+]])
+
+g_ui.loadUIFromString([[
+QuiverManagerWindow < MainWindow
+  !text: tr('Quiver Manager')
+  size: 230 430
+  @onEscape: self:hide()
+
+  Label
+    id: quiverLabel
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 6
+    height: 18
+    text-align: center
+    text: Quivers
+
+  Panel
+    id: quiverGrid
+    anchors.top: quiverLabel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 4
+    height: 72
+    layout:
+      type: grid
+      cell-size: 32 32
+      cell-spacing: 8
+      num-columns: 2
+      fit-children: true
+
+    BotItem
+      id: quiver1
+      tooltip: Drag a quiver item here
+
+    BotItem
+      id: quiver2
+      tooltip: Drag a quiver item here
+
+    BotItem
+      id: quiver3
+      tooltip: Drag a quiver item here
+
+    BotItem
+      id: quiver4
+      tooltip: Drag a quiver item here
+
+  Label
+    id: ammoLabel
+    anchors.top: quiverGrid.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 6
+    height: 18
+    text-align: center
+    text: Ammo
+
+  Panel
+    id: ammoGrid
+    anchors.top: ammoLabel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 4
+    height: 72
+    layout:
+      type: grid
+      cell-size: 32 32
+      cell-spacing: 8
+      num-columns: 2
+      fit-children: true
+
+    BotItem
+      id: ammo1
+      tooltip: Drag an arrow or bolt here
+
+    BotItem
+      id: ammo2
+      tooltip: Drag an arrow or bolt here
+
+    BotItem
+      id: ammo3
+      tooltip: Drag an arrow or bolt here
+
+    BotItem
+      id: ammo4
+      tooltip: Drag an arrow or bolt here
+
+  Label
+    id: ammoContainerLabel
+    anchors.top: ammoGrid.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 6
+    height: 18
+    text-align: center
+    text: Ammo Backpack
+
+  BotItem
+    id: ammoContainerItem
+    anchors.top: ammoContainerLabel.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    margin-top: 4
+    size: 32 32
+    tooltip: Drag the backpack that stores the ammo here
+
+  Label
+    id: minLabel
+    anchors.top: ammoContainerItem.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 6
+    height: 18
+    text-align: center
+    text: Min: 50
+
+  HorizontalScrollBar
+    id: minSlider
+    anchors.top: minLabel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-left: 10
+    margin-right: 10
+    margin-top: 2
+    height: 16
+
+  Label
+    id: maxLabel
+    anchors.top: minSlider.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 4
+    height: 18
+    text-align: center
+    text: Max: 200
+
+  HorizontalScrollBar
+    id: maxSlider
+    anchors.top: maxLabel.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-left: 10
+    margin-right: 10
+    margin-top: 2
+    height: 16
+
+  Label
+    id: status
+    anchors.top: maxSlider.bottom
+    anchors.bottom: closeButton.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 8
+    margin-bottom: 8
+    text-align: center
+    text-vertical-auto-resize: true
+    text-wrap: true
+    text: Status: waiting
+    color: #aaaaaa
+
+  Button
+    id: closeButton
+    anchors.bottom: parent.bottom
+    anchors.horizontalCenter: parent.horizontalCenter
+    margin-bottom: 10
+    width: 70
+    height: 22
+    !text: tr('Close')
+]], g_ui.getRootWidget())
+
+local setupWindow = nil
+local rootWidget = g_ui.getRootWidget()
+if rootWidget then
+  setupWindow = UI.createWindow("QuiverManagerWindow", rootWidget)
+  setupWindow:hide()
+end
+
+local function setStatus(text)
+  if not setupWindow then return end
+  local statusLabel = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("status") or nil
+  if statusLabel then
+    statusLabel:setText("Status: " .. text)
+  end
+end
+
+local function syncIdWidgets(prefix, list)
+  if not setupWindow then return end
+  for i = 1, idSlots do
+    local widget = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById(prefix .. i) or nil
+    if widget then
+      widget:setItemId(tonumber(list[i]) or 0)
+      widget.onItemChange = function(widget)
+        list[i] = widget:getItemId()
+        hold = false
+      end
+    end
+  end
+end
+
+local function setSlider(slider, label, key, title)
+  local value = clamp(config[key], 0, 1000)
+  config[key] = value
+
+  pcall(function()
+    slider:setMinimum(0)
+    slider:setMaximum(1000)
+    slider:setValue(value)
+  end)
+
+  label:setText(title .. ": " .. value)
+
+  slider.onValueChange = function(widget, newValue)
+    newValue = clamp(newValue, 0, 1000)
+    config[key] = newValue
+    hold = false
+
+    if key == "min" and config.max < newValue then
+      config.max = newValue
+      local maxSlider = setupWindow and setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxSlider") or nil
+      local maxLabel = setupWindow and setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxLabel") or nil
+      if maxSlider then maxSlider:setValue(newValue) end
+      if maxLabel then maxLabel:setText("Max: " .. newValue) end
+    elseif key == "max" and config.min > newValue then
+      config.min = newValue
+      local minSlider = setupWindow and setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("minSlider") or nil
+      local minLabel = setupWindow and setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("minLabel") or nil
+      if minSlider then minSlider:setValue(newValue) end
+      if minLabel then minLabel:setText("Min: " .. newValue) end
+    end
+
+    label:setText(title .. ": " .. newValue)
+  end
+end
+
+mainPanel.enabled:setOn(config.enabled)
+mainPanel.enabled.onClick = function(widget)
+  config.enabled = not config.enabled
+  widget:setOn(config.enabled)
+  hold = false
+end
+
+local function openSetupWindow()
+  if not setupWindow then
+    return
+  end
+
+  setupWindow:show()
+  setupWindow:raise()
+  setupWindow:focus()
+  hold = false
+end
+
+mainPanel.setup.onClick = function(widget)
+  openSetupWindow()
+end
+
+if setupWindow then
+  syncIdWidgets("quiver", config.quiverIds)
+  syncIdWidgets("ammo", config.ammoIds)
+
+  local ammoContainerItem = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("ammoContainerItem") or nil
+  local minSlider = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("minSlider") or nil
+  local minLabel = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("minLabel") or nil
+  local maxSlider = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxSlider") or nil
+  local maxLabel = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxLabel") or nil
+
+  if ammoContainerItem then
+    ammoContainerItem:setItemId(config.ammoContainerId)
+    ammoContainerItem.onItemChange = function(widget)
+      config.ammoContainerId = widget:getItemId()
+      hold = false
+    end
+  end
+
+  if minSlider and minLabel then
+    setSlider(minSlider, minLabel, "min", "Min")
+  end
+  if maxSlider and maxLabel then
+    setSlider(maxSlider, maxLabel, "max", "Max")
+  end
+
+  local closeButton = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("closeButton") or nil
+  if closeButton then
+    closeButton.onClick = function()
+      setupWindow:hide()
+    end
+  end
+end
+
+local function hasConfiguredIds(list)
+  for _, id in ipairs(list) do
+    if tonumber(id) and tonumber(id) > 0 then
+      return true
+    end
+  end
+  return false
+end
+
+local function containsConfiguredId(list, value)
+  value = tonumber(value) or 0
+  if value <= 0 then return false end
+  for _, id in ipairs(list) do
+    if tonumber(id) == value then
+      return true
+    end
+  end
+  return false
+end
+
+local function getEquippedQuiverSlot()
+  if not hasConfiguredIds(config.quiverIds) then
+    return nil
+  end
+
+  local slots = {getAmmo(), getRight(), getLeft()}
+  for _, slot in ipairs(slots) do
+    if slot and slot.getId and slot.isContainer and slot:isContainer() and containsConfiguredId(config.quiverIds, slot:getId()) then
+      return slot
+    end
+  end
+
+  return nil
+end
+
+local function getQuiverContainer()
+  local slot = getEquippedQuiverSlot()
+  if slot then
+    local container = getContainerByItem(slot:getId())
+    if container then
+      return container
+    end
+  end
+
+  for _, container in pairs(getContainers()) do
+    local name = container:getName() and container:getName():lower() or ""
+    local containerItem = container:getContainerItem()
+    local containerId = containerItem and containerItem:getId() or 0
+    if name:find("quiver") or containsConfiguredId(config.quiverIds, containerId) then
+      return container
+    end
+  end
+
+  return nil
+end
+
+local function isAllowedAmmo(itemId)
+  return containsConfiguredId(config.ammoIds, itemId)
+end
+
+local function getAmmoCount(container)
+  local count = 0
+  for _, item in pairs(container:getItems()) do
+    if isAllowedAmmo(item:getId()) then
+      count = count + item:getCount()
+    end
+  end
+  return count
+end
+
+local function getConfiguredAmmoContainers(quiverContainer)
+  local expectedId = tonumber(config.ammoContainerId) or 0
+  local result = {}
+
+  for _, container in pairs(getContainers()) do
+    if container ~= quiverContainer then
+      local containerItem = container:getContainerItem()
+      local containerId = containerItem and containerItem:getId() or 0
+      if expectedId <= 0 or containerId == expectedId then
+        table.insert(result, container)
+      end
+    end
+  end
+
+  return result
+end
+
+local function getAllSourceContainers(quiverContainer)
+  local result = {}
+  for _, container in pairs(getContainers()) do
+    if container ~= quiverContainer then
+      table.insert(result, container)
+    end
+  end
+  return result
+end
+
+local function getDepositContainer(quiverContainer)
+  local preferredId = tonumber(config.ammoContainerId) or 0
+  if preferredId > 0 then
+    for _, container in ipairs(getConfiguredAmmoContainers(quiverContainer)) do
+      if not containerIsFull(container) then
+        return container
+      end
+    end
+  end
+
+  for _, container in pairs(getContainers()) do
+    if container ~= quiverContainer and not containerIsFull(container) then
+      local name = container:getName():lower()
+      if not name:find("quiver") and not name:find("loot") and not name:find("depot") then
+        return container
+      end
+    end
+  end
+
+  return nil
+end
+
+local function getContainerInsertPosition(container)
+  if not container or not container.getSlotPosition or not container.getItemsCount then
+    return nil
+  end
+
+  local count = container:getItemsCount() or 0
+  local ok, pos = pcall(function()
+    return container:getSlotPosition(count + 1)
+  end)
+  if ok and pos then
+    return pos
+  end
+
+  ok, pos = pcall(function()
+    return container:getSlotPosition(count)
+  end)
+  if ok and pos then
+    return pos
+  end
+
+  return nil
+end
+
+local function getQuiverMovePosition(container)
+  if not container or not container.getSlotPosition then
+    return nil
+  end
+
+  local ok, pos = pcall(function()
+    return container:getSlotPosition(1)
+  end)
+  if ok and pos then
+    return pos
+  end
+
+  return getContainerInsertPosition(container)
+end
+
+local function moveWrongItemOut(quiverContainer)
+  local dest = getDepositContainer(quiverContainer)
+  if not dest then
+    return false
+  end
+
+  for _, item in pairs(quiverContainer:getItems()) do
+    if not isAllowedAmmo(item:getId()) then
+      local insertPos = getContainerInsertPosition(dest)
+      if insertPos then
+        g_game.move(item, insertPos, item:getCount())
+        return true
+      end
+      return false
+    end
+  end
+
+  return false
+end
+
+local function moveAmmoToQuiver(quiverContainer)
+  if quiverContainer and quiverContainer.hasPages and quiverContainer.getId and quiverContainer.getFirstIndex and quiverContainer.getCapacity then
+    local hasPages = false
+    pcall(function()
+      hasPages = quiverContainer:hasPages()
+    end)
+
+    if hasPages then
+      pcall(function()
+        g_game.seekInContainer(quiverContainer:getId(), quiverContainer:getFirstIndex() + quiverContainer:getCapacity())
+      end)
+    end
+  end
+
+  local quiverPos = getQuiverMovePosition(quiverContainer)
+
+  if not quiverPos then
+    return false, false
+  end
+
+  local usedFallback = false
+  local sourceContainers = getConfiguredAmmoContainers(quiverContainer)
+
+  if #sourceContainers == 0 then
+    sourceContainers = getAllSourceContainers(quiverContainer)
+    usedFallback = true
+  end
+
+  for _, container in ipairs(sourceContainers) do
+    for _, item in pairs(container:getItems()) do
+      if isAllowedAmmo(item:getId()) then
+        g_game.move(item, quiverPos, item:getCount())
+        return true, usedFallback
+      end
+    end
+  end
+
+  if not usedFallback then
+    for _, container in ipairs(getAllSourceContainers(quiverContainer)) do
+      for _, item in pairs(container:getItems()) do
+        if isAllowedAmmo(item:getId()) then
+          g_game.move(item, quiverPos, item:getCount())
+          return true, true
+        end
+      end
+    end
+  end
+
+  return false, usedFallback
+end
+
+local function pauseCheck(ms)
+  hold = true
+  schedule(ms or 250, function()
+    hold = false
+  end)
+end
+
+onContainerOpen(function(container, previousContainer)
+  hold = false
+end)
+
+onContainerClose(function(container)
+  hold = false
+end)
+
+onAddItem(function(container, slot, item, oldItem)
+  hold = false
+end)
+
+onRemoveItem(function(container, slot, item)
+  hold = false
+end)
+
+onContainerUpdateItem(function(container, slot, item, oldItem)
+  hold = false
+end)
+
+macro(150, function()
+  if not config.enabled or hold then
+    return
+  end
+
+  local minAmmo = clamp(config.min, 0, 1000)
+  local maxAmmo = clamp(config.max, 0, 1000)
+
+  if not hasConfiguredIds(config.quiverIds) then
+    setStatus("configure quivers")
+    return
+  end
+
+  if not hasConfiguredIds(config.ammoIds) then
+    setStatus("configure ammo")
+    return
+  end
+
+  if (tonumber(config.ammoContainerId) or 0) <= 0 then
+    setStatus("configure ammo backpack")
+    return
+  end
+
+  if maxAmmo < minAmmo then
+    maxAmmo = minAmmo
+    config.max = maxAmmo
+    if setupWindow then
+      local maxSlider = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxSlider") or nil
+      local maxLabel = setupWindow.recursiveGetChildById and setupWindow:recursiveGetChildById("maxLabel") or nil
+      if maxSlider then maxSlider:setValue(maxAmmo) end
+      if maxLabel then maxLabel:setText("Max: " .. maxAmmo) end
+    end
+  end
+
+  local quiverContainer = getQuiverContainer()
+  if not quiverContainer then
+    setStatus("equipped quiver not open")
+    return
+  end
+
+  if not getQuiverMovePosition(quiverContainer) then
+    setStatus("quiver slot invalid")
+    return
+  end
+
+  local configuredAmmoContainers = getConfiguredAmmoContainers(quiverContainer)
+  if #configuredAmmoContainers == 0 then
+    setStatus("ammo bp id mismatch, using open containers")
+  end
+
+  if moveWrongItemOut(quiverContainer) then
+    setStatus("cleaning quiver")
+    return
+  end
+
+  local currentAmmo = getAmmoCount(quiverContainer)
+  if currentAmmo >= maxAmmo then
+    setStatus("ready: " .. currentAmmo)
+    return
+  end
+
+  if currentAmmo <= minAmmo or currentAmmo < maxAmmo then
+    local moved, usedFallback = moveAmmoToQuiver(quiverContainer)
+    if moved then
+      pauseCheck(300)
+      if usedFallback then
+        setStatus("refilling from open containers")
+      else
+        setStatus("refilling: " .. currentAmmo .. "/" .. maxAmmo)
+      end
+      return
+    end
+
+    if currentAmmo <= minAmmo then
+      if usedFallback then
+        setStatus("low ammo, not found in open containers")
+      else
+        setStatus("low ammo: " .. currentAmmo)
+      end
+    else
+      setStatus("no ammo found")
+    end
+    return
+  end
+
+  setStatus("ready: " .. currentAmmo)
+end)
+]=]
+FILES["vBot/supplies.lua"] = [[setDefaultTab("Cave")
+local panelName = "supplies"
+if not SuppliesConfig[panelName] or SuppliesConfig[panelName].item1 then
+  SuppliesConfig[panelName] = {
+    currentProfile = "Default",
+    ["Default"] = {}
+  }
+end
+
+local function convertOldConfig(config)
+  if config and config.items then
+    return config
+  end -- config is new
+
+  local newConfig = {
+    items = {},
+    capSwitch = config.capSwitch,
+    SoftBoots = config.SoftBoots,
+    imbues = config.imbues,
+    staminaSwitch = config.staminaSwitch,
+    capValue = config.capValue,
+    staminaValue = config.staminaValue
+  }
+
+  local items = {
+    config.item1,
+    config.item2,
+    config.item3,
+    config.item4,
+    config.item5,
+    config.item6
+  }
+  local mins = {
+    config.item1Min,
+    config.item2Min,
+    config.item3Min,
+    config.item4Min,
+    config.item5Min,
+    config.item6Min
+  }
+  local maxes = {
+    config.item1Max,
+    config.item2Max,
+    config.item3Max,
+    config.item4Max,
+    config.item5Max,
+    config.item6Max
+  }
+
+  for i, item in ipairs(items) do
+    if item > 100 then
+      local min = mins[i]
+      local max = maxes[i]
+      newConfig.items[tostring(item)] = {
+        min = min,
+        max = max,
+        avg = 0
+      }
+    end
+  end
+
+  return newConfig
+end
+
+-- convert old configs
+for k, profile in pairs(SuppliesConfig[panelName]) do
+  if type(profile) == 'table' then
+    SuppliesConfig[panelName][k] = convertOldConfig(profile)
+  end
+end
+
+local currentProfile = SuppliesConfig[panelName].currentProfile
+local config = SuppliesConfig[panelName][currentProfile]
+
+vBotConfigSave("supply")
+
+if not config then
+  for k, v in pairs(SuppliesConfig[panelName]) do
+    if type(v) == "table" then
+      SuppliesConfig[panelName].currentProfile = k
+      config = SuppliesConfig[panelName][k]
+      break
+    end
+  end
+end
+
+function getEmptyItemPanels()
+  local panel = SuppliesWindow.items
+  local count = 0
+
+  for i, child in ipairs(panel:getChildren()) do
+    count = child:getId() == "blank" and count + 1 or count
+  end
+
+  return count
+end
+
+function deleteFirstEmptyPanel()
+  local panel = SuppliesWindow.items
+
+  for i, child in ipairs(panel:getChildren()) do
+    if child:getId() == "blank" then
+      child:destroy()
+      break
+    end
+  end
+end
+
+function clearEmptyPanels()
+  local panel = SuppliesWindow.items
+
+  if panel:getChildCount() > 1 then
+    if getEmptyItemPanels() > 1 then
+      deleteFirstEmptyPanel()
+    end
+  end
+end
+
+function addItemPanel()
+  local parent = SuppliesWindow.items
+  local childs = parent:getChildCount()
+  local panel = UI.createWidget("ItemPanel", parent)
+  local item = panel.id
+  local min = panel.min
+  local max = panel.max
+  local avg = panel.avg
+
+  panel:setId("blank")
+  item:setShowCount(false)
+
+  item.onItemChange = function(widget)
+    local id = widget:getItemId()
+    local panelId = panel:getId()
+
+    -- empty, verify
+    if id < 100 then
+      config.items[panelId] = nil
+      panel:setId("blank")
+      clearEmptyPanels() -- clear empty panels if any
+      return
+    end
+
+    -- itemId was not changed, ignore
+    if tonumber(panelId) == id then
+      return
+    end
+
+    -- check if isnt already added
+    if config.items[tostring(id)] then
+      warn("vBot[Supplies]: Item already added!")
+      widget:setItemId(0)
+      return
+    end
+
+    -- new item id
+    config.items[tostring(id)] = config.items[tostring(id)] or {} -- min, max, avg
+    panel:setId(id)
+    addItemPanel() -- add new panel
+  end
+
+  return panel
+end
+
+SuppliesWindow = UI.createWindow("SuppliesWindow")
+SuppliesWindow:hide()
+
+UI.Button(
+  "Supply Settings",
+  function()
+    SuppliesWindow:setVisible(not SuppliesWindow:isVisible())
+  end
+)
+
+-- load settings
+local function loadSettings()
+  -- panels
+  SuppliesWindow.items:destroyChildren()
+
+  for id, data in pairs(config.items) do
+    local widget = addItemPanel()
+    widget:setId(id)
+    widget.id:setItemId(tonumber(id))
+    widget.min:setText(data.min)
+    widget.max:setText(data.max)
+    widget.avg:setText(data.avg)
+  end
+  addItemPanel() -- add empty panel
+
+  -- switches and values
+  SuppliesWindow.capSwitch:setOn(config.capSwitch)
+  SuppliesWindow.SoftBoots:setOn(config.SoftBoots)
+  SuppliesWindow.imbues:setOn(config.imbues)
+  SuppliesWindow.staminaSwitch:setOn(config.staminaSwitch)
+  SuppliesWindow.capValue:setText(config.capValue or 0)
+  SuppliesWindow.staminaValue:setText(config.staminaValue or 0)
+end
+loadSettings()
+
+-- save settings
+SuppliesWindow.onVisibilityChange = function(widget, visible)
+  if not visible then
+    local currentProfile = SuppliesConfig[panelName].currentProfile
+    SuppliesConfig[panelName][currentProfile].items = {}
+    local parent = SuppliesWindow.items
+
+    -- items
+    for i, panel in ipairs(parent:getChildren()) do
+      if panel.id:getItemId() > 100 then
+        local id = tostring(panel.id:getItemId())
+        local min = panel.min:getValue()
+        local max = panel.max:getValue()
+        local avg = panel.avg:getValue()
+
+        SuppliesConfig[panelName][currentProfile].items[id] = {
+          min = min,
+          max = max,
+          avg = avg
+        }
+      end
+    end
+
+    vBotConfigSave("supply")
+  end
+end
+
+local function refreshProfileList()
+  local profiles = SuppliesConfig[panelName]
+
+  SuppliesWindow.profiles:destroyChildren()
+  for k, v in pairs(profiles) do
+    if type(v) == "table" then
+      local label = UI.createWidget("ProfileLabel", SuppliesWindow.profiles)
+      label:setText(k)
+      label:setTooltip("Click to load this profile. \nDouble click to change the name.")
+      label.remove.onClick = function()
+        local childs = SuppliesWindow.profiles:getChildCount()
+        if childs == 1 then
+          return info("vBot[Supplies] You need at least one profile!")
+        end
+        profiles[k] = nil
+        label:destroy()
+        vBotConfigSave("supply")
+      end
+      label.onDoubleClick = function(widget)
+        local window =
+          modules.client_textedit.show(
+          widget,
+          {title = "Set Profile Name", description = "Enter a new name for selected profile"}
+        )
+        schedule(
+          50,
+          function()
+            window:raise()
+            window:focus()
+          end
+        )
+      end
+      label.onClick = function()
+        SuppliesConfig[panelName].currentProfile = label:getText()
+        config = SuppliesConfig[panelName][label:getText()]
+        loadSettings()
+        vBotConfigSave("supply")
+      end
+      label.onTextChange = function(widget, text)
+        currentProfile = text
+        SuppliesConfig[panelName].currentProfile = text
+        profiles[text] = profiles[k]
+        profiles[k] = nil
+        vBotConfigSave("supply")
+      end
+    end
+  end
+end
+refreshProfileList()
+
+local function setProfileFocus()
+  for i, v in ipairs(SuppliesWindow.profiles:getChildren()) do
+    local name = v:getText()
+    if name == SuppliesConfig[panelName].currentProfile then
+      return v:focus()
+    end
+  end
+end
+setProfileFocus()
+
+SuppliesWindow.newProfile.onClick = function()
+  local n = SuppliesWindow.profiles:getChildCount()
+  if n > 60 then
+    return info("vBot[Supplies] - max profile count reached!")
+  end
+  local name = "Profile #" .. n + 1
+  while SuppliesConfig[panelName][name] ~= nil do
+    n = n + 1
+    name = "Profile #" .. n + 1
+  end
+  SuppliesConfig[panelName][name] = {items = {}}
+  refreshProfileList()
+  setProfileFocus()
+  vBotConfigSave("supply")
+end
+
+SuppliesWindow.capSwitch.onClick = function(widget)
+  config.capSwitch = not config.capSwitch
+  widget:setOn(config.capSwitch)
+end
+
+SuppliesWindow.SoftBoots.onClick = function(widget)
+  config.SoftBoots = not config.SoftBoots
+  widget:setOn(config.SoftBoots)
+end
+
+SuppliesWindow.imbues.onClick = function(widget)
+  config.imbues = not config.imbues
+  widget:setOn(config.imbues)
+end
+
+SuppliesWindow.staminaSwitch.onClick = function(widget)
+  config.staminaSwitch = not config.staminaSwitch
+  widget:setOn(config.staminaSwitch)
+end
+
+SuppliesWindow.capValue.onTextChange = function(widget, text)
+  local value = tonumber(SuppliesWindow.capValue:getText())
+  if not value then
+    SuppliesWindow.capValue:setText(0)
+    config.capValue = 0
+  else
+    text = text:match("0*(%d+)")
+    config.capValue = text
+  end
+end
+
+SuppliesWindow.staminaValue.onTextChange = function(widget, text)
+  local value = tonumber(SuppliesWindow.staminaValue:getText())
+  if not value then
+    SuppliesWindow.staminaValue:setText(0)
+    config.staminaValue = 0
+  else
+    text = text:match("0*(%d+)")
+    config.staminaValue = text
+  end
+end
+
+SuppliesWindow.increment.onClick = function(widget)
+  for i, panel in ipairs(SuppliesWindow.items:getChildren()) do
+    if panel.id:getItemId() > 100 then
+      local max = panel.max:getValue()
+      local avg = panel.avg:getValue()
+
+      if avg > 0 then
+        panel.max:setText(max + avg)
+      end
+    end
+  end
+end
+
+SuppliesWindow.decrement.onClick = function(widget)
+  for i, panel in ipairs(SuppliesWindow.items:getChildren()) do
+    if panel.id:getItemId() > 100 then
+      local max = panel.max:getValue()
+      local avg = panel.avg:getValue()
+
+      if avg > 0 then
+        panel.max:setText(math.max(0, max - avg)) -- dont go below 0
+      end
+    end
+  end
+end
+
+SuppliesWindow.increment.onMouseWheel = function(widget, mousePos, dir)
+  if dir == 1 then
+    SuppliesWindow.increment.onClick()
+  elseif dir == 2 then
+    SuppliesWindow.decrement.onClick()
+  end
+end
+
+SuppliesWindow.decrement.onMouseWheel = SuppliesWindow.increment.onMouseWheel
+
+Supplies = {} -- public functions
+local function hasAnyEntry(tbl)
+  if type(tbl) ~= "table" then
+    return false
+  end
+  for _, _ in pairs(tbl) do
+    return true
+  end
+  return false
+end
+
+Supplies.show = function()
+  SuppliesWindow:show()
+  SuppliesWindow:raise()
+  SuppliesWindow:focus()
+end
+
+Supplies.getItemsData = function()
+  local t = {}
+  if not SuppliesWindow or not SuppliesWindow.items then
+    return config.items or {}
+  end
+  -- items
+  for i, panel in ipairs(SuppliesWindow.items:getChildren()) do
+    if panel.id:getItemId() > 100 then
+      local id = tostring(panel.id:getItemId())
+      local min = panel.min:getValue()
+      local max = panel.max:getValue()
+      local avg = panel.avg:getValue()
+
+      t[id] = {
+        min = min,
+        max = max,
+        avg = avg
+      }
+    end
+  end
+
+  if not hasAnyEntry(t) and config.items then
+    for id, data in pairs(config.items) do
+      t[tostring(id)] = {
+        min = tonumber(data.min) or 0,
+        max = tonumber(data.max) or 0,
+        avg = tonumber(data.avg) or 0
+      }
+    end
+  end
+
+  return t
+end
+
+Supplies.isSupplyItem = function(id)
+  local data = Supplies.getItemsData()
+  id = tostring(id)
+
+  if data[id] then
+    return data[id]
+  else
+    return false
+  end
+end
+
+Supplies.hasEnough = function()
+  local data = Supplies.getItemsData()
+
+  for id, values in pairs(data) do
+    id = tonumber(id)
+    local minimum = values.min
+    local current = itemAmount(id) or player:getItemsCount(id) or 0
+
+    if current < minimum then
+      return {id=id, amount=current}
+    end
+  end
+
+  return true
+end
+
+hasSupplies = Supplies.hasEnough
+
+Supplies.setAverageValues = function(data)
+  for id, amount in pairs(data) do
+    local widget = SuppliesWindow.items[id]
+
+    if widget then
+      widget.avg:setText(amount)
+    end
+  end
+end
+
+Supplies.addSupplyItem = function(id, min, max, avg)
+  if not id then
+    return
+  end
+  -- by F.Almeida
+  local pro = SuppliesConfig[panelName].currentProfile
+  SuppliesConfig[panelName][pro]["items"][tostring(id)] = {min = min, max = max, avg = avg}
+  vBotConfigSave("supply")
+  loadSettings()
+  refreshProfileList()
+  setProfileFocus()
+end
+
+Supplies.getAdditionalData = function()
+  local data = {
+    stamina = {enabled = config.staminaSwitch, value = config.staminaValue},
+    capacity = {enabled = config.capSwitch, value = config.capValue},
+    softBoots = {enabled = config.SoftBoots},
+    imbues = {enabled = config.imbues}
+  }
+  return data
+end
+
+Supplies.getFullData = function()
+  local data = {
+    items = Supplies.getItemsData(),
+    additional = Supplies.getAdditionalData()
+  }
+  
+  return data
+end
+
+-- by F.Almeida
+Supplies.changeProfile = function(profile)
+  if not SuppliesConfig[panelName][profile] then
+    return warn("[Supplies] Profile not found")
+  end
+  SuppliesConfig[panelName].currentProfile = profile
+  currentProfile = SuppliesConfig[panelName].currentProfile
+  config = SuppliesConfig[panelName][currentProfile]
+  loadSettings()
+  refreshProfileList()
+  setProfileFocus()
+end
+
+Supplies.createProfile = function(profileName)
+  if SuppliesConfig[panelName][profileName] then
+    return warn("[Supplies] Profile already exists")
+  end
+  SuppliesConfig[panelName][profileName] = {items = {}}
+  vBotConfigSave("supply")
+end
+]]
+FILES["vBot/supplies.otui"] = [[ProfileLabel < UIWidget
+  background-color: alpha
+  text-offset: 3 1
+  focusable: true
+  height: 16
+  font: verdana-11px-rounded
+  text-align: left
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    !text: tr('X')
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    width: 14
+    height: 14
+    margin-right: 3
+    text-align: center
+    text-offset: 0 1
+    tooltip: Remove profile from the list.
+
+SupplySpinBox < SpinBox
+  height: 20
+  margin-left: 3
+  width: 75
+  minimum: 0
+  maximum: 9999
+  text-align: center
+  focusable: true
+  text: 0
+
+ItemPanel < Panel
+  height: 38
+
+  BotItem
+    id: id
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+
+  SupplySpinBox
+    id: min
+    anchors.left: prev.right
+    anchors.bottom: parent.bottom
+  
+  SupplySpinBox
+    id: max
+    anchors.left: prev.right
+    anchors.bottom: parent.bottom
+
+  SupplySpinBox
+    id: avg
+    anchors.left: prev.right
+    anchors.bottom: parent.bottom
+    width: 50    
+
+  UIWidget
+    anchors.left: min.left
+    anchors.bottom: min.top
+    width: 75
+    text-align: center
+    font: verdana-11px-rounded
+    text: Min
+    tooltip: Amount of given supplies for bot to leave the spawn.
+
+  UIWidget
+    anchors.left: max.left
+    anchors.bottom: max.top
+    width: 75
+    text-align: center
+    font: verdana-11px-rounded
+    text: Max
+    tooltip: Amount of given supplies to purchase
+
+  UIWidget
+    anchors.left: avg.left
+    anchors.bottom: avg.top
+    width: 55
+    text-align: center
+    font: verdana-11px-rounded
+    text: AVG
+    !tooltip: ("This is average consumption of supplies by round to help calculate the amount to purchase\n (info provided by CaveBot Stats)")
+
+SuppliesWindow < MainWindow
+  !text: tr('Supplies')
+  size: 430 330
+  @onEscape: self:hide()
+
+  VerticalSeparator
+    id: sep
+    anchors.top: parent.top
+    anchors.right: parent.right
+    margin-right: 140
+    anchors.bottom: bottomSep.top
+    margin-bottom: 5
+    margin-left: 10
+    visible: false
+
+  Label
+    anchors.left: sep.right
+    anchors.right: parent.right
+    anchors.top: parent.top
+    margin-left: 10
+    margin-top: 3
+    text-align: center
+    text: Additional Conditions:
+
+  HorizontalSeparator
+    anchors.top: prev.bottom
+    anchors.left: prev.left
+    anchors.right: prev.right
+    margin-top: 3
+
+  BotSwitch
+    id: SoftBoots
+    anchors.top: prev.bottom
+    anchors.left: sep.right
+    anchors.right: parent.right
+    margin-top: 5
+    margin-left: 10
+    text: No Soft
+    tooltip: Go refill if there's no more active soft boots.     
+
+  BotSwitch
+    id: capSwitch
+    height: 20
+    anchors.left: SoftBoots.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    margin-right: 50
+    text-align: center
+    text: Cap Below:
+    tooltip: Go refill if capacity is below set value.
+
+  BotTextEdit
+    id: capValue
+    size: 40 20
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: prev.top
+    margin-left: 5
+
+  BotSwitch
+    id: staminaSwitch
+    height: 20
+    anchors.left: SoftBoots.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    margin-right: 50
+    text-align: center
+    text: Stamina:
+    tooltip: Go refill if stamina is below set value. (in minutes)
+
+  BotTextEdit
+    id: staminaValue
+    size: 40 20
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: prev.top
+    margin-left: 5
+
+  BotSwitch
+    id: imbues
+    anchors.top: prev.bottom
+    anchors.left: sep.right
+    anchors.right: parent.right
+    margin-top: 5
+    margin-left: 10
+    text: No Imbues
+    tooltip: Go refill when mana leech imbue has worn off.
+
+  TextList
+    id: profiles
+    vertical-scrollbar: profilesScrollBar
+    anchors.top: prev.bottom
+    margin-top: 5
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.bottom: bottomSep.top
+    margin-bottom: 25
+
+  VerticalScrollBar
+    id: profilesScrollBar
+    anchors.top: profiles.top
+    anchors.bottom: profiles.bottom
+    anchors.left: profiles.right
+    pixels-scroll: true
+    step: 10  
+  
+  BotButton
+    id: newProfile
+    anchors.left: profiles.left
+    anchors.top: profiles.bottom
+    size: 35 15
+    text: New
+    font: cipsoftFont
+    tooltip: Create new supplies profile.
+
+  VerticalScrollBar
+    id: itemsScrollBar
+    anchors.top: items.top
+    anchors.bottom: items.bottom
+    anchors.right: items.right
+    step: 14
+    pixels-scroll: true
+
+  ScrollablePanel
+    id: items
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: sep.left
+    anchors.bottom: bottomSep.top
+    margin-bottom: 8
+    vertical-scrollbar: itemsScrollBar
+    layout: verticalBox
+
+  HorizontalSeparator
+    id: bottomSep
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+    margin-top: 15   
+    tooltip: Close supplies window and save settings.
+    @onClick: self:getParent():hide()
+
+  Button
+    id: increment
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: items.right
+    text: +
+    width: 50
+    tooltip: increase all max supplies amount by average
+
+  Button
+    id: decrement
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.right: prev.left
+    margin-right: 3
+    text: -
+    width: 50
+    tooltip: decrease all max supplies amount by average]]
+FILES["vBot/vlib.lua"] = [=[-- Author: Vithrax
+-- contains mostly basic function shortcuts and code shorteners
+
+-- initial global variables declaration
+vBot = {} -- global namespace for bot variables
+vBot.BotServerMembers = {}
+vBot.standTime = now
+vBot.isUsingPotion = false
+vBot.isUsing = false
+vBot.customCooldowns = {}
+
+function logInfo(text)
+    local timestamp = os.date("%H:%M:%S")
+    text = tostring(text)
+    local start = timestamp.." [vBot]: "
+
+    return modules.client_terminal.addLine(start..text, "orange") 
+end
+
+-- scripts / functions
+onPlayerPositionChange(function(x,y)
+    vBot.standTime = now
+end)
+
+function standTime()
+    return now - vBot.standTime
+end
+
+function relogOnCharacter(charName)
+    local characters = g_ui.getRootWidget().charactersWindow.characters
+    for index, child in ipairs(characters:getChildren()) do
+        local name = child:getChildren()[1]:getText()
+    
+        if name:lower():find(charName:lower()) then
+            child:focus()
+            schedule(100, modules.client_entergame.CharacterList.doLogin)
+        end
+    end
+end
+
+function castSpell(text)
+    if canCast(text) then
+        say(text)
+    end
+end
+
+local dmgTable = {}
+local lastDmgMessage = now
+onTextMessage(function(mode, text)
+    if not text:lower():find("you lose") or not text:lower():find("due to") then
+        return
+    end
+    local dmg = string.match(text, "%d+")
+    if #dmgTable > 0 then
+        for k, v in ipairs(dmgTable) do
+            if now - v.t > 3000 then table.remove(dmgTable, k) end
+        end
+    end
+    lastDmgMessage = now
+    table.insert(dmgTable, {d = dmg, t = now})
+    schedule(3050, function()
+        if now - lastDmgMessage > 3000 then dmgTable = {} end
+    end)
+end)
+
+-- based on data collected by callback calculates per second damage
+-- returns number
+function burstDamageValue()
+    local d = 0
+    local time = 0
+    if #dmgTable > 1 then
+        for i, v in ipairs(dmgTable) do
+            if i == 1 then time = v.t end
+            d = d + v.d
+        end
+    end
+    return math.ceil(d / ((now - time) / 1000))
+end
+
+-- simplified function from modules
+-- displays string as white colour message
+function whiteInfoMessage(text)
+    return modules.game_textmessage.displayGameMessage(text)
+end
+
+function statusMessage(text, logInConsole)
+    return not logInConsole and modules.game_textmessage.displayFailureMessage(text) or modules.game_textmessage.displayStatusMessage(text)
+end
+
+-- same as above but red message
+function broadcastMessage(text)
+    return modules.game_textmessage.displayBroadcastMessage(text)
+end
+
+-- almost every talk action inside cavebot has to be done by using schedule
+-- therefore this is simplified function that doesn't require to build a body for schedule function
+function scheduleNpcSay(text, delay)
+    if not text or not delay then return false end
+
+    return schedule(delay, function() NPC.say(text) end)
+end
+
+-- returns first number in string, already formatted as number
+-- returns number or nil
+function getFirstNumberInText(text)
+    local n = nil
+    if string.match(text, "%d+") then n = tonumber(string.match(text, "%d+")) end
+    return n
+end
+
+-- function to search if item of given ID can be found on certain tile
+-- first argument is always ID 
+-- the rest of aguments can be:
+-- - tile
+-- - position
+-- - or x,y,z coordinates as p1, p2 and p3
+-- returns boolean
+function isOnTile(id, p1, p2, p3)
+    if not id then return end
+    local tile
+    if type(p1) == "table" then
+        tile = g_map.getTile(p1)
+    elseif type(p1) ~= "number" then
+        tile = p1
+    else
+        local p = getPos(p1, p2, p3)
+        tile = g_map.getTile(p)
+    end
+    if not tile then return end
+
+    local item = false
+    if #tile:getItems() ~= 0 then
+        for i, v in ipairs(tile:getItems()) do
+            if v:getId() == id then item = true end
+        end
+    else
+        return false
+    end
+
+    return item
+end
+
+-- position is a special table, impossible to compare with normal one
+-- this is translator from x,y,z to proper position value
+-- returns position table
+function getPos(x, y, z)
+    if not x or not y or not z then return nil end
+    local pos = pos()
+    pos.x = x
+    pos.y = y
+    pos.z = z
+
+    return pos
+end
+
+-- opens purse... that's it
+function openPurse()
+    return g_game.use(g_game.getLocalPlayer():getInventoryItem(
+                          InventorySlotPurse))
+end
+
+-- check's whether container is full
+-- c has to be container object
+-- returns boolean
+function containerIsFull(c)
+    if not c then return false end
+
+    if c:getCapacity() > #c:getItems() then
+        return false
+    else
+        return true
+    end
+
+end
+
+function dropItem(idOrObject)
+    if type(idOrObject) == "number" then
+        idOrObject = findItem(idOrObject)
+    end
+
+    g_game.move(idOrObject, pos(), idOrObject:getCount())
+end
+
+-- not perfect function to return whether character has utito tempo buff
+-- known to be bugged if received debuff (ie. roshamuul)
+-- TODO: simply a better version
+-- returns boolean
+function isBuffed()
+    local var = false
+    if not hasPartyBuff() then return var end
+
+    local skillId = 0
+    for i = 1, 4 do
+        if player:getSkillBaseLevel(i) > player:getSkillBaseLevel(skillId) then
+            skillId = i
+        end
+    end
+
+    local premium = (player:getSkillLevel(skillId) - player:getSkillBaseLevel(skillId))
+    local base = player:getSkillBaseLevel(skillId)
+    if (premium / 100) * 305 > base then
+        var = true
+    end
+    return var
+end
+
+-- if using index as table element, this can be used to properly assign new idex to all values
+-- table needs to contain "index" as value
+-- if no index in tables, it will create one
+function reindexTable(t)
+    if not t or type(t) ~= "table" then return end
+
+    local i = 0
+    for _, e in pairs(t) do
+        i = i + 1
+        e.index = i
+    end
+end
+
+-- supports only new tibia, ver 10+
+-- returns how many kills left to get next skull - can be red skull, can be black skull!
+-- reutrns number
+function killsToRs()
+    return math.min(g_game.getUnjustifiedPoints().killsDayRemaining,
+                    g_game.getUnjustifiedPoints().killsWeekRemaining,
+                    g_game.getUnjustifiedPoints().killsMonthRemaining)
+end
+
+-- calculates exhaust for potions based on "Aaaah..." message
+-- changes state of vBot variable, can be used in other scripts
+-- already used in pushmax, healbot, etc
+
+onTalk(function(name, level, mode, text, channelId, pos)
+    if name ~= player:getName() then return end
+    if mode ~= 34 then return end
+
+    if text == "Aaaah..." then
+        vBot.isUsingPotion = true
+        schedule(950, function() vBot.isUsingPotion = false end)
+    end
+end)
+
+-- [[ canCast and cast functions ]] --
+-- callback connected to cast and canCast function
+-- detects if a given spell was in fact casted based on player's text messages 
+-- Cast text and message text must match
+-- checks only spells inserted in SpellCastTable by function cast
+SpellCastTable = {}
+onTalk(function(name, level, mode, text, channelId, pos)
+    if name ~= player:getName() then return end
+    text = text:lower()
+
+    if SpellCastTable[text] then SpellCastTable[text].t = now end
+end)
+
+-- if delay is nil or delay is lower than 100 then this function will act as a normal say function
+-- checks or adds a spell to SpellCastTable and updates cast time if exist
+function cast(text, delay)
+    text = text:lower()
+    if type(text) ~= "string" then return end
+    if not delay or delay < 100 then
+        return say(text) -- if not added delay or delay is really low then just treat it like casual say
+    end
+    if not SpellCastTable[text] or SpellCastTable[text].d ~= delay then
+        SpellCastTable[text] = {t = now - delay, d = delay}
+        return say(text)
+    end
+    local lastCast = SpellCastTable[text].t
+    local spellDelay = SpellCastTable[text].d
+    if now - lastCast > spellDelay then return say(text) end
+end
+
+-- canCast is a base for AttackBot and HealBot
+-- checks if spell is ready to be casted again
+-- ignoreRL - if true, aparat from cooldown will also check conditions inside gamelib SpellInfo table
+-- ignoreCd - it true, will ignore cooldown
+-- returns boolean
+local Spells = modules.gamelib.SpellInfo['Default']
+function canCast(spell, ignoreRL, ignoreCd)
+    if type(spell) ~= "string" then return end
+    spell = spell:lower()
+    if SpellCastTable[spell] then
+        if now - SpellCastTable[spell].t > SpellCastTable[spell].d or ignoreCd then
+            return true
+        else
+            return false
+        end
+    end
+    if getSpellData(spell) then
+        if (ignoreCd or not getSpellCoolDown(spell)) and
+            (ignoreRL or level() >= getSpellData(spell).level and mana() >=
+                getSpellData(spell).mana) then
+            return true
+        else
+            return false
+        end
+    end
+    -- if no data nor spell table then return true
+    return true
+end
+
+local lastPhrase = ""
+onTalk(function(name, level, mode, text, channelId, pos)
+    if name == player:getName() then
+        lastPhrase = text:lower()
+    end
+end)
+
+if onSpellCooldown and onGroupSpellCooldown then
+    onSpellCooldown(function(iconId, duration)
+        schedule(1, function()
+            if not vBot.customCooldowns[lastPhrase] then
+                vBot.customCooldowns[lastPhrase] = {id = iconId}
+            end
+        end)
+    end)
+
+    onGroupSpellCooldown(function(iconId, duration)
+        schedule(2, function()
+            if vBot.customCooldowns[lastPhrase] then
+                vBot.customCooldowns[lastPhrase] = {id = vBot.customCooldowns[lastPhrase].id, group = {[iconId] = duration}}
+            end
+        end)
+    end)
+else
+    warn("Outdated OTClient! update to newest version to take benefits from all scripts!")
+end
+
+-- exctracts data about spell from gamelib SpellInfo table
+-- returns table
+-- ie:['Spell Name'] = {id, words, exhaustion, premium, type, icon, mana, level, soul, group, vocations}
+-- cooldown detection module
+function getSpellData(spell)
+    if not spell then return false end
+    spell = spell:lower()
+    local t = nil
+    local c = nil
+    for k, v in pairs(Spells) do
+        if v.words == spell then
+            t = k
+            break
+        end
+    end
+    if not t then
+        for k, v in pairs(vBot.customCooldowns) do
+            if k == spell then
+                c = {id = v.id, mana = 1, level = 1, group = v.group}
+                break
+            end
+        end
+    end
+    if t then
+        return Spells[t]
+    elseif c then
+        return c
+    else
+        return false
+    end
+end
+
+-- based on info extracted by getSpellData checks if spell is on cooldown
+-- returns boolean
+function getSpellCoolDown(text)
+    if not text then return nil end
+    text = text:lower()
+    local data = getSpellData(text)
+    if not data then return false end
+    local icon = modules.game_cooldown.isCooldownIconActive(data.id)
+    local group = false
+    for groupId, duration in pairs(data.group) do
+        if modules.game_cooldown.isGroupCooldownIconActive(groupId) then
+            group = true
+            break
+        end
+    end
+    if icon or group then
+        return true
+    else
+        return false
+    end
+end
+
+-- global var to indicate that player is trying to do something
+-- prevents action blocking by scripts
+-- below callbacks are triggers to changing the var state
+local isUsingTime = now
+macro(100, function()
+    vBot.isUsing = now < isUsingTime and true or false
+end)
+onUse(function(pos, itemId, stackPos, subType)
+    if pos.x > 65000 then return end
+    if getDistanceBetween(player:getPosition(), pos) > 1 then return end
+    local tile = g_map.getTile(pos)
+    if not tile then return end
+
+    local topThing = tile:getTopUseThing()
+    if topThing:isContainer() then return end
+
+    isUsingTime = now + 1000
+end)
+onUseWith(function(pos, itemId, target, subType)
+    if pos.x < 65000 then isUsingTime = now + 1000 end
+end)
+
+-- returns first word in string 
+function string.starts(String, Start)
+    return string.sub(String, 1, string.len(Start)) == Start
+end
+
+-- global tables for cached players to prevent unnecesary resource consumption
+-- probably still can be improved, TODO in future
+-- c can be creature or string
+-- if exected then adds name or name and creature to tables
+-- returns boolean
+CachedFriends = {}
+CachedEnemies = {}
+function isFriend(c)
+    local name = c
+    if type(c) ~= "string" then
+        if c == player then return true end
+        name = c:getName()
+    end
+
+    if CachedFriends[c] then return true end
+    if CachedEnemies[c] then return false end
+
+    if table.find(storage.playerList.friendList, name) then
+        CachedFriends[c] = true
+        return true
+    elseif vBot.BotServerMembers[name] ~= nil then
+        CachedFriends[c] = true
+        return true
+    elseif storage.playerList.groupMembers then
+        local p = c
+        if type(c) == "string" then p = getCreatureByName(c, true) end
+        if not p then return false end
+        if p:isLocalPlayer() then return true end
+        if p:isPlayer() then
+            if p:isPartyMember() then
+                CachedFriends[c] = true
+                CachedFriends[p] = true
+                return true
+            end
+        end
+    else
+        return false
+    end
+end
+
+-- similar to isFriend but lighter version
+-- accepts only name string
+-- returns boolean
+function isEnemy(c)
+    local name = c
+    local p
+    if type(c) ~= "string" then
+        if c == player then return false end
+        name = c:getName()
+        p = c
+    end
+    if not name then return false end
+    if not p then
+        p = getCreatureByName(name, true)
+    end
+    if not p then return end
+    if p:isLocalPlayer() then return end
+
+    if p:isPlayer() and table.find(storage.playerList.enemyList, name) or
+        (storage.playerList.marks and not isFriend(name)) or p:getEmblem() == 2 then
+        return true
+    else
+        return false
+    end
+end
+
+function getPlayerDistribution()
+    local friends = {}
+    local neutrals = {}
+    local enemies = {}
+    for i, spec in ipairs(getSpectators()) do
+        if spec:isPlayer() and not spec:isLocalPlayer() then
+            if isFriend(spec) then
+                table.insert(friends, spec)
+            elseif isEnemy(spec) then
+                table.insert(enemies, spec)
+            else
+                table.insert(neutrals, spec)
+            end
+        end
+    end
+
+    return friends, neutrals, enemies
+end
+
+function getFriends()
+    local friends, neutrals, enemies = getPlayerDistribution()
+
+    return friends
+end
+
+function getNeutrals()
+    local friends, neutrals, enemies = getPlayerDistribution()
+
+    return neutrals
+end
+
+function getEnemies()
+    local friends, neutrals, enemies = getPlayerDistribution()
+
+    return enemies
+end
+
+-- based on first word in string detects if text is a offensive spell
+-- returns boolean
+function isAttSpell(expr)
+    if string.starts(expr, "exori") or string.starts(expr, "exevo") then
+        return true
+    else
+        return false
+    end
+end
+
+-- returns dressed-up item id based on not dressed id
+-- returns number
+function getActiveItemId(id)
+    if not id then return false end
+
+    if id == 3049 then
+        return 3086
+    elseif id == 3050 then
+        return 3087
+    elseif id == 3051 then
+        return 3088
+    elseif id == 3052 then
+        return 3089
+    elseif id == 3053 then
+        return 3090
+    elseif id == 3091 then
+        return 3094
+    elseif id == 3092 then
+        return 3095
+    elseif id == 3093 then
+        return 3096
+    elseif id == 3097 then
+        return 3099
+    elseif id == 3098 then
+        return 3100
+    elseif id == 16114 then
+        return 16264
+    elseif id == 23531 then
+        return 23532
+    elseif id == 23533 then
+        return 23534
+    elseif id == 23544 then
+        return 23528
+    elseif id == 23529 then
+        return 23530
+    elseif id == 30343 then -- Sleep Shawl
+        return 30342
+    elseif id == 30344 then -- Enchanted Pendulet
+        return 30345
+    elseif id == 30403 then -- Enchanted Theurgic Amulet
+        return 30402
+    elseif id == 31621 then -- Blister Ring
+        return 31616
+    elseif id == 32621 then -- Ring of Souls
+        return 32635
+    else
+        return id
+    end
+end
+
+-- returns not dressed item id based on dressed-up id
+-- returns number
+function getInactiveItemId(id)
+    if not id then return false end
+
+    if id == 3086 then
+        return 3049
+    elseif id == 3087 then
+        return 3050
+    elseif id == 3088 then
+        return 3051
+    elseif id == 3089 then
+        return 3052
+    elseif id == 3090 then
+        return 3053
+    elseif id == 3094 then
+        return 3091
+    elseif id == 3095 then
+        return 3092
+    elseif id == 3096 then
+        return 3093
+    elseif id == 3099 then
+        return 3097
+    elseif id == 3100 then
+        return 3098
+    elseif id == 16264 then
+        return 16114
+    elseif id == 23532 then
+        return 23531
+    elseif id == 23534 then
+        return 23533
+    elseif id == 23530 then
+        return 23529
+    elseif id == 30342 then -- Sleep Shawl
+        return 30343
+    elseif id == 30345 then -- Enchanted Pendulet
+        return 30344
+    elseif id == 30402 then -- Enchanted Theurgic Amulet
+        return 30403
+    elseif id == 31616 then -- Blister Ring
+        return 31621
+    elseif id == 32635 then -- Ring of Souls
+        return 32621
+    else
+        return id
+    end
+end
+
+-- returns amount of monsters within the range of position
+-- does not include summons (new tibia)
+-- returns number
+function getMonstersInRange(pos, range)
+    if not pos or not range then return false end
+    local monsters = 0
+    for i, spec in pairs(getSpectators()) do
+        if spec:isMonster() and
+            (g_game.getClientVersion() < 960 or spec:getType() < 3) and
+            getDistanceBetween(pos, spec:getPosition()) < range then
+            monsters = monsters + 1
+        end
+    end
+    return monsters
+end
+
+-- shortcut in calculating distance from local player position
+-- needs only one argument
+-- returns number
+function distanceFromPlayer(coords)
+    if not coords then return false end
+    return getDistanceBetween(pos(), coords)
+end
+
+-- returns amount of monsters within the range of local player position
+-- does not include summons (new tibia)
+-- can also check multiple floors
+-- returns number
+function getMonsters(range, multifloor)
+    if not range then range = 10 end
+    local mobs = 0;
+    for _, spec in pairs(getSpectators(multifloor)) do
+        mobs = (g_game.getClientVersion() < 960 or spec:getType() < 3) and
+                   spec:isMonster() and distanceFromPlayer(spec:getPosition()) <=
+                   range and mobs + 1 or mobs;
+    end
+    return mobs;
+end
+
+-- returns amount of players within the range of local player position
+-- does not include party members
+-- can also check multiple floors
+-- returns number
+function getPlayers(range, multifloor)
+    if not range then range = 10 end
+    local specs = 0;
+    for _, spec in pairs(getSpectators(multifloor)) do
+        if not spec:isLocalPlayer() and spec:isPlayer() and distanceFromPlayer(spec:getPosition()) <= range and not ((spec:getShield() ~= 1 and spec:isPartyMember()) or spec:getEmblem() == 1) then
+            specs = specs + 1
+        end
+    end
+    return specs;
+end
+
+-- this is multifloor function
+-- checks if player added in "Anti RS list" in player list is within the given range
+-- returns boolean
+function isBlackListedPlayerInRange(range)
+    if #storage.playerList.blackList == 0 then return end
+    if not range then range = 10 end
+    local found = false
+    for _, spec in pairs(getSpectators(true)) do
+        local specPos = spec:getPosition()
+        local pPos = player:getPosition()
+        if spec:isPlayer() then
+            if math.abs(specPos.z - pPos.z) <= 2 then
+                if specPos.z ~= pPos.z then specPos.z = pPos.z end
+                if distanceFromPlayer(specPos) < range then
+                    if table.find(storage.playerList.blackList, spec:getName()) then
+                        found = true
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- checks if there is non-friend player withing the range
+-- padding is only for multifloor
+-- returns boolean
+function isSafe(range, multifloor, padding)
+  if not range then range = 6 end
+    local onSame = 0
+    local onAnother = 0
+    if not multifloor and padding then
+        multifloor = false
+        padding = false
+    end
+
+    for _, spec in pairs(getSpectators(multifloor)) do
+        if spec:isPlayer() and not spec:isLocalPlayer() and
+            not isFriend(spec:getName()) then
+            if spec:getPosition().z == posz() and
+                distanceFromPlayer(spec:getPosition()) <= range then
+                onSame = onSame + 1
+            end
+            if multifloor and padding and spec:getPosition().z ~= posz() and
+                distanceFromPlayer(spec:getPosition()) <= (range + padding) then
+                onAnother = onAnother + 1
+            end
+        end
+    end
+
+    if onSame + onAnother > 0 then
+        return false
+    else
+        return true
+    end
+end
+
+-- returns amount of players within the range of local player position
+-- can also check multiple floors
+-- returns number
+function getAllPlayers(range, multifloor)
+    if not range then range = 10 end
+    local specs = 0;
+    for _, spec in pairs(getSpectators(multifloor)) do
+        specs = not spec:isLocalPlayer() and spec:isPlayer() and
+                    distanceFromPlayer(spec:getPosition()) <= range and specs +
+                    1 or specs;
+    end
+    return specs;
+end
+
+-- returns amount of NPC's within the range of local player position
+-- can also check multiple floors
+-- returns number
+function getNpcs(range, multifloor)
+    if not range then range = 10 end
+    local npcs = 0;
+    for _, spec in pairs(getSpectators(multifloor)) do
+        npcs =
+            spec:isNpc() and distanceFromPlayer(spec:getPosition()) <= range and
+                npcs + 1 or npcs;
+    end
+    return npcs;
+end
+
+-- main function for calculatin item amount in all visible containers
+-- also considers equipped items
+-- returns number
+function itemAmount(id)
+    return player:getItemsCount(id)
+end
+
+-- self explanatory
+-- a is item to use on 
+-- b is item to use a on
+function useOnInvertoryItem(a, b)
+    local item = findItem(b)
+    if not item then return end
+
+    return useWith(a, item)
+end
+
+-- pos can be tile or position
+-- returns table of tiles surrounding given POS/tile
+function getNearTiles(pos)
+    if type(pos) ~= "table" then pos = pos:getPosition() end
+
+    local tiles = {}
+    local dirs = {
+        {-1, 1}, {0, 1}, {1, 1}, {-1, 0}, {1, 0}, {-1, -1}, {0, -1}, {1, -1}
+    }
+    for i = 1, #dirs do
+        local tile = g_map.getTile({
+            x = pos.x - dirs[i][1],
+            y = pos.y - dirs[i][2],
+            z = pos.z
+        })
+        if tile then table.insert(tiles, tile) end
+    end
+
+    return tiles
+end
+
+-- self explanatory
+-- use along with delay, it will only call action
+function useGroundItem(id)
+    if not id then return false end
+
+    local dest = nil
+    for i, tile in ipairs(g_map.getTiles(posz())) do
+        for j, item in ipairs(tile:getItems()) do
+            if item:getId() == id then
+                dest = item
+                break
+            end
+        end
+    end
+
+    if dest then
+        return use(dest)
+    else
+        return false
+    end
+end
+
+-- self explanatory
+-- use along with delay, it will only call action
+function reachGroundItem(id)
+    if not id then return false end
+
+    local dest = nil
+    for i, tile in ipairs(g_map.getTiles(posz())) do
+        for j, item in ipairs(tile:getItems()) do
+            local iPos = item:getPosition()
+            local iId = item:getId()
+            if iId == id then
+                if findPath(pos(), iPos, 20,
+                            {ignoreNonPathable = true, precision = 1}) then
+                    dest = item
+                    break
+                end
+            end
+        end
+    end
+
+    if dest then
+        return autoWalk(iPos, 20, {ignoreNonPathable = true, precision = 1})
+    else
+        return false
+    end
+end
+
+-- self explanatory
+-- returns object
+function findItemOnGround(id)
+    for i, tile in ipairs(g_map.getTiles(posz())) do
+        for j, item in ipairs(tile:getItems()) do
+            if item:getId() == id then return item end
+        end
+    end
+end
+
+-- self explanatory
+-- use along with delay, it will only call action
+function useOnGroundItem(a, b)
+    if not b then return false end
+    local item = findItem(a)
+    if not item then return false end
+
+    local dest = nil
+    for i, tile in ipairs(g_map.getTiles(posz())) do
+        for j, item in ipairs(tile:getItems()) do
+            if item:getId() == id then
+                dest = item
+                break
+            end
+        end
+    end
+
+    if dest then
+        return useWith(item, dest)
+    else
+        return false
+    end
+end
+
+-- returns target creature
+function target()
+    if not g_game.isAttacking() then
+        return
+    else
+        return g_game.getAttackingCreature()
+    end
+end
+
+-- returns target creature
+function getTarget() return target() end
+
+-- dist is boolean
+-- returns target position/distance from player
+function targetPos(dist)
+    if not g_game.isAttacking() then return end
+    if dist then
+        return distanceFromPlayer(target():getPosition())
+    else
+        return target():getPosition()
+    end
+end
+
+-- for gunzodus/ezodus only
+-- it will reopen loot bag, necessary for depositer
+function reopenPurse()
+    for i, c in pairs(getContainers()) do
+        if c:getName():lower() == "loot bag" or c:getName():lower() ==
+            "store inbox" then g_game.close(c) end
+    end
+    schedule(100, function()
+        g_game.use(g_game.getLocalPlayer():getInventoryItem(InventorySlotPurse))
+    end)
+    schedule(1400, function()
+        for i, c in pairs(getContainers()) do
+            if c:getName():lower() == "store inbox" then
+                for _, i in pairs(c:getItems()) do
+                    if i:getId() == 23721 then
+                        g_game.open(i, c)
+                    end
+                end
+            end
+        end
+    end)
+    return CaveBot.delay(1500)
+end
+
+-- getSpectator patterns
+-- param1 - pos/creature
+-- param2 - pattern
+-- param3 - type of return
+-- 1 - everyone, 2 - monsters, 3 - players
+-- returns number
+function getCreaturesInArea(param1, param2, param3)
+    local specs = 0
+    local monsters = 0
+    local players = 0
+    for i, spec in pairs(getSpectators(param1, param2)) do
+        if spec ~= player then
+            specs = specs + 1
+            if spec:isMonster() and
+                (g_game.getClientVersion() < 960 or spec:getType() < 3) then
+                monsters = monsters + 1
+            elseif spec:isPlayer() and not isFriend(spec:getName()) then
+                players = players + 1
+            end
+        end
+    end
+
+    if param3 == 1 then
+        return specs
+    elseif param3 == 2 then
+        return monsters
+    else
+        return players
+    end
+end
+
+-- can be improved
+-- TODO in future
+-- uses getCreaturesInArea, specType
+-- returns number
+function getBestTileByPatern(pattern, specType, maxDist, safe)
+    if not pattern or not specType then return end
+    if not maxDist then maxDist = 4 end
+
+    local bestTile = nil
+    local best = nil
+    for _, tile in pairs(g_map.getTiles(posz())) do
+        if distanceFromPlayer(tile:getPosition()) <= maxDist then
+            local minimapColor = g_map.getMinimapColor(tile:getPosition())
+            local stairs = (minimapColor >= 210 and minimapColor <= 213)
+            if tile:canShoot() and tile:isWalkable() then
+                if getCreaturesInArea(tile:getPosition(), pattern, specType) > 0 then
+                    if (not safe or
+                        getCreaturesInArea(tile:getPosition(), pattern, 3) == 0) then
+                        local candidate =
+                            {
+                                pos = tile,
+                                count = getCreaturesInArea(tile:getPosition(),
+                                                           pattern, specType)
+                            }
+                        if not best or best.count <= candidate.count then
+                            best = candidate
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    bestTile = best
+
+    if bestTile then
+        return bestTile
+    else
+        return false
+    end
+end
+
+-- returns container object based on name
+function getContainerByName(name, notFull)
+    if type(name) ~= "string" then return nil end
+
+    local d = nil
+    for i, c in pairs(getContainers()) do
+        if c:getName():lower() == name:lower() and (not notFull or not containerIsFull(c)) then
+            d = c
+            break
+        end
+    end
+    return d
+end
+
+-- returns container object based on container ID
+function getContainerByItem(id, notFull)
+    if type(id) ~= "number" then return nil end
+
+    local d = nil
+    for i, c in pairs(getContainers()) do
+        if c:getContainerItem():getId() == id and (not notFull or not containerIsFull(c)) then
+            d = c
+            break
+        end
+    end
+    return d
+end
+
+-- [[ ready to use getSpectators patterns ]] --
+LargeUeArea = [[
+    0000001000000
+    0000011100000
+    0000111110000
+    0001111111000
+    0011111111100
+    0111111111110
+    1111111111111
+    0111111111110
+    0011111111100
+    0001111111000
+    0000111110000
+    0000011100000
+    0000001000000
+]]
+
+NormalUeAreaMs = [[
+    00000100000
+    00011111000
+    00111111100
+    01111111110
+    01111111110
+    11111111111
+    01111111110
+    01111111110
+    00111111100
+    00001110000
+    00000100000
+]]
+
+NormalUeAreaEd = [[
+    00000100000
+    00001110000
+    00011111000
+    00111111100
+    01111111110
+    11111111111
+    01111111110
+    00111111100
+    00011111000
+    00001110000
+    00000100000
+]]
+
+smallUeArea = [[
+    0011100
+    0111110
+    1111111
+    1111111
+    1111111
+    0111110
+    0011100
+]]
+
+largeRuneArea = [[
+    0011100
+    0111110
+    1111111
+    1111111
+    1111111
+    0111110
+    0011100
+]]
+
+adjacentArea = [[
+    111
+    101
+    111
+]]
+
+longBeamArea = [[
+    0000000N0000000
+    0000000N0000000
+    0000000N0000000
+    0000000N0000000
+    0000000N0000000
+    0000000N0000000
+    0000000N0000000
+    WWWWWWW0EEEEEEE
+    0000000S0000000
+    0000000S0000000
+    0000000S0000000
+    0000000S0000000
+    0000000S0000000
+    0000000S0000000
+    0000000S0000000
+]]
+
+shortBeamArea = [[
+    00000100000
+    00000100000
+    00000100000
+    00000100000
+    00000100000
+    EEEEE0WWWWW
+    00000S00000
+    00000S00000
+    00000S00000
+    00000S00000
+    00000S00000
+]]
+
+newWaveArea = [[
+    000NNNNN000
+    000NNNNN000
+    0000NNN0000
+    WW00NNN00EE
+    WWWW0N0EEEE
+    WWWWW0EEEEE
+    WWWW0S0EEEE
+    WW00SSS00EE
+    0000SSS0000
+    000SSSSS000
+    000SSSSS000
+]]
+
+bigWaveArea = [[
+    0000NNN0000
+    0000NNN0000
+    0000NNN0000
+    00000N00000
+    WWW00N00EEE
+    WWWWW0EEEEE
+    WWW00S00EEE
+    00000S00000
+    0000SSS0000
+    0000SSS0000
+    0000SSS0000
+]]
+
+smallWaveArea = [[
+    00NNN00
+    00NNN00
+    WW0N0EE
+    WWW0EEE
+    WW0S0EE
+    00SSS00
+    00SSS00
+]]
+
+diamondArrowArea = [[
+    01110
+    11111
+    11111
+    11111
+    01110
+]]
+
+-- Custom by F.Almeida
+local offsetDirections = {
+  [North]      =  {0,-1},
+  [East]       =  {1,0},
+  [South]      =  {0,1},
+  [West]       =  {-1,0},
+  [NorthEast]  =  {-1,-1},
+  [SouthEast]  =  {-1,1},
+  [SouthWest]  =  {1,1},
+  [NorthWest]  =  {1,-1},
+}
+function Creature.getNextPosition(self,offset,ignoreDiagonal)
+  local nextDir = self:getDirection()
+  if ignoreDiagonal and nextDir > 3 then
+    if table.find({NorthEast,SouthEast},nextDir) then
+      nextDir = East
+    else
+      nextDir = West
+    end
+  end
+  offset = offset or 1
+  local off = offsetDirections[nextDir]
+  local pos = self:getPosition()
+  pos.x, pos.y = pos.x + (off[1] * offset), pos.y + (off[2] * offset)
+  return pos
+end
+
+function Creature.getNextTile(self,offset,ignoreDiagonal)
+  local nextPos = self:getNextPosition(offset,ignoreDiagonal)
+  return g_map.getTile(nextPos)
+end
+
+function getTilesInRange(distance,position,ignoreBelow)
+  local t = {}
+  local d = distance or 2
+  local pos = position or pos()
+  for x = -d,d do
+    for y = -d,d do
+      if not ignoreBelow or x ~= 0 or y ~= 0 then
+        local tile = g_map.getTile({x=pos.x+x,y=pos.y+y,z=pos.z})
+        if tile then
+          table.insert(t,tile)
+        end
+      end
+    end
+  end
+  return t
+end
+
+function findItemOnGroundInRange(id,range,position,ignoreBelow)
+  local pos = position or pos()
+  for i, tile in ipairs(getTilesInRange(range,pos,ignoreBelow)) do
+    for j, item in ipairs(tile:getItems()) do
+      if item:getId() == id then return item end
+    end
+  end
+end]=]
+FILES["vBot/zenith_mobile_ui.lua"] = [[-- Zenith Mobile floating interface.
+-- Redirects the legacy bot tab helpers to an independent floating window.
+
+local root = g_ui.getRootWidget()
+
+storage.zenithMobileUI = storage.zenithMobileUI or {}
+local uiStorage = storage.zenithMobileUI
+if uiStorage.open == nil then
+  uiStorage.open = true
+end
+
+local window = g_ui.createWidget('ZenithMobileWindow', root)
+window.botWidget = true
+window:hide()
+
+local toggleButton = g_ui.createWidget('ZenithMobileToggleButton', root)
+toggleButton.botWidget = true
+
+local tabBar = window.zenithTabs
+local tabContent = window.zenithTabContent
+tabBar:setContentWidget(tabContent)
+
+local currentPanel = nil
+local tabPanels = {}
+
+local function normalizeTabName(name)
+  name = tostring(name or 'Main')
+  local lowered = name:lower()
+
+  if lowered == 'hp' then
+    return 'HP'
+  elseif lowered == 'cave' then
+    return 'Cave'
+  elseif lowered == 'target' then
+    return 'Target'
+  elseif lowered == 'tools' then
+    return 'Tools'
+  elseif lowered == 'main' then
+    return 'Main'
+  end
+
+  return name
+end
+
+local function updateToggleAppearance()
+  if window:isVisible() then
+    toggleButton:setText('CLOSE')
+    toggleButton:setColor('#2de0d7')
+  else
+    toggleButton:setText('ZENITH')
+    toggleButton:setColor('#ffffff')
+  end
+end
+
+local function showWindow()
+  window:show()
+  window:raise()
+  window:focus()
+  uiStorage.open = true
+  updateToggleAppearance()
+end
+
+local function hideWindow()
+  window:hide()
+  uiStorage.open = false
+  updateToggleAppearance()
+end
+
+local function toggleWindow()
+  if window:isVisible() then
+    hideWindow()
+  else
+    showWindow()
+  end
+end
+
+local function createTab(name)
+  name = normalizeTabName(name)
+
+  if tabPanels[name] then
+    return tabPanels[name]
+  end
+
+  local existing = tabBar:getTab(name)
+  if existing and existing.tabPanel and existing.tabPanel.content then
+    tabPanels[name] = existing.tabPanel.content
+    return tabPanels[name]
+  end
+
+  local botPanel = g_ui.createWidget('BotPanel')
+  botPanel.botWidget = true
+  botPanel:setId('zenithMobile' .. name:gsub('[^%w]', '') .. 'Tab')
+
+  local tab = tabBar:addTab(name, botPanel)
+  tabBar:setOn(true)
+
+  if #tabBar.tabs >= 5 then
+    for _, tabButton in pairs(tabBar.tabs) do
+      tabButton:setFont('small-9px')
+    end
+  end
+
+  tabPanels[name] = tab.tabPanel.content
+  return tabPanels[name]
+end
+
+-- Replace the bot's legacy tab routing with the floating Zenith window.
+addTab = function(name)
+  return createTab(name)
+end
+
+getTab = addTab
+
+setDefaultTab = function(name)
+  currentPanel = createTab(name)
+  panel = currentPanel
+  return currentPanel
+end
+
+setupUI = function(otml, parent)
+  parent = parent or currentPanel or panel or createTab('Main')
+  local widget = g_ui.loadUIFromString(otml, parent)
+  widget.botWidget = true
+  return widget
+end
+
+createWidget = function(name, parent)
+  parent = parent or currentPanel or panel or createTab('Main')
+  local widget = g_ui.createWidget(name, parent)
+  widget.botWidget = true
+  return widget
+end
+
+addSwitch = function(id, text, callback, parent)
+  local widget = createWidget('BotSwitch', parent)
+  widget:setId(id)
+  widget:setText(text)
+  widget.onClick = callback
+  return widget
+end
+
+addButton = function(id, text, callback, parent)
+  local widget = createWidget('BotButton', parent)
+  widget:setId(id)
+  widget:setText(text)
+  widget.onClick = callback
+  return widget
+end
+
+addLabel = function(id, text, parent)
+  local widget = createWidget('BotLabel', parent)
+  widget:setId(id)
+  widget:setText(text)
+  return widget
+end
+
+addTextEdit = function(id, text, callback, parent)
+  local widget = createWidget('BotTextEdit', parent)
+  widget:setId(id)
+  widget:setText(text)
+  widget.onTextChange = callback
+  return widget
+end
+
+addSeparator = function(id, parent)
+  local widget = createWidget('BotSeparator', parent)
+  widget:setId(id)
+  return widget
+end
+
+-- Modern UI helpers also default to the floating tab currently selected by scripts.
+UI.createWidget = function(name, parent)
+  parent = parent or currentPanel or panel or createTab('Main')
+  local widget = g_ui.createWidget(name, parent)
+  widget.botWidget = true
+  return widget
+end
+
+-- Make built-in helpers that depend on context.panel follow our window.
+local firstPanel = createTab('Cave')
+currentPanel = firstPanel
+panel = firstPanel
+mainTab = firstPanel
+tabs = tabBar
+
+window.closeButton.onClick = hideWindow
+window.onEscape = hideWindow
+toggleButton.onClick = toggleWindow
+
+-- Keep the floating window usable on both desktop and smaller mobile layouts.
+local rootWidth = root:getWidth()
+local rootHeight = root:getHeight()
+window:setWidth(math.min(430, math.max(240, rootWidth - 20)))
+window:setHeight(math.min(560, math.max(300, rootHeight - 40)))
+local windowWidth = window:getWidth()
+local windowHeight = window:getHeight()
+window:setPosition({
+  x = math.max(0, math.floor((rootWidth - windowWidth) / 2)),
+  y = math.max(0, math.floor((rootHeight - windowHeight) / 2))
+})
+
+-- The original sidebar stays alive internally because it owns the bot executor,
+-- but it is hidden so the floating interface is the only visible bot UI.
+if modules.game_bot then
+  if modules.game_bot.botWindow then
+    modules.game_bot.botWindow:hide()
+  end
+  -- Keep the native top button available as a recovery/configuration entry.
+  -- The actual bot modules no longer render there.
+  if modules.game_bot.botButton then
+    modules.game_bot.botButton:setOn(false)
+  end
+end
+
+if uiStorage.open then
+  showWindow()
+else
+  hideWindow()
+end
+
+ZenithMobileUI = {
+  window = window,
+  button = toggleButton,
+  show = showWindow,
+  hide = hideWindow,
+  toggle = toggleWindow,
+  getTab = createTab,
+}
+]]
+FILES["vBot/zenith_mobile_ui.otui"] = [[ZenithMobileWindow < MainWindow
+  !text: tr('Zenith Mobile')
+  size: 430 560
+  padding: 18
+  @onEscape: self:hide()
+
+  TabBar
+    id: zenithTabs
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 24
+
+  Panel
+    id: zenithTabContent
+    anchors.top: zenithTabs.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: separator.top
+    margin-top: 5
+    margin-bottom: 8
+
+  HorizontalSeparator
+    id: separator
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: closeButton.top
+    margin-bottom: 8
+
+  ResizeBorder
+    id: bottomResizeBorder
+    anchors.fill: separator
+    height: 3
+    minimum: 300
+    maximum: 900
+    margin-left: 3
+    margin-right: 3
+    background: #ffffff55
+
+  Button
+    id: closeButton
+    !text: tr('Close')
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 52 21
+    margin-right: 5
+
+ZenithMobileToggleButton < Button
+  id: zenithMobileToggleButton
+  text: ZENITH
+  size: 66 30
+  font: verdana-11px-rounded
+  anchors.left: parent.left
+  anchors.verticalCenter: parent.verticalCenter
+  margin-left: 6
+  opacity: 0.92
+]]
+FILES["zFreeScripts/Spells/zAutoBuff.lua"] = [=[--[[
+vBot Scripting Services / Serviços de script / Servicios de scripting:
+Discord: F.Almeida#8019
+
+(ENG) If you like it, consider making a donation:
+(PT) Se você gostou, considere fazer uma doação:
+(ESP) Si le gusta, considere hacer una donación:
+https://www.paypal.com/donate/?business=8XSU4KTS2V9PN&no_recurring=0&item_name=OTC+AND+OTS+SCRIPTS&currency_code=USD
+
+The original UI of this module was created by Lee#7225
+https://trainorcreations.com/coding/otclient/27
+--]]
+
+-- ATTENTION:
+-- Don't edit below this line unless you know what you're doing.
+-- ATENÇÃO:
+-- Não mexa em nada daqui para baixo, a não ser que saiba o que está fazendo.
+-- ATENCIÓN:
+-- No cambies nada desde aquí, solamente si sabes lo que estás haciendo.
+
+setDefaultTab("HP")
+
+local buffUi = setupUI([[
+Panel
+  height: 20
+
+  BotSwitch
+    id: status
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-align: center
+    width: 130
+    height: 18
+    text: Auto Buff
+
+  Button
+    id: editSpellList
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 3
+    height: 18
+    text: Setup
+  ]], parent)
+
+g_ui.loadUIFromString([[
+SpellName < Label
+  background-color: alpha
+  text-offset: 2 0
+  focusable: true
+  height: 16
+
+  $focus:
+    background-color: #00000055
+
+  Button
+    id: remove
+    text: x
+    anchors.right: parent.right
+    margin-right: 15
+    width: 15
+    height: 15
+
+spellListWindow < MainWindow
+  text: Auto Buff by F.Almeida
+  size: 220 355
+  @onEscape: self:hide()
+
+  Label
+    id: lblPos
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.right: parent.right
+    text-align: center
+    margin-top: -5
+    text: Icon Position:
+
+  Label
+    id: lblPosX
+    anchors.left: prev.left
+    anchors.top: prev.bottom
+    text-align: center
+    margin-top: 5
+    width: 40
+    height: 20
+    !text: ('Pos X: ')
+
+  SpinBox
+    id: ipx
+    anchors.left: prev.right
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    minimum: 0
+    maximum: 2000
+    width: 50
+    step: 10
+    editable: true
+    focusable: true
+
+  Label
+    id: lblPosY
+    anchors.left: prev.right
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    margin-left: 10
+    text-align: center
+    width: 40
+    !text: ('Pos Y: ')
+
+  SpinBox
+    id: ipy
+    anchors.right: parent.right
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    minimum: 0
+    maximum: 2000
+    width: 50
+    step: 10
+    editable: true
+    focusable: true
+
+  Label
+    id: lblEx
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    margin-top: 5
+    height: 20
+    text-align: center
+    text: Default Exhausted:
+
+  SpinBox
+    id: ex
+    anchors.right: parent.right
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    minimum: 0
+    maximum: 5000
+    width: 70
+    step: 100
+    editable: true
+    focusable: true
+    text-align: center
+
+  Label
+    id: lblSpells
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    anchors.right: parent.right
+    margin-top: 5
+    text-align: center
+    text: Spells List
+    
+  TextList
+    id: lstSpells
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 5
+    margin-bottom: 5
+    padding: 1
+    height: 100
+    vertical-scrollbar: AutoBuffVScroll
+    
+  VerticalScrollBar
+    id: AutoBuffVScroll
+    anchors.top: lstSpells.top
+    anchors.bottom: lstSpells.bottom
+    anchors.right: lstSpells.right
+    step: 14
+    pixels-scroll: true
+
+  Label
+    id: lblExample
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    anchors.right: parent.right
+    margin-top: 5
+    text-align: center
+    text: Example: Utito Tempo, 10
+    
+  TextEdit
+    id: spellEntry
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    margin-top: 5
+    width: 140
+
+  Button
+    id: addSpell
+    text: +
+    font: verdana-11px-rounded
+    anchors.right: parent.right
+    anchors.left: prev.right
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    margin-left: 3
+  
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    margin-top: 8
+
+  CheckBox
+    id: checkAtk
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 6
+    text: Stop if attacking
+    tooltip: Only cast buff if not attacking any creature.
+
+  CheckBox
+    id: checkPz
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 6
+    text: Stop if in PZ
+    tooltip: Only cast buff if not in Protection Zone.
+
+  CheckBox
+    id: createIcon
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-top: 6
+    text: Create Icon
+
+  HorizontalSeparator
+    id: separator
+    anchors.right: parent.right
+    anchors.left: parent.left
+    anchors.bottom: closeButton.top
+    margin-bottom: 6
+
+  Button
+    id: closeButton
+    text: Close
+    font: cipsoftFont
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    size: 45 21
+
+  Button
+    id: info
+    text: Credits
+    font: cipsoftFont
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+    size: 45 21
+    color: yellow
+    !tooltip: tr('Created by F.Almeida#8019\nClick to contribute.')
+    @onClick: g_platform.openUrl("https://www.paypal.com/donate/?business=8XSU4KTS2V9PN&no_recurring=0&item_name=OTC+AND+OTS+SCRIPTS&currency_code=USD")
+]])
+
+local panelName = "autoBuff"
+
+if not storage[panelName] then
+  storage[panelName] = {
+    iconPosX = 200,
+    iconPosY = 170,
+    exhausted = 1001,
+    spellList = {"set some spell first, 10"},
+    enabled = false,
+    icon = false,
+    atk = false,
+    pz = true,
+  }
+end
+
+local config = storage[panelName]
+
+rootWidget = g_ui.getRootWidget()
+if rootWidget then
+
+  spellListWindow = UI.createWindow('spellListWindow', rootWidget)
+  spellListWindow:hide()
+
+  buffUi.editSpellList.onClick = function(widget)
+    spellListWindow:show()
+    spellListWindow:raise()
+    spellListWindow:focus()
+  end
+
+  spellListWindow.closeButton.onClick = function(widget)
+    spellListWindow:hide()
+  end
+
+  if config.spellList and #config.spellList > 0 then
+    for _, pName in ipairs(config.spellList) do
+      local label = g_ui.createWidget("SpellName", spellListWindow.lstSpells)
+      label.remove.onClick = function(widget)
+        table.removevalue(config.spellList, label:getText())
+        label:destroy()
+      end
+      label:setText(pName)
+      label.onDoubleClick = function(widget)
+        table.removevalue(config.spellList, label:getText())
+        spellListWindow.spellEntry:setText(label:getText())
+        label:destroy()
+      end
+    end
+  end
+  spellListWindow.addSpell.onClick = function(widget)
+    local spellEntry = spellListWindow.spellEntry:getText():lower()
+    if spellEntry:len() > 0 and not table.contains(config.spellList, spellEntry, true) then
+      if string.find(spellEntry,",") then
+        if not tonumber(spellEntry:split(",")[2]) then
+          warn('You must insert: spell name, cooldown (in ms: 1000 = 1s)')
+        else
+          table.insert(config.spellList, spellEntry)
+          local label = g_ui.createWidget("SpellName", spellListWindow.lstSpells)
+          label.remove.onClick = function(widget)
+            table.removevalue(config.spellList, label:getText())
+            label:destroy()
+          end
+          label:setText(spellEntry)
+          spellListWindow.spellEntry:setText('')
+          label.onDoubleClick = function(widget)
+            table.removevalue(config.spellList, label:getText())
+            spellListWindow.spellEntry:setText(label:getText())
+            label:destroy()
+          end
+        end
+      else
+        warn('You must insert: spell name, cooldown (in seconds)')
+      end
+    end
+  end
+
+  buffUi.status:setOn(config.enabled)
+  buffUi.status.onClick = function(widget)
+    config.enabled = not config.enabled
+    widget:setOn(config.enabled)
+  end
+
+  spellListWindow.checkAtk:setChecked(config.atk)
+  spellListWindow.checkAtk.onClick = function(widget)
+    config.atk = not config.atk
+    widget:setChecked(config.atk)
+  end
+
+  spellListWindow.checkPz:setChecked(config.pz)
+  spellListWindow.checkPz.onClick = function(widget)
+    config.pz = not config.pz
+    widget:setChecked(config.pz)
+  end
+
+  spellListWindow.createIcon:setChecked(config.icon)
+  spellListWindow.createIcon.onClick = function(widget)
+    config.icon = not config.icon
+    widget:setChecked(config.icon)
+  end
+
+  spellListWindow.spellEntry.onKeyPress = function(self, keyCode, keyboardModifiers)
+    if not (keyCode == 5) then
+      return false
+    end
+    spellListWindow.addSpell.onClick()
+    return true
+  end
+
+  spellListWindow.spellEntry.onTextChange = function(widget, text)
+    if table.contains(config.spellList, text, true) then
+      spellListWindow.addSpell:setColor("red")
+    elseif text:len() > 0 then
+      spellListWindow.addSpell:setColor("green")
+    else
+      spellListWindow.addSpell:setColor("white")
+    end
+  end
+
+  -- icon positions
+  spellListWindow.ipx:setValue(config.iconPosX)
+  spellListWindow.ipx.onValueChange = function(widget, value)
+    config.iconPosX = value
+  end
+
+  spellListWindow.ipy:setValue(config.iconPosY)
+  spellListWindow.ipy.onValueChange = function(widget, value)
+    config.iconPosY = value
+  end
+
+  -- default exhausted
+  spellListWindow.ex:setValue(config.exhausted)
+  spellListWindow.ex.onValueChange = function(widget, value)
+    config.exhausted = value
+  end
+
+  -- add icon
+  local icon = addIcon("BuffIcon", {text="Auto\nBuff",item=3064,switchable=true},function(w,on) 
+    config.enabled = on
+  end)
+  icon.text:setFont('verdana-11px-rounded')
+  icon:breakAnchors()
+  if not config.icon then
+    icon:hide()
+  end
+  
+  -- main loops
+  -- switches
+  macro(100,function()
+    icon.setOn(config.enabled)
+    buffUi.status:setOn(config.enabled)
+    icon:move(config.iconPosX,config.iconPosY)
+    if config.icon then
+      icon:show()
+    else
+      icon:hide()
+    end
+  end)
+  -- auto buff
+  macro(500,function()
+    if not config.enabled then return end
+    if g_game.isAttacking() and config.atk then return end
+    if isInPz() and config.pz then return end
+
+    for e, entry in pairs(config.spellList) do
+      local spell = entry:split(",")[1]
+      local cd = tonumber(entry:split(",")[2]) * 1000
+      -- fix for vbot bug
+      local a,b,c = modules.gamelib.Spells.getSpellByWords(spell)
+      local Spells = modules.gamelib.SpellInfo['Default']
+      local s = Spells[c]
+      if s then
+        if type(s.mana) == 'string' then
+          s.mana = 1
+        end
+      end
+      -- end fix
+      if canCast(spell) then
+        cast(spell,cd)
+        delay(config.exhausted)
+        return
+      end
+    end
+
+  end)
+end
+
+-- UI.Separator()]=]
+FILES["zzzGlobalEventCallbacks.lua"] = [[-- Check Last Balance
+storage.balance = storage.balance or 0
+storage.balanceText = storage.balanceText or ""
+
+-- onTextMessage(function(mode, text)
+--     print("Global onTextMessage Mode: "..mode.." Text: "..text)
+-- end)
+
+-- onTalk(function(name, level, mode, text, channelId, pos)
+--   local posText = pos and " Pos: "..pos.x.." "..pos.y.." "..pos.x or ""
+--   print("Global onTalk - Name: "..name.." Level: "..level.." Mode: "..mode.." Text: "..text.." ChannelId: "..channelId..posText)
+-- end)
+
+onTalk(function(name, level, mode, text, channelId, pos)
+    -- local posText = pos and " Pos: "..pos.x.." "..pos.y.." "..pos.x or ""
+    -- print("Global onTalk - Name: "..name.." Level: "..level.." Mode: "..mode.." Text: "..text.." ChannelId: "..channelId..posText)
+    
+    -- Check Last Balance
+    if level == 0 and string.find(text, "Your account balance is") then
+        local textBalance = text
+        textBalance = string.split(textBalance, "account balance is ")[2]
+        textBalance = string.split(textBalance, " gold")[1]
+        storage.balance = tonumber(textBalance)
+        if storage.balance >= 1000000 then -- mais que 1kk
+            local txt = textBalance
+            local len = txt:len()
+            if len > 9 then
+                txt = txt:sub(1,len-9).."kkk"
+            elseif len > 8 then
+                txt = txt:sub(1,3).."kk"
+            elseif len > 7 then
+                txt = txt:sub(1,2)..","..txt:sub(3,3).."kk"
+            elseif len > 6 then
+                txt = txt:sub(1,1)..","..txt:sub(2,3).."kk"
+            end
+            textBalance = txt
+        end
+        storage.balanceText = textBalance
+    end
+
+end)
+
+-- onMouseRelease(function(mousePos, mouseButton)
+--   warn("MouseRelease: ".. mouseButton)
+-- end)
+
+-- onMousePress(function(mousePos, mouseButton)
+--   warn("MousePress: ".. mouseButton)
+-- end)]]
+FILES["zenith_version.txt"] = [[2026-07-10-self-contained-v2
+]]
+
 
 local function log(text)
   print("[Zenith Mobile] " .. tostring(text))
@@ -27,26 +28332,9 @@ local function isProtected(relativePath)
   return false
 end
 
-local function normalizeRelativePath(path)
-  path = tostring(path or ""):gsub("\\", "/"):gsub("^/+", "")
-
-  -- Accept both a rootless package and archives wrapped in a folder.
-  local marker = BOT_NAME .. "/"
-  local markerPos = path:find(marker, 1, true)
-  if markerPos then
-    path = path:sub(markerPos + #marker)
-  end
-
-  path = path:gsub("^%./", "")
-  if path == "" or path:find("..", 1, true) then
-    return nil
-  end
-  return path
-end
-
 local function ensureDirectory(path)
   local current = ""
-  for part in path:gmatch("[^/]+") do
+  for part in tostring(path):gmatch("[^/]+") do
     current = current .. "/" .. part
     if not g_resources.directoryExists(current) then
       g_resources.makeDir(current)
@@ -58,29 +28346,39 @@ local function ensureDirectory(path)
 end
 
 local function ensureParent(filePath)
-  local parent = filePath:match("^(.*)/[^/]+$")
+  local parent = tostring(filePath):match("^(.*)/[^/]+$")
   if parent and parent ~= "" then
     ensureDirectory(parent)
   end
 end
 
-local function readOldManifest()
-  if not g_resources.fileExists(MANIFEST_FILE) then
-    return {}
+local function readManagedFiles()
+  local managed = {}
+
+  if g_resources.fileExists(MANIFEST_FILE) then
+    local contents = g_resources.readFileContents(MANIFEST_FILE) or ""
+    for line in contents:gmatch("[^\r\n]+") do
+      managed[#managed + 1] = line
+    end
+    return managed
   end
 
-  local ok, decoded = pcall(function()
-    return json.decode(g_resources.readFileContents(MANIFEST_FILE))
-  end)
-  if not ok or type(decoded) ~= "table" then
-    return {}
+  -- Compatibilidade com a primeira versao do instalador.
+  if g_resources.fileExists(OLD_MANIFEST_FILE) and json and json.decode then
+    local ok, decoded = pcall(function()
+      return json.decode(g_resources.readFileContents(OLD_MANIFEST_FILE))
+    end)
+    if ok and type(decoded) == "table" then
+      return decoded
+    end
   end
-  return decoded
+
+  return managed
 end
 
 local function removeOldManagedFiles()
-  for _, relativePath in ipairs(readOldManifest()) do
-    if type(relativePath) == "string" and not isProtected(relativePath) then
+  for _, relativePath in ipairs(readManagedFiles()) do
+    if type(relativePath) == "string" and relativePath ~= "" and not isProtected(relativePath) then
       local fullPath = BOT_ROOT .. "/" .. relativePath
       if g_resources.fileExists(fullPath) then
         g_resources.deleteFile(fullPath)
@@ -89,56 +28387,62 @@ local function removeOldManagedFiles()
   end
 end
 
-local function writePackage(files)
-  if type(files) ~= "table" then
-    error("O pacote baixado nao e um arquivo ZIP valido.")
+local function installFiles()
+  if not g_resources then
+    error("Este cliente nao possui g_resources.")
   end
-
-  local normalized = {}
-  local hasLoader = false
-
-  for archivePath, contents in pairs(files) do
-    local relativePath = normalizeRelativePath(archivePath)
-    if relativePath and type(contents) == "string" then
-      normalized[relativePath] = contents
-      if relativePath == "_Loader.lua" then
-        hasLoader = true
-      end
-    end
-  end
-
-  if not hasLoader then
-    error("_Loader.lua nao foi encontrado no pacote Zenith Mobile.")
+  if type(FILES["_Loader.lua"]) ~= "string" then
+    error("O pacote interno nao possui _Loader.lua.")
   end
 
   ensureDirectory(BOT_ROOT)
   removeOldManagedFiles()
 
+  for _, relativeDir in ipairs(DIRECTORIES) do
+    ensureDirectory(BOT_ROOT .. "/" .. relativeDir)
+  end
+
+  local paths = {}
+  for relativePath in pairs(FILES) do
+    paths[#paths + 1] = relativePath
+  end
+  table.sort(paths)
+
   local managed = {}
-  for relativePath, contents in pairs(normalized) do
+  local written = 0
+  local preserved = 0
+
+  for _, relativePath in ipairs(paths) do
     local fullPath = BOT_ROOT .. "/" .. relativePath
     local preserveExisting = isProtected(relativePath) and g_resources.fileExists(fullPath)
 
-    if not preserveExisting then
+    if preserveExisting then
+      preserved = preserved + 1
+    else
       ensureParent(fullPath)
-      g_resources.writeFileContents(fullPath, contents)
+      g_resources.writeFileContents(fullPath, FILES[relativePath])
       if not g_resources.fileExists(fullPath) then
         error("Falha ao gravar: " .. fullPath)
       end
+      written = written + 1
     end
 
     if not isProtected(relativePath) then
-      table.insert(managed, relativePath)
+      managed[#managed + 1] = relativePath
     end
   end
 
-  table.sort(managed)
-  g_resources.writeFileContents(MANIFEST_FILE, json.encode(managed, 2))
+  g_resources.writeFileContents(MANIFEST_FILE, table.concat(managed, "\n") .. "\n")
+  if g_resources.fileExists(OLD_MANIFEST_FILE) then
+    g_resources.deleteFile(OLD_MANIFEST_FILE)
+  end
+
+  return written, preserved
 end
 
 local function activateBot()
   if not g_game or not g_game.isOnline or not g_game.isOnline() then
-    log("Instalado. Entre no personagem e ative o bot Zenith Mobile.")
+    log("Instalado com sucesso. Entre no personagem e ative Zenith Mobile no bot.")
     return
   end
 
@@ -152,42 +28456,25 @@ local function activateBot()
 
   scheduleEvent(function()
     if modules.game_bot and modules.game_bot.refresh then
-      modules.game_bot.refresh()
-      log("Instalado, atualizado e iniciado com sucesso.")
+      local ok, err = pcall(modules.game_bot.refresh)
+      if ok then
+        log("Instalado, atualizado e iniciado com sucesso. Versao: " .. VERSION)
+      else
+        log("Instalado, mas falhou ao recarregar o bot: " .. tostring(err))
+        log("Feche e abra o client para iniciar.")
+      end
     else
-      log("Instalado. Reabra o cliente para iniciar o Zenith Mobile.")
+      log("Instalado com sucesso. Feche e abra o client para iniciar.")
     end
   end, 100)
 end
 
-if not HTTP or not HTTP.download then
-  error("Este cliente nao possui HTTP.download.")
+log("Instalando arquivos...")
+local ok, written, preserved = pcall(installFiles)
+if not ok then
+  log("Falha na instalacao: " .. tostring(written))
+  return
 end
-if not g_resources or not g_resources.decompressArchive then
-  error("Este cliente nao possui g_resources.decompressArchive.")
-end
 
-local packageUrl = baseUrl .. PACKAGE_NAME .. "?t=" .. tostring(g_clock.millis())
-local previousTimeout = HTTP.timeout
-HTTP.timeout = math.max(tonumber(HTTP.timeout) or 2, 30)
-
-log("Baixando o pacote...")
-HTTP.download(packageUrl, "zenith_mobile_package.zip", function(path, checksum, err)
-  if err then
-    log("Falha no download: " .. tostring(err))
-    return
-  end
-
-  local archivePath = "/downloads/" .. tostring(path)
-  local ok, result = pcall(function()
-    local files = g_resources.decompressArchive(archivePath)
-    writePackage(files)
-    activateBot()
-  end)
-
-  if not ok then
-    log("Falha na instalacao: " .. tostring(result))
-  end
-end)
-
-HTTP.timeout = previousTimeout
+log(tostring(written) .. " arquivos gravados; " .. tostring(preserved) .. " configuracoes preservadas.")
+activateBot()
