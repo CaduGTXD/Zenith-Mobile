@@ -3,12 +3,12 @@
 
 local BOT_NAME = "Zenith Mobile"
 local BOT_ROOT = "/bot/" .. BOT_NAME
-local RUNTIME_DIR = "/zenith_mobile"
+local RUNTIME_DIR = "/zenith_mobile_v7"
 local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-10-mobile-runtime-client-v6-schedule-fix"
+local VERSION = "2026-07-10-mobile-runtime-client-v7-hard-schedule-fix"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -28595,7 +28595,7 @@ SUPPORT_FILES["executor.lua"] = [[
 -- Bundled game_bot executor extracted from the target mobile client.
 -- Adapted only to load its support files from the writable Zenith runtime.
 
-local ZENITH_GAME_BOT_ROOT = "/zenith_mobile/game_bot"
+local ZENITH_GAME_BOT_ROOT = "/zenith_mobile_v7/game_bot"
 G = rawget(_G, "G") or _G
 
 local ZENITH_FUNCTION_FILES = {
@@ -28827,6 +28827,27 @@ function executeBot(config, storage, tabs, msgCallback, saveConfigCallback, relo
   G.botContext = nil
   if not supportOk then
     error(supportError)
+  end
+
+  -- Hard compatibility wrapper for mobile scripts using either schedule order.
+  -- This override is applied after loading the client's own functions/main.lua,
+  -- so even an older cached helper cannot reintroduce the arithmetic error.
+  context.schedule = function(timeout, callback)
+    if type(timeout) == "function" then
+      timeout, callback = callback, timeout
+    end
+    timeout = tonumber(timeout) or 0
+    if type(callback) ~= "function" then
+      error("Invalid schedule arguments: " .. type(timeout) .. ", " .. type(callback))
+    end
+    local executeTime = g_clock.millis() + timeout
+    table.insert(context._scheduler, {
+      execution = executeTime,
+      callback = callback
+    })
+    table.sort(context._scheduler, function(a, b)
+      return a.execution < b.execution
+    end)
   end
 
   -- run ui scripts
@@ -35160,7 +35181,7 @@ _G.ZenithMobileRuntime = Runtime
 
 Runtime.name = "Zenith Mobile"
 Runtime.root = "/bot/Zenith Mobile"
-Runtime.supportRoot = "/zenith_mobile/game_bot"
+Runtime.supportRoot = "/zenith_mobile_v7/game_bot"
 Runtime.running = false
 Runtime.executor = nil
 Runtime.host = nil
@@ -35761,6 +35782,9 @@ local function writeFileMap(rootPath, fileMap)
   for _, relativePath in ipairs(paths) do
     local fullPath = rootPath .. "/" .. relativePath
     ensureParent(fullPath)
+    if g_resources.fileExists(fullPath) then
+      g_resources.deleteFile(fullPath)
+    end
     g_resources.writeFileContents(fullPath, fileMap[relativePath])
     if not g_resources.fileExists(fullPath) then error("Falha ao gravar: " .. fullPath) end
     written = written + 1
@@ -35840,6 +35864,7 @@ local function startRuntime()
   end
 end
 
+log("Instalador v7 carregado: " .. VERSION)
 log("Instalando arquivos, imagens e runtime do client...")
 local ok, written, preserved, supportWritten = pcall(installFiles)
 if not ok then log("Falha na instalacao: " .. tostring(written)); return end
