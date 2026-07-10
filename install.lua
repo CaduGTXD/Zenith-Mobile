@@ -27674,13 +27674,11 @@ local function normalizeTabName(name)
 end
 
 local function updateToggleAppearance()
-  if window:isVisible() then
-    toggleButton:setText('CLOSE')
-    toggleButton:setColor('#2de0d7')
-  else
-    toggleButton:setText('ZENITH')
-    toggleButton:setColor('#ffffff')
-  end
+  -- Keep one compact mobile button. Its pressed state indicates whether the
+  -- floating window is open, while tapping it always toggles the window.
+  toggleButton:setText('ZENITH')
+  toggleButton:setColor('#ffffff')
+  toggleButton:setOn(window:isVisible())
 end
 
 local function showWindow()
@@ -27830,6 +27828,70 @@ window:setPosition({
   y = math.max(0, math.floor((rootHeight - windowHeight) / 2))
 })
 
+-- Locate the client's native TG and ATK controls and put Zenith directly
+-- below the pair. This avoids hard-coding a screen resolution and works with
+-- the different Android layouts used by the client.
+local function safeText(widget)
+  local ok, value = pcall(function() return widget:getText() end)
+  if not ok or value == nil then return '' end
+  return tostring(value):gsub('^%s+', ''):gsub('%s+$', ''):upper()
+end
+
+local function findTextWidget(widget, wanted, best)
+  if widget ~= toggleButton and safeText(widget) == wanted then
+    local pos = widget:getPosition()
+    local visible = true
+    pcall(function() visible = widget:isVisible() end)
+    if visible and pos and pos.x < root:getWidth() * 0.55 and pos.y < root:getHeight() * 0.55 then
+      local score = pos.x + pos.y
+      if not best or score < best.score then
+        best = { widget = widget, score = score }
+      end
+    end
+  end
+
+  local ok, children = pcall(function() return widget:getChildren() end)
+  if ok and children then
+    for _, child in ipairs(children) do
+      best = findTextWidget(child, wanted, best)
+    end
+  end
+  return best
+end
+
+local function placeToggleButton()
+  local tg = findTextWidget(root, 'TG', nil)
+  local atk = findTextWidget(root, 'ATK', nil)
+
+  if tg and atk then
+    local tgWidget = tg.widget
+    local atkWidget = atk.widget
+    local tgPos = tgWidget:getPosition()
+    local atkPos = atkWidget:getPosition()
+    local left = math.min(tgPos.x, atkPos.x)
+    local right = math.max(tgPos.x + tgWidget:getWidth(), atkPos.x + atkWidget:getWidth())
+    local bottom = math.max(tgPos.y + tgWidget:getHeight(), atkPos.y + atkWidget:getHeight())
+
+    toggleButton:setWidth(math.max(64, right - left))
+    toggleButton:setHeight(math.max(26, math.min(32, math.max(tgWidget:getHeight(), atkWidget:getHeight()))))
+    toggleButton:setPosition({ x = left, y = bottom + 4 })
+    return true
+  end
+
+  -- Safe fallback used only while the native mobile controls are still loading.
+  toggleButton:setWidth(126)
+  toggleButton:setHeight(30)
+  toggleButton:setPosition({ x = 7, y = math.max(105, math.floor(root:getHeight() * 0.18)) })
+  return false
+end
+
+local function retryTogglePlacement(remaining)
+  if placeToggleButton() or remaining <= 0 then return end
+  schedule(function() retryTogglePlacement(remaining - 1) end, 250)
+end
+
+retryTogglePlacement(20)
+
 -- Zenith Mobile is hosted entirely by its own floating runtime.
 
 if uiStorage.open then
@@ -27899,12 +27961,13 @@ ZenithMobileWindow < MainWindow
 ZenithMobileToggleButton < Button
   id: zenithMobileToggleButton
   text: ZENITH
-  size: 66 30
+  size: 126 30
   font: verdana-11px-rounded
-  anchors.left: parent.left
-  anchors.verticalCenter: parent.verticalCenter
-  margin-left: 6
-  opacity: 0.92
+  text-align: center
+  opacity: 0.96
+
+  $on:
+    image-color: #2de0d7
 ]]
 FILES["zFreeScripts/Spells/zAutoBuff.lua"] = [=[
 --[[
