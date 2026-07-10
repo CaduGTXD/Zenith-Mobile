@@ -8,7 +8,7 @@ local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-10-mobile-runtime-client-v5-button-assets"
+local VERSION = "2026-07-10-mobile-runtime-client-v6-schedule-fix"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -27993,7 +27993,7 @@ end
 local function retryTogglePlacement(remaining)
   placeToggleButton()
   if remaining <= 0 then return end
-  schedule(function() retryTogglePlacement(remaining - 1) end, 300)
+  schedule(300, function() retryTogglePlacement(remaining - 1) end)
 end
 
 retryTogglePlacement(30)
@@ -28003,7 +28003,7 @@ root.onGeometryChange = function(widget, oldRect, newRect)
   if previousRootGeometry then
     pcall(previousRootGeometry, widget, oldRect, newRect)
   end
-  schedule(placeToggleButton, 50)
+  schedule(50, placeToggleButton)
 end
 
 -- Zenith Mobile is hosted entirely by its own floating runtime.
@@ -30043,6 +30043,13 @@ end
 
 -- schedule(timeout, callback)
 context.schedule = function(timeout, callback)
+  -- Accept both schedule(delay, callback) and schedule(callback, delay).
+  if type(timeout) == "function" and type(callback) == "number" then
+    timeout, callback = callback, timeout
+  end
+  if type(timeout) ~= "number" or type(callback) ~= "function" then
+    error("Invalid schedule arguments: " .. type(timeout) .. ", " .. type(callback))
+  end
   local extecute_time = g_clock.millis() + timeout
   table.insert(context._scheduler, {
     execution = extecute_time,
