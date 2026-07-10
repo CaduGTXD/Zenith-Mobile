@@ -1,13 +1,14 @@
--- Zenith Mobile - instalador autocontido para OTClient Redemption mobile
--- Nao usa modules.game_bot.refresh nem a janela lateral nativa.
+-- Zenith Mobile - instalador standalone para OTClient Redemption mobile
+-- Inclui o executor, functions, panels e estilos retirados do game_bot deste client.
 
 local BOT_NAME = "Zenith Mobile"
 local BOT_ROOT = "/bot/" .. BOT_NAME
 local RUNTIME_DIR = "/zenith_mobile"
 local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
+local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-10-mobile-runtime-v3"
+local VERSION = "2026-07-10-mobile-runtime-client-v4"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -31,7 +32,8 @@ local DIRECTORIES = {
 }
 
 local FILES = {}
-FILES["README.md"] = [[# Zenith Mobile — versão enxuta
+FILES["README.md"] = [[
+# Zenith Mobile — versão enxuta
 
 Esta versão mantém somente o núcleo e os módulos ainda utilizados.
 
@@ -91,7 +93,8 @@ Ele mantém somente:
 Esta versao nao usa a janela lateral nem o `refresh()` do modulo `game_bot`.
 O instalador cria um runtime proprio, conecta os callbacks do jogo, agenda as macros e abre apenas a janela flutuante do Zenith Mobile.
 ]]
-FILES["_Loader.lua"] = [[-- Zenith Mobile loader.
+FILES["_Loader.lua"] = [[
+-- Zenith Mobile loader.
 -- Runs inside the lightweight mobile runtime, without the native game_bot window.
 
 local configName = "Zenith Mobile"
@@ -173,7 +176,8 @@ if modules.game_interface and modules.game_interface.registerMobileBotControls t
   })
 end
 ]]
-FILES["cavebot/actions.lua"] = [=[CaveBot.Actions = {}
+FILES["cavebot/actions.lua"] = [=[
+CaveBot.Actions = {}
 vBot.lastLabel = ""
 local oldTibia = g_game.getClientVersion() < 960
 local nextTile = nil
@@ -1004,7 +1008,8 @@ CaveBot.registerAction("npcsay", "#FF55FF", function(value, retries, prev)
   return true
 end)
 ]=]
-FILES["cavebot/bank.lua"] = [[CaveBot.Extensions.Bank = {}
+FILES["cavebot/bank.lua"] = [[
+CaveBot.Extensions.Bank = {}
 
 local balance = 0
 
@@ -1096,7 +1101,8 @@ onTalk(function(name, level, mode, text, channelId, pos)
     balance = getFirstNumberInText(text)
   end
 end)]]
-FILES["cavebot/buy_supplies.lua"] = [[CaveBot.Extensions.BuySupplies = {}
+FILES["cavebot/buy_supplies.lua"] = [[
+CaveBot.Extensions.BuySupplies = {}
 
 local BUY = 1
 
@@ -1661,7 +1667,8 @@ CaveBot.Extensions.BuySupplies.setup = function()
     description = "NPC Name, delay(in ms, optional)",
   })
 end]]
-FILES["cavebot/cavebot.lua"] = [=[local cavebotMacro = nil
+FILES["cavebot/cavebot.lua"] = [=[
+local cavebotMacro = nil
 local config = nil
 
 local cavebotCompat = storage.cavebotCompat or {}
@@ -2269,7 +2276,8 @@ CaveBotList = function()
   return ui.list
 end
 ]=]
-FILES["cavebot/cavebot.otui"] = [[CaveBotAction < Label
+FILES["cavebot/cavebot.otui"] = [[
+CaveBotAction < Label
   background-color: alpha
   text-offset: 2 0
   focusable: true
@@ -2344,7 +2352,8 @@ CaveBotPanel < Panel
     $!on:
       text: Show map waypoints
 ]]
-FILES["cavebot/clear_tile.lua"] = [[CaveBot.Extensions.ClearTile = {}
+FILES["cavebot/clear_tile.lua"] = [[
+CaveBot.Extensions.ClearTile = {}
 
 CaveBot.Extensions.ClearTile.setup = function()
   CaveBot.registerAction("ClearTile", "#00FFFF", function(value, retries)
@@ -2472,7 +2481,8 @@ CaveBot.Extensions.ClearTile.setup = function()
     multiline=false
 })
 end]]
-FILES["cavebot/config.lua"] = [[-- config for bot
+FILES["cavebot/config.lua"] = [[
+-- config for bot
 CaveBot.Config = {}
 CaveBot.Config.values = {}
 CaveBot.Config.default_values = {}
@@ -2837,7 +2847,8 @@ CaveBot.Config.set = function(id, value)
   end
 end
 ]]
-FILES["cavebot/config.otui"] = [[CaveBotConfigPanel < Panel
+FILES["cavebot/config.otui"] = [[
+CaveBotConfigPanel < Panel
   id: cavebotEditor
   visible: false
   
@@ -2968,7 +2979,8 @@ CaveBotConfigSliderValuePanel < Panel
     maximum: 10
     step: 1
 ]]
-FILES["cavebot/depositor.lua"] = [[CaveBot.Extensions.Depositor = {}
+FILES["cavebot/depositor.lua"] = [[
+CaveBot.Extensions.Depositor = {}
 
 --local variables
 local destination = nil
@@ -3478,7 +3490,8 @@ CaveBot.Extensions.Depositor.setup = function()
 	})
 end
 ]]
-FILES["cavebot/doors.lua"] = [=[CaveBot.Extensions.OpenDoors = {}
+FILES["cavebot/doors.lua"] = [=[
+CaveBot.Extensions.OpenDoors = {}
 
 CaveBot.Extensions.OpenDoors.setup = function()
   CaveBot.registerAction("OpenDoors", "#00FFFF", function(value, retries)
@@ -3536,7 +3549,8 @@ CaveBot.Extensions.OpenDoors.setup = function()
     validation=[[\d{1,5},\d{1,5},\d{1,2}(?:,\d{1,5}$|$)]]
 })
 end]=]
-FILES["cavebot/editor.lua"] = [[CaveBot.Editor = {}
+FILES["cavebot/editor.lua"] = [[
+CaveBot.Editor = {}
 CaveBot.Editor.Actions = {}
 CaveBot.Editor.walkDirectionWindow = nil
 
@@ -3978,7 +3992,8 @@ CaveBot.Editor.edit = function(action, value, callback) -- callback = function(a
   end)   
 end
 ]]
-FILES["cavebot/editor.otui"] = [[CaveBotEditorButton < Button
+FILES["cavebot/editor.otui"] = [[
+CaveBotEditorButton < Button
 
 CaveBotDirectionButton < Button
   width: 44
@@ -4250,7 +4265,8 @@ CaveBotEditorPanel < Panel
     margin-left: 2
     margin-right: 2
 ]]
-FILES["cavebot/example_functions.lua"] = [=[CaveBot.Editor.ExampleFunctions = {}
+FILES["cavebot/example_functions.lua"] = [=[
+CaveBot.Editor.ExampleFunctions = {}
 
 local function addExampleFunction(title, text)
   return table.insert(CaveBot.Editor.ExampleFunctions, {title, text:trim()})
@@ -4355,7 +4371,8 @@ delay(3000)
 return true
 ]])
 ]=]
-FILES["cavebot/extensions/checkLevel.lua"] = [[CaveBot.Extensions.LvlCheck = {}
+FILES["cavebot/extensions/checkLevel.lua"] = [[
+CaveBot.Extensions.LvlCheck = {}
 
 CaveBot.Extensions.LvlCheck.setup = function()
   CaveBot.registerAction("LvlCheck", "#00FFFF", function(value, retries)
@@ -4399,7 +4416,8 @@ CaveBot.Extensions.LvlCheck.setup = function()
     multiline=false,
 })
 end]]
-FILES["cavebot/extensions/dropItem_toPos.lua"] = [[function getPosByDir()
+FILES["cavebot/extensions/dropItem_toPos.lua"] = [[
+function getPosByDir()
   local dirs = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 }}
   local dir = player:getDirection() + 1
   local dirPos = pos()
@@ -4460,7 +4478,8 @@ CaveBot.Editor.registerAction("drop item", "drop item", {
     multiline=false,
 })
 end]]
-FILES["cavebot/imbuing.lua"] = [[-- imbuing window should be handled separatly
+FILES["cavebot/imbuing.lua"] = [[
+-- imbuing window should be handled separatly
 -- reequiping should be handled separatly (ie. equipment manager)
 
 CaveBot.Extensions.Imbuing = {}
@@ -4579,7 +4598,8 @@ CaveBot.Extensions.Imbuing.setup = function()
   description="insert below item ids to be imbued, separated by comma\nor 'name' to load from file",
  })
 end]]
-FILES["cavebot/inbox_withdraw.lua"] = [[CaveBot.Extensions.InWithdraw = {}
+FILES["cavebot/inbox_withdraw.lua"] = [[
+CaveBot.Extensions.InWithdraw = {}
 
 CaveBot.Extensions.InWithdraw.setup = function()
 	CaveBot.registerAction("inwithdraw", "#002FFF", function(value, retries)
@@ -4670,7 +4690,8 @@ CaveBot.Extensions.InWithdraw.setup = function()
  	 description="insert item id and amount",
  	})
 end]]
-FILES["cavebot/lure.lua"] = [[-- Lure extension for CaveBot
+FILES["cavebot/lure.lua"] = [[
+-- Lure extension for CaveBot
 -- v14.0: optional Mage Run carry of up to two extra survivors to the next waypoint.
 
 CaveBot.Extensions = CaveBot.Extensions or {}
@@ -5824,7 +5845,8 @@ Lure.setup = function()
   end
 end
 ]]
-FILES["cavebot/minimap.lua"] = [[local function setupCaveBotMinimap(retries)
+FILES["cavebot/minimap.lua"] = [[
+local function setupCaveBotMinimap(retries)
   retries = retries or 0
   local minimap = modules.game_minimap and modules.game_minimap.minimapWidget
 
@@ -5908,7 +5930,8 @@ end
 
 setupCaveBotMinimap()
 ]]
-FILES["cavebot/pos_check.lua"] = [[CaveBot.Extensions.PosCheck = {}
+FILES["cavebot/pos_check.lua"] = [[
+CaveBot.Extensions.PosCheck = {}
 
 local posCheckRetries = 0
 CaveBot.Extensions.PosCheck.setup = function()
@@ -5955,7 +5978,8 @@ CaveBot.Extensions.PosCheck.setup = function()
     multiline=false,
 })
 end]]
-FILES["cavebot/recorder.lua"] = [[-- auto recording for cavebot
+FILES["cavebot/recorder.lua"] = [[
+-- auto recording for cavebot
 CaveBot.Recorder = {}
 
 local isEnabled = nil
@@ -6102,7 +6126,8 @@ CaveBot.Recorder.disable = function()
   CaveBot.save()
 end
 ]]
-FILES["cavebot/sell_all.lua"] = [[CaveBot.Extensions.SellAll = {}
+FILES["cavebot/sell_all.lua"] = [[
+CaveBot.Extensions.SellAll = {}
 
 local SELL = 2
 
@@ -6891,7 +6916,8 @@ CaveBot.Extensions.SellAll.setup = function()
   )
 end
 ]]
-FILES["cavebot/stand_lure.lua"] = [=[CaveBot.Extensions.StandLure = {}
+FILES["cavebot/stand_lure.lua"] = [=[
+CaveBot.Extensions.StandLure = {}
 local enable = nil
 
 local function modPos(dir)
@@ -7077,7 +7103,8 @@ schedule(5, function() -- delay because cavebot.lua is loaded after this file
         end
     end})
 end)]=]
-FILES["cavebot/supply_check.lua"] = [=[CaveBot.Extensions.SupplyCheck = {}
+FILES["cavebot/supply_check.lua"] = [=[
+CaveBot.Extensions.SupplyCheck = {}
 
 local supplyRetries = 0
 local missedChecks = 0
@@ -7234,7 +7261,8 @@ CaveBot.Extensions.SupplyCheck.setup = function()
   )
 end
 ]=]
-FILES["cavebot/tasker.lua"] = [=[CaveBot.Extensions.Tasker = {}
+FILES["cavebot/tasker.lua"] = [=[
+CaveBot.Extensions.Tasker = {}
 
 local dataValidationFailed = function()
     print("CaveBot[Tasker]: data validation failed! incorrect data, check cavebot/tasker for more info")
@@ -7413,7 +7441,8 @@ onTextMessage(function(mode, text)
     end
 end)
 ]=]
-FILES["cavebot/travel.lua"] = [[CaveBot.Extensions.Travel = {}
+FILES["cavebot/travel.lua"] = [[
+CaveBot.Extensions.Travel = {}
 
 CaveBot.Extensions.Travel.setup = function()
   CaveBot.registerAction("Travel", "#db5a5a", function(value, retries)
@@ -7453,7 +7482,8 @@ CaveBot.Extensions.Travel.setup = function()
   description="NPC name, City name, delay in ms(default is 200ms)",
  })
 end]]
-FILES["cavebot/walking.lua"] = [[-- walking
+FILES["cavebot/walking.lua"] = [[
+-- walking
 local expectedDirs = {}
 local isWalking = {}
 local walkPath = {}
@@ -7648,7 +7678,8 @@ CaveBot.walkTo = function(dest, maxDist, params)
   return true
 end
 ]]
-FILES["cavebot/withdraw.lua"] = [[CaveBot.Extensions.Withdraw = {}
+FILES["cavebot/withdraw.lua"] = [[
+CaveBot.Extensions.Withdraw = {}
 
 CaveBot.Extensions.Withdraw.setup = function()
 	CaveBot.registerAction("withdraw", "#002FFF", function(value, retries)
@@ -7704,7 +7735,8 @@ CaveBot.Extensions.Withdraw.setup = function()
   description="index/inbox, item id and amount",
  })
 end]]
-FILES["storage/profile_1.json"] = [[{
+FILES["storage/profile_1.json"] = [[
+{
   "manaTrain2": {
     "on": false,
     "title": "MP%",
@@ -8239,6 +8271,7 @@ FILES["storage/profile_1.json"] = [[{
 }
 ]]
 FILES["targetbot/creature.lua"] = [[
+
 TargetBot.Creature = {}
 TargetBot.Creature.configsCache = {}
 TargetBot.Creature.cached = 0
@@ -8360,7 +8393,8 @@ TargetBot.Creature.calculateDanger = function(creature, config, path)
   return config.danger
 end
 ]]
-FILES["targetbot/creature_attack.lua"] = [[-- Smart Mage Run v15.0 - stricter anti-trap and cardinal-first Mage Run
+FILES["targetbot/creature_attack.lua"] = [[
+-- Smart Mage Run v15.0 - stricter anti-trap and cardinal-first Mage Run
 local anchorPosition = nil
 local lastCall = now
 local lastMageRunMove = 0
@@ -12585,7 +12619,8 @@ TargetBot.Creature.walk = function(creature, config, targets)
   end
 end
 ]]
-FILES["targetbot/creature_editor.lua"] = [=[local function buildCreatureRegexPart(part)
+FILES["targetbot/creature_editor.lua"] = [=[
+local function buildCreatureRegexPart(part)
   part = part:trim():lower()
   part = part:gsub("([%^%$%(%)%%%.%[%]%+%-%|])", "\\%1")
   return "^" .. part:gsub("%*", ".*"):gsub("%?", ".?") .. "$"
@@ -12688,7 +12723,8 @@ TargetBot.Creature.edit = function(config, callback) -- callback = function(newC
   addCheckBox("rpSafe", "RP PVP SAFE - (DA)", false)
 end
 ]=]
-FILES["targetbot/creature_editor.otui"] = [[TargetBotCreatureEditorScrollBar < Panel
+FILES["targetbot/creature_editor.otui"] = [[
+TargetBotCreatureEditorScrollBar < Panel
   height: 28
   margin-top: 3
 
@@ -12853,7 +12889,8 @@ TargetBotCreatureEditorWindow < MainWindow
     anchors.right: parent.right
     width: 60
 ]]
-FILES["targetbot/creature_priority.lua"] = [[TargetBot.Creature.calculatePriority = function(creature, config, path)
+FILES["targetbot/creature_priority.lua"] = [[
+TargetBot.Creature.calculatePriority = function(creature, config, path)
   -- config is based on creature_editor
   local priority = 0
   local currentTarget = g_game.getAttackingCreature()
@@ -12914,7 +12951,8 @@ FILES["targetbot/creature_priority.lua"] = [[TargetBot.Creature.calculatePriorit
 
   return priority
 end]]
-FILES["targetbot/looting.lua"] = [[TargetBot.Looting = {}
+FILES["targetbot/looting.lua"] = [[
+TargetBot.Looting = {}
 TargetBot.Looting.list = {} -- list of containers to loot
 
 local ui
@@ -13262,7 +13300,8 @@ onCreatureDisappear(function(creature)
   end)
 end)
 ]]
-FILES["targetbot/looting.otui"] = [[TargetBotLootingPanel < Panel
+FILES["targetbot/looting.otui"] = [[
+TargetBotLootingPanel < Panel
   layout:
     type: verticalBox
     fit-children: true
@@ -13331,7 +13370,8 @@ FILES["targetbot/looting.otui"] = [[TargetBotLootingPanel < Panel
       anchors.verticalCenter: prev.verticalCenter
       text: Min. capacity:
       margin-left: 5]]
-FILES["targetbot/target.lua"] = [=[local targetbotMacro = nil
+FILES["targetbot/target.lua"] = [=[
+local targetbotMacro = nil
 local config = nil
 local lastAction = 0
 local cavebotAllowance = 0
@@ -14528,7 +14568,8 @@ end
 
 UI.Separator()
 ]=]
-FILES["targetbot/target.otui"] = [[TargetBotEntry < Label
+FILES["targetbot/target.otui"] = [[
+TargetBotEntry < Label
   background-color: alpha
   text-offset: 2 0
   focusable: true
@@ -14633,7 +14674,8 @@ TargetBotPanel < Panel
       margin-top: 2
       text: CONFIG
 ]]
-FILES["targetbot/walking.lua"] = [[-- Smart Mage Run v9.5 - rejected-step watchdog
+FILES["targetbot/walking.lua"] = [[
+-- Smart Mage Run v9.5 - rejected-step watchdog
 local dest
 local maxDist
 local params
@@ -14860,7 +14902,8 @@ macro(20, function()
   TargetBot.walk(true)
 end)
 ]]
-FILES["vBot/AttackBot.lua"] = [=[-- setDefaultTab(storage.coreSettings.joinBot and "Cave" or "Target")
+FILES["vBot/AttackBot.lua"] = [=[
+-- setDefaultTab(storage.coreSettings.joinBot and "Cave" or "Target")
 setDefaultTab("Target")
 -- UI.Separator()
 -- locales
@@ -16868,7 +16911,8 @@ macro(10, function()
 end)
 UI.Separator()
 ]=]
-FILES["vBot/AttackBot.otui"] = [[AttackEntry < UIWidget
+FILES["vBot/AttackBot.otui"] = [[
+AttackEntry < UIWidget
   background-color: alpha
   text-offset: 35 1
   focusable: true
@@ -17524,7 +17568,8 @@ AttackBotWindow < MainWindow
     size: 50 21
     font: cipsoftFont
     text: Settings]]
-FILES["vBot/Conditions.lua"] = [=[setDefaultTab("HP")
+FILES["vBot/Conditions.lua"] = [=[
+setDefaultTab("HP")
 local panelName = "ConditionPanel"
 local ui = setupUI([[
 Panel
@@ -17842,7 +17887,8 @@ Panel
     end
   end)
 ]=]
-FILES["vBot/Conditions.otui"] = [[UturaComboBoxPopupMenu < ComboBoxPopupMenu
+FILES["vBot/Conditions.otui"] = [[
+UturaComboBoxPopupMenu < ComboBoxPopupMenu
 UturaComboBoxPopupMenuButton < ComboBoxPopupMenuButton
 UturaComboBox < ComboBox
   @onSetup: |
@@ -18305,7 +18351,8 @@ ConditionsWindow < MainWindow
     size: 45 21
     margin-top: 15
     margin-right: 5    ]]
-FILES["vBot/Dropper.lua"] = [=[setDefaultTab("Tools")
+FILES["vBot/Dropper.lua"] = [=[
+setDefaultTab("Tools")
 
 local ui = setupUI([[
 Panel
@@ -18472,7 +18519,8 @@ macro(200, function()
 end)
 
 UI.Separator()]=]
-FILES["vBot/HealBot.lua"] = [=[local standBySpells = false
+FILES["vBot/HealBot.lua"] = [=[
+local standBySpells = false
 local standByItems = false
 local editingSpellIndex = nil
 local editingItemIndex = nil
@@ -19391,7 +19439,8 @@ onManaChange(function(player, mana, maxMana, oldMana, oldMaxMana)
   standBySpells = false
 end)
 ]=]
-FILES["vBot/HealBot.otui"] = [[SettingCheckBox < CheckBox
+FILES["vBot/HealBot.otui"] = [[
+SettingCheckBox < CheckBox
   text-wrap: true
   text-auto-resize: true
   margin-top: 3
@@ -19907,7 +19956,8 @@ HealWindow < MainWindow
     anchors.bottom: parent.bottom
     size: 45 21
 ]]
-FILES["vBot/alarms.lua"] = [=[setDefaultTab("Tools")
+FILES["vBot/alarms.lua"] = [=[
+setDefaultTab("Tools")
 local panelName = "alarms"
 
 local soundFiles = {
@@ -20281,7 +20331,8 @@ if true then
 end
 
 UI.Separator()]=]
-FILES["vBot/alarms.otui"] = [[AlarmCheckBox < Panel
+FILES["vBot/alarms.otui"] = [[
+AlarmCheckBox < Panel
   height: 20
   margin-top: 2
 
@@ -20416,7 +20467,8 @@ AlarmsWindow < MainWindow
     size: 45 21
     margin-right: 5
     @onClick: self:getParent():hide()]]
-FILES["vBot/cavebot.lua"] = [=[-- Cavebot by otclient@otclient.ovh
+FILES["vBot/cavebot.lua"] = [=[
+-- Cavebot by otclient@otclient.ovh
 -- visit http://bot.otclient.ovh/
 
 local cavebotTab = "Cave"
@@ -20597,7 +20649,8 @@ if cavebotCompat.loadTargetBot or cavebotCompat.enableTargetBotBisect then
   dofile("/targetbot/target.lua")
 end
 ]=]
-FILES["vBot/cavebot_control_panel.lua"] = [=[setDefaultTab("Cave")
+FILES["vBot/cavebot_control_panel.lua"] = [=[
+setDefaultTab("Cave")
 
 g_ui.loadUIFromString([[
 CaveBotControlPanel < Panel
@@ -20664,7 +20717,8 @@ local backOffline = UI.Button("Offline", function(widget)
     print("[CaveBot] Going back to city on next supply check and going to label 'toOfflineTraining' on depositer action.")
 end, panel.buttons)
 backOffline:setTooltip("Go to label 'toOfflineTraining' after deposit.")]=]
-FILES["vBot/configs.lua"] = [=[--[[ 
+FILES["vBot/configs.lua"] = [=[
+--[[ 
     Configs for modules
     Based on Kondrah storage method  
 --]]
@@ -20761,7 +20815,8 @@ function vBotConfigSave(file)
 
   g_resources.writeFileContents(configFile, result)
 end]=]
-FILES["vBot/core_settings.lua"] = [[setDefaultTab("Cave")
+FILES["vBot/core_settings.lua"] = [[
+setDefaultTab("Cave")
 
 local panelName = "coreSettings"
 storage[panelName] = storage[panelName] or {}
@@ -20892,7 +20947,8 @@ addCheckBox('reachable', 'Target Only Pathable Mobs', rightPanel,
 addCheckBox('showTargetPriority', 'Show Target Priority', rightPanel,
   'Display TargetBot priority information above creatures.')
 ]]
-FILES["vBot/core_settings.otui"] = [[CoreSettingsScrollBar < Panel
+FILES["vBot/core_settings.otui"] = [[
+CoreSettingsScrollBar < Panel
   height: 28
   margin-top: 3
 
@@ -21047,7 +21103,8 @@ CoreBotSettingsWindow < MainWindow
     size: 45 21
     margin-right: 5
 ]]
-FILES["vBot/depositer_config.lua"] = [[setDefaultTab("Cave")
+FILES["vBot/depositer_config.lua"] = [[
+setDefaultTab("Cave")
 
 local panelName = "specialDeposit"
 local depositerPanel
@@ -21167,7 +21224,8 @@ end, true)
 sellContainer:setHeight(35)
 sellContainer:setItems(storage.cavebotSell)
 ]]
-FILES["vBot/depositer_config.otui"] = [[DepositerPanel < MainWindow
+FILES["vBot/depositer_config.otui"] = [[
+DepositerPanel < MainWindow
   size: 245 310
   !text: tr('Stashing Settings')
   @onEscape: self:hide()
@@ -21284,7 +21342,8 @@ FILES["vBot/depositer_config.otui"] = [[DepositerPanel < MainWindow
     size: 45 21
     margin-right: 5
 ]]
-FILES["vBot/eat_food.lua"] = [[setDefaultTab("HP")
+FILES["vBot/eat_food.lua"] = [[
+setDefaultTab("HP")
 -- UI.Separator()
 if type(storage.foodItems) ~= "table" then
   storage.foodItems = {3607, 3592, 3600, 3601, 3725, 3582, 3577, 3578, 3583, 3723, 3731, 3732, 3595, 3593}
@@ -21317,7 +21376,8 @@ macro(5000, "Conjure Food", function()
 end)
 
 UI.Separator()]]
-FILES["vBot/equip.lua"] = [[-- config
+FILES["vBot/equip.lua"] = [[
+-- config
 setDefaultTab("HP")
 -- UI.Separator()
 local scripts = 2 -- if you want more auto equip panels you can change 2 to higher value
@@ -21357,7 +21417,8 @@ macro(250, function()
 end)
 
 UI.Separator()]]
-FILES["vBot/friend_healer.lua"] = [=[setDefaultTab("Hp")
+FILES["vBot/friend_healer.lua"] = [=[
+setDefaultTab("Hp")
 local panelName = "newHealer"
 local ui = setupUI([[
 Panel
@@ -21935,7 +21996,8 @@ macro(100, function()
     end
 end)
 ]=]
-FILES["vBot/friend_healer.otui"] = [[CategoryCheckBox < CheckBox
+FILES["vBot/friend_healer.otui"] = [[
+CategoryCheckBox < CheckBox
   font: verdana-11px-rounded
   margin-top: 3
 
@@ -22342,7 +22404,8 @@ FriendHealer < MainWindow
     size: 60 21
     @onClick: self:getParent():hide()
 ]]
-FILES["vBot/items.lua"] = [[LootItems = {
+FILES["vBot/items.lua"] = [[
+LootItems = {
     ["gold coin"] = 1,
     ["platinum coin"] = 100,
     ["crystal coin"] = 10000,
@@ -23746,7 +23809,8 @@ WasteItems = {
     ["sudden death rune"] = 3155,
     ["paralyse rune"] = 3165
 }]]
-FILES["vBot/main.lua"] = [[Global = {}
+FILES["vBot/main.lua"] = [[
+Global = {}
 Global.useIds = { 34847, 1764, 21051, 30823, 6264, 5282, 20453, 20454, 20474, 11708, 11705, 
 6257, 6256, 2772, 27260, 2773, 1632, 1633, 1948, 435, 6252, 6253, 5007, 4911, 
 1629, 1630, 5108, 5107, 5281, 1968, 435, 1948, 5542, 31116, 31120, 30742, 31115, 
@@ -23769,7 +23833,8 @@ Global.PVPoffsetDirections = {
   [NorthWest] = { -1, -1 }
 }
 ]]
-FILES["vBot/mana_train.lua"] = [[setDefaultTab("HP")
+FILES["vBot/mana_train.lua"] = [[
+setDefaultTab("HP")
 UI.Separator()
 
 UI.Label("Mana Training:")
@@ -23813,7 +23878,8 @@ UI.DualScrollPanel(storage.manaTrain2, function(widget, newParams)
 end)
 
 UI.Separator()]]
-FILES["vBot/new_cavebot_lib.lua"] = [=[CaveBot = {} -- global namespace
+FILES["vBot/new_cavebot_lib.lua"] = [=[
+CaveBot = {} -- global namespace
 
 -------------------------------------------------------------------
 -- CaveBot lib 1.0
@@ -24331,7 +24397,8 @@ end
 function CaveBot.Travel(destination)
     return CaveBot.Conversation("hi", destination, "yes")
 end]=]
-FILES["vBot/playerlist.lua"] = [=[--[[
+FILES["vBot/playerlist.lua"] = [=[
+--[[
   configuration for check players
   example made on server Gunzodus
 
@@ -24683,7 +24750,8 @@ onPlayerPositionChange(function(x,y)
   end
 end)
 -- UI.Separator()]=]
-FILES["vBot/playerlist.otui"] = [[PlayerLabel < UIWidget
+FILES["vBot/playerlist.otui"] = [[
+PlayerLabel < UIWidget
   background-color: alpha
   text-offset: 3 1
   focusable: true
@@ -24834,7 +24902,8 @@ PlayerListWindow < MainWindow
     margin-top: 15
     margin-right: 5
     @onClick: self:getParent():hide()]]
-FILES["vBot/quiver_manager.lua"] = [=[setDefaultTab("Tools")
+FILES["vBot/quiver_manager.lua"] = [=[
+setDefaultTab("Tools")
 
 local panelName = "quiverManagerUI"
 local idSlots = 4
@@ -25547,7 +25616,8 @@ macro(150, function()
   setStatus("ready: " .. currentAmmo)
 end)
 ]=]
-FILES["vBot/supplies.lua"] = [[setDefaultTab("Cave")
+FILES["vBot/supplies.lua"] = [[
+setDefaultTab("Cave")
 local panelName = "supplies"
 if not SuppliesConfig[panelName] or SuppliesConfig[panelName].item1 then
   SuppliesConfig[panelName] = {
@@ -26069,7 +26139,8 @@ Supplies.createProfile = function(profileName)
   vBotConfigSave("supply")
 end
 ]]
-FILES["vBot/supplies.otui"] = [[ProfileLabel < UIWidget
+FILES["vBot/supplies.otui"] = [[
+ProfileLabel < UIWidget
   background-color: alpha
   text-offset: 3 1
   focusable: true
@@ -26322,7 +26393,8 @@ SuppliesWindow < MainWindow
     text: -
     width: 50
     tooltip: decrease all max supplies amount by average]]
-FILES["vBot/vlib.lua"] = [=[-- Author: Vithrax
+FILES["vBot/vlib.lua"] = [=[
+-- Author: Vithrax
 -- contains mostly basic function shortcuts and code shorteners
 
 -- initial global variables declaration
@@ -27556,7 +27628,8 @@ function findItemOnGroundInRange(id,range,position,ignoreBelow)
     end
   end
 end]=]
-FILES["vBot/zenith_mobile_ui.lua"] = [[-- Zenith Mobile floating interface.
+FILES["vBot/zenith_mobile_ui.lua"] = [[
+-- Zenith Mobile floating interface.
 -- Redirects the legacy bot tab helpers to an independent floating window.
 
 local root = g_ui.getRootWidget()
@@ -27774,7 +27847,8 @@ ZenithMobileUI = {
   getTab = createTab,
 }
 ]]
-FILES["vBot/zenith_mobile_ui.otui"] = [[ZenithMobileWindow < MainWindow
+FILES["vBot/zenith_mobile_ui.otui"] = [[
+ZenithMobileWindow < MainWindow
   !text: tr('Zenith Mobile')
   size: 430 560
   padding: 18
@@ -27832,7 +27906,8 @@ ZenithMobileToggleButton < Button
   margin-left: 6
   opacity: 0.92
 ]]
-FILES["zFreeScripts/Spells/zAutoBuff.lua"] = [=[--[[
+FILES["zFreeScripts/Spells/zAutoBuff.lua"] = [=[
+--[[
 vBot Scripting Services / Serviços de script / Servicios de scripting:
 Discord: F.Almeida#8019
 
@@ -28277,7 +28352,8 @@ if rootWidget then
 end
 
 -- UI.Separator()]=]
-FILES["zzzGlobalEventCallbacks.lua"] = [[-- Check Last Balance
+FILES["zzzGlobalEventCallbacks.lua"] = [[
+-- Check Last Balance
 storage.balance = storage.balance or 0
 storage.balanceText = storage.balanceText or ""
 
@@ -28326,7 +28402,6558 @@ end)
 -- onMousePress(function(mousePos, mouseButton)
 --   warn("MousePress: ".. mouseButton)
 -- end)]]
-local RUNTIME_CODE = [[-- Zenith Mobile standalone runtime for OTClient Redemption mobile.
+
+local SUPPORT_FILES = {}
+SUPPORT_FILES["executor.lua"] = [[
+-- Bundled game_bot executor extracted from the target mobile client.
+-- Adapted only to load its support files from the writable Zenith runtime.
+
+local ZENITH_GAME_BOT_ROOT = "/zenith_mobile/game_bot"
+G = rawget(_G, "G") or _G
+
+local ZENITH_FUNCTION_FILES = {
+  "functions/callbacks.lua",
+  "functions/config.lua",
+  "functions/const.lua",
+  "functions/icon.lua",
+  "functions/main.lua",
+  "functions/map.lua",
+  "functions/npc.lua",
+  "functions/player.lua",
+  "functions/player_conditions.lua",
+  "functions/player_inventory.lua",
+  "functions/script_loader.lua",
+  "functions/server.lua",
+  "functions/sound.lua",
+  "functions/test.lua",
+  "functions/tools.lua",
+  "functions/ui.lua",
+  "functions/ui_elements.lua",
+  "functions/ui_legacy.lua",
+  "functions/ui_windows.lua"
+}
+
+local ZENITH_PANEL_FILES = {
+  "panels/attacking.lua",
+  "panels/basic.lua",
+  "panels/healing.lua",
+  "panels/looting.lua",
+  "panels/tools.lua",
+  "panels/war.lua",
+  "panels/waypoints.lua"
+}
+
+local function zenithLoadRuntimeFile(relativePath)
+  local fullPath = ZENITH_GAME_BOT_ROOT .. "/" .. relativePath
+  if not g_resources.fileExists(fullPath) then
+    error("Zenith runtime file not found: " .. fullPath)
+  end
+
+  local source = g_resources.readFileContents(fullPath)
+  local loader = loadstring or load
+  local chunk, loadError = loader(source)
+  if not chunk then
+    error("Error loading " .. fullPath .. ": " .. tostring(loadError))
+  end
+  return chunk()
+end
+
+local function zenithLoadRuntimeList(files)
+  for _, relativePath in ipairs(files) do
+    zenithLoadRuntimeFile(relativePath)
+  end
+end
+
+function executeBot(config, storage, tabs, msgCallback, saveConfigCallback, reloadCallback, websockets)
+  -- load lua and otui files
+  local configFiles = g_resources.listDirectoryFiles("/bot/" .. config, true, false)
+  local luaFiles = {}
+  local uiFiles = {}
+  for i, file in ipairs(configFiles) do
+    local ext = file:split(".")
+    if ext[#ext]:lower() == "lua" then
+      table.insert(luaFiles, file)
+    end
+    if ext[#ext]:lower() == "ui" or ext[#ext]:lower() == "otui" then
+      table.insert(uiFiles, file)
+    end
+  end
+
+  if #luaFiles == 0 then
+    return error("Config (/bot/" .. config .. ") doesn't have lua files")
+  end
+
+  -- init bot variables
+  local context = {}
+  context.configDir = "/bot/".. config
+  context.tabs = tabs
+  context.mainTab = context.tabs:addTab("Main", g_ui.createWidget('BotPanel')).tabPanel.content
+  context.panel = context.mainTab
+  context.saveConfig = saveConfigCallback
+  context.reload = reloadCallback
+
+  context.storage = storage
+  if context.storage._macros == nil then
+    context.storage._macros = {} -- active macros
+  end
+
+  -- websockets, macros, hotkeys, scheduler, icons, callbacks
+  context._websockets = websockets
+  context._macros = {}
+  context._hotkeys = {}
+  context._scheduler = {}
+  context._callbacks = {
+    onKeyDown = {},
+    onKeyUp = {},
+    onKeyPress = {},
+    onTalk = {},
+    onTextMessage = {},
+    onLoginAdvice = {},
+    onAddThing = {},
+    onRemoveThing = {},
+    onCreatureAppear = {},
+    onCreatureDisappear = {},
+    onCreaturePositionChange = {},
+    onCreatureHealthPercentChange = {},
+    onUse = {},
+    onUseWith = {},
+    onContainerOpen = {},
+    onContainerClose = {},
+    onContainerUpdateItem = {},
+    onMissle = {},
+    onAnimatedText = {},
+    onStaticText = {},
+    onChannelList = {},
+    onOpenChannel = {},
+    onCloseChannel = {},
+    onChannelEvent = {},
+    onTurn = {},
+    onWalk = {},
+    onImbuementWindow = {},
+    onModalDialog = {},
+    onAttackingCreatureChange = {},
+    onManaChange = {},
+    onStatesChange = {},
+    onAddItem = {},
+    onGameEditText = {},
+    onGroupSpellCooldown = {},
+    onSpellCooldown = {},
+    onRemoveItem = {},
+    onInventoryChange = {}
+  }
+
+  -- basic functions & classes
+  context.print = print
+  context.bit32 = bit32
+  context.bit = bit
+  context.pairs = pairs
+  context.ipairs = ipairs
+  context.tostring = tostring
+  context.math = math
+  context.table = table
+  context.setmetatable = setmetatable
+  context.string = string
+  context.tonumber = tonumber
+  context.type = type
+  context.pcall = pcall
+  context.os = {
+    time = os.time,
+    difftime = os.difftime,
+    date = os.date,
+    clock = os.clock
+  }
+  if _VERSION == "Lua 5.1" and type(jit) ~= "table" then
+    context.load = function(str)
+      local func = assert(loadstring(str))
+      setfenv(func, context)
+      return func
+    end
+    context.dofile = function(file) 
+      local func = assert(loadstring(g_resources.readFileContents("/bot/" .. config .. "/" .. file)))
+      setfenv(func, context)
+      func()
+    end
+  else
+    context.load = function(str) return assert(load(str, nil, nil, context)) end
+    context.dofile = function(file) assert(load(g_resources.readFileContents("/bot/" .. config .. "/" .. file), file, nil, context))() end
+  end
+  context.loadstring = context.load
+  context.assert = assert
+  context.gcinfo = gcinfo
+  context.tr = tr
+  context.json = json
+  context.base64 = base64
+  context.regexMatch = regexMatch
+  context.getDistanceBetween = function(p1, p2)
+    return math.max(math.abs(p1.x - p2.x), math.abs(p1.y - p2.y))
+  end
+  context.isMobile = g_app.isMobile
+  context.getVersion = g_app.getVersion
+
+  -- classes
+  context.g_resources = g_resources
+  context.g_game = g_game
+  context.g_map = g_map
+  context.g_ui = g_ui
+  context.g_sounds = g_sounds
+  context.g_window = g_window
+  context.g_mouse = g_mouse
+  context.g_keyboard = g_keyboard
+  context.g_things = g_things
+  context.g_settings = g_settings
+  context.g_platform = {
+    openUrl = g_platform.openUrl,
+    openDir = g_platform.openDir,
+  }
+
+  context.Item = Item
+  context.Creature = Creature
+  context.ThingType = ThingType
+  context.Effect = Effect
+  context.Missile = Missile
+  context.Player = Player
+  context.Monster = Monster
+  context.StaticText = StaticText
+  context.HTTP = HTTP
+  context.OutputMessage = OutputMessage
+  context.modules = modules
+  context.Directions = Directions
+
+  -- log functions
+  context.info = function(text) return msgCallback("info", tostring(text)) end
+  context.warn = function(text) return msgCallback("warn", tostring(text)) end
+  context.error = function(text) return msgCallback("error", tostring(text)) end
+  context.warning = context.warn
+
+  -- init context
+  context.now = g_clock.millis()
+  context.time = g_clock.millis()
+  context.player = g_game.getLocalPlayer()
+
+  -- init functions from the bundled runtime copied from this exact client
+  G.botContext = context
+  local supportOk, supportError = pcall(function()
+    zenithLoadRuntimeList(ZENITH_FUNCTION_FILES)
+    context.Panels = {}
+    zenithLoadRuntimeList(ZENITH_PANEL_FILES)
+  end)
+  G.botContext = nil
+  if not supportOk then
+    error(supportError)
+  end
+
+  -- run ui scripts
+  for i, file in ipairs(uiFiles) do
+    g_ui.importStyle(file)
+  end
+
+  -- run lua script
+  for i, file in ipairs(luaFiles) do
+      if _VERSION == "Lua 5.1" and type(jit) ~= "table" then
+        local func = assert(loadstring(g_resources.readFileContents(file)))
+        setfenv(func, context)
+        func()
+      else
+        assert(load(g_resources.readFileContents(file), file, nil, context))()
+      end
+    context.panel = context.mainTab -- reset default tab
+  end
+
+  return {
+    script = function()
+      context.now = g_clock.millis()
+      context.time = g_clock.millis()
+
+      for i, macro in ipairs(context._macros) do
+        if macro.lastExecution + macro.timeout <= context.now and macro.enabled then
+          local status, result = pcall(function()
+            if macro.callback(macro) then
+                macro.lastExecution = context.now
+            end
+          end)
+          if not status then
+            context.error("Macro: " .. macro.name .. " execution error: " .. result)
+          end
+        end
+      end
+
+      while #context._scheduler > 0 and context._scheduler[1].execution <= g_clock.millis() do
+        local status, result = pcall(function()
+          context._scheduler[1].callback()
+        end)
+        if not status then
+          context.error("Schedule execution error: " .. result)
+        end
+        table.remove(context._scheduler, 1)
+      end
+    end,
+    callbacks = {
+      onKeyDown = function(keyCode, keyboardModifiers)
+        local keyDesc = determineKeyComboDesc(keyCode, keyboardModifiers)
+        for i, macro in ipairs(context._macros) do
+          if macro.switch and macro.hotkey == keyDesc then
+            macro.switch:onClick()
+          end
+        end
+        local hotkey = context._hotkeys[keyDesc]
+        if hotkey then
+          if hotkey.single then
+            if hotkey.callback() then
+              hotkey.lastExecution = context.now
+            end
+          end
+          if hotkey.switch then
+            hotkey.switch:setOn(true)
+          end
+        end
+        for i, callback in ipairs(context._callbacks.onKeyDown) do
+          callback(keyDesc)
+        end
+      end,
+      onKeyUp = function(keyCode, keyboardModifiers)
+        local keyDesc = determineKeyComboDesc(keyCode, keyboardModifiers)
+        local hotkey = context._hotkeys[keyDesc]
+        if hotkey then
+          if hotkey.switch then
+            hotkey.switch:setOn(false)
+          end
+        end
+        for i, callback in ipairs(context._callbacks.onKeyUp) do
+          callback(keyDesc)
+        end
+      end,
+      onKeyPress = function(keyCode, keyboardModifiers, autoRepeatTicks)
+        local keyDesc = determineKeyComboDesc(keyCode, keyboardModifiers)
+        local hotkey = context._hotkeys[keyDesc]
+        if hotkey and not hotkey.single then
+          if hotkey.callback() then
+            hotkey.lastExecution = context.now
+          end
+        end
+        for i, callback in ipairs(context._callbacks.onKeyPress) do
+          callback(keyDesc, autoRepeatTicks)
+        end
+      end,
+      onTalk = function(name, level, mode, text, channelId, pos)
+        for i, callback in ipairs(context._callbacks.onTalk) do
+          callback(name, level, mode, text, channelId, pos)
+        end
+      end,
+      onImbuementWindow = function(itemId, slots, activeSlots, imbuements, needItems)
+        for i, callback in ipairs(context._callbacks.onImbuementWindow) do
+          callback(itemId, slots, activeSlots, imbuements, needItems)
+        end
+      end,
+      onTextMessage = function(mode, text)
+        for i, callback in ipairs(context._callbacks.onTextMessage) do
+          callback(mode, text)
+        end
+      end,
+      onLoginAdvice = function(message)
+        for i, callback in ipairs(context._callbacks.onLoginAdvice) do
+          callback(message)
+        end
+      end,
+      onAddThing = function(tile, thing)
+        for i, callback in ipairs(context._callbacks.onAddThing) do
+          callback(tile, thing)
+        end
+      end,
+      onRemoveThing = function(tile, thing)
+        for i, callback in ipairs(context._callbacks.onRemoveThing) do
+          callback(tile, thing)
+        end
+      end,
+      onCreatureAppear = function(creature)
+        for i, callback in ipairs(context._callbacks.onCreatureAppear) do
+          callback(creature)
+        end
+      end,
+      onCreatureDisappear = function(creature)
+        for i, callback in ipairs(context._callbacks.onCreatureDisappear) do
+          callback(creature)
+        end
+      end,
+      onCreaturePositionChange = function(creature, newPos, oldPos)
+        for i, callback in ipairs(context._callbacks.onCreaturePositionChange) do
+          callback(creature, newPos, oldPos)
+        end
+      end,
+      onCreatureHealthPercentChange = function(creature, healthPercent)
+        for i, callback in ipairs(context._callbacks.onCreatureHealthPercentChange) do
+          callback(creature, healthPercent)
+        end
+      end,
+      onUse = function(pos, itemId, stackPos, subType)
+        for i, callback in ipairs(context._callbacks.onUse) do
+          callback(pos, itemId, stackPos, subType)
+        end
+      end,
+      onUseWith = function(pos, itemId, target, subType)
+        for i, callback in ipairs(context._callbacks.onUseWith) do
+          callback(pos, itemId, target, subType)
+        end
+      end,
+      onContainerOpen = function(container, previousContainer)
+        for i, callback in ipairs(context._callbacks.onContainerOpen) do
+          callback(container, previousContainer)
+        end
+      end,
+      onContainerClose = function(container)
+        for i, callback in ipairs(context._callbacks.onContainerClose) do
+          callback(container)
+        end
+      end,
+      onContainerUpdateItem = function(container, slot, item, oldItem)
+        for i, callback in ipairs(context._callbacks.onContainerUpdateItem) do
+          callback(container, slot, item, oldItem)
+        end
+      end,
+      onMissle = function(missle)
+        for i, callback in ipairs(context._callbacks.onMissle) do
+          callback(missle)
+        end
+      end,
+      onAnimatedText = function(thing, text)
+        for i, callback in ipairs(context._callbacks.onAnimatedText) do
+          callback(thing, text)
+        end
+      end,
+      onStaticText = function(thing, text)
+        for i, callback in ipairs(context._callbacks.onStaticText) do
+          callback(thing, text)
+        end
+      end,
+      onChannelList = function(channels)
+        for i, callback in ipairs(context._callbacks.onChannelList) do
+          callback(channels)
+        end
+      end,
+      onOpenChannel = function(channelId, channelName)
+        for i, callback in ipairs(context._callbacks.onOpenChannel) do
+          callback(channels)
+        end
+      end,
+      onCloseChannel = function(channelId)
+        for i, callback in ipairs(context._callbacks.onCloseChannel) do
+          callback(channelId)
+        end
+      end,
+      onChannelEvent = function(channelId, name, event)
+        for i, callback in ipairs(context._callbacks.onChannelEvent) do
+          callback(channelId, name, event)
+        end
+      end,
+      onTurn = function(creature, direction)
+        for i, callback in ipairs(context._callbacks.onTurn) do
+          callback(creature, direction)
+        end
+      end,
+      onWalk = function(creature, oldPos, newPos)
+        for i, callback in ipairs(context._callbacks.onWalk) do
+          callback(creature, oldPos, newPos)
+        end
+      end,
+      onModalDialog = function(id, title, message, buttons, enterButton, escapeButton, choices, priority)
+        for i, callback in ipairs(context._callbacks.onModalDialog) do
+          callback(id, title, message, buttons, enterButton, escapeButton, choices, priority)
+        end
+      end,
+      onGameEditText = function(id, itemId, maxLength, text, writer, time)
+        for i, callback in ipairs(context._callbacks.onGameEditText) do
+          callback(id, itemId, maxLength, text, writer, time)
+        end
+      end,
+      onAttackingCreatureChange = function(creature, oldCreature)
+        for i, callback in ipairs(context._callbacks.onAttackingCreatureChange) do
+          callback(creature, oldCreature)
+        end
+      end,
+      onManaChange = function(player, mana, maxMana, oldMana, oldMaxMana)
+        for i, callback in ipairs(context._callbacks.onManaChange) do
+          callback(player, mana, maxMana, oldMana, oldMaxMana)
+        end
+      end,
+      onAddItem = function(container, slot, item)
+        for i, callback in ipairs(context._callbacks.onAddItem) do
+          callback(container, slot, item)
+        end
+      end,
+      onRemoveItem = function(container, slot, item)
+        for i, callback in ipairs(context._callbacks.onRemoveItem) do
+          callback(container, slot, item)
+        end
+      end,
+      onStatesChange = function(player, states, oldStates)
+        for i, callback in ipairs(context._callbacks.onStatesChange) do
+          callback(player, states, oldStates)
+        end
+      end,
+      onGroupSpellCooldown = function(iconId, duration)
+        for i, callback in ipairs(context._callbacks.onGroupSpellCooldown) do
+          callback(iconId, duration)
+        end
+      end,
+      onSpellCooldown = function(iconId, duration)
+        for i, callback in ipairs(context._callbacks.onSpellCooldown) do
+          callback(iconId, duration)
+        end
+      end,
+      onInventoryChange = function(player, slot, item, oldItem)
+        for i, callback in ipairs(context._callbacks.onInventoryChange) do
+          callback(player, slot, item, oldItem)
+        end
+      end
+    }
+  }
+end
+]]
+SUPPORT_FILES["functions/callbacks.lua"] = [[
+local context = G.botContext
+
+-- callback(callbackType, callback)
+context.callback = function(callbackType, callback)
+  if not context._callbacks[callbackType] then
+    return error("Wrong callback type: " .. callbackType)
+  end
+  if callbackType == "onAddThing" or callbackType == "onRemoveThing" then
+    g_game.enableTileThingLuaCallback(true)
+  end
+
+  local desc = "lua"
+  local info = debug.getinfo(2, "Sl")
+  if info then
+    desc = info.short_src .. ":" .. info.currentline
+  end
+
+  local callbackData = {}
+  table.insert(context._callbacks[callbackType], function(...)
+    if not callbackData.delay or callbackData.delay < context.now then
+      local prevExecution = context._currentExecution
+      context._currentExecution = callbackData
+      local start = g_clock.realMillis()
+      callback(...)
+      local executionTime = g_clock.realMillis() - start
+      if executionTime > 100 then
+        context.warning("Slow " .. callbackType .. " (" .. executionTime .. "ms): " .. desc)
+      end
+      context._currentExecution = prevExecution
+    end
+  end)
+  local cb = context._callbacks[callbackType]
+  return {
+    remove = function()
+      local index = nil
+      for i, cb2 in ipairs(context._callbacks[callbackType]) do
+        if cb == cb2 then
+          index = i
+        end
+      end
+      if index then
+        table.remove(context._callbacks[callbackType], index)
+      end
+    end
+  }
+end
+
+-- onKeyDown(callback) -- callback = function(keys)
+context.onKeyDown = function(callback)
+  return context.callback("onKeyDown", callback)
+end
+
+-- onKeyPress(callback) -- callback = function(keys)
+context.onKeyPress = function(callback)
+  return context.callback("onKeyPress", callback)
+end
+
+-- onKeyUp(callback) -- callback = function(keys)
+context.onKeyUp = function(callback)
+  return context.callback("onKeyUp", callback)
+end
+
+-- onTalk(callback) -- callback = function(name, level, mode, text, channelId, pos)
+context.onTalk = function(callback)
+  return context.callback("onTalk", callback)
+end
+
+-- onTextMessage(callback) -- callback = function(mode, text)
+context.onTextMessage = function(callback)
+  return context.callback("onTextMessage", callback)
+end
+
+-- onLoginAdvice(callback) -- callback = function(message)
+context.onLoginAdvice = function(callback)
+  return context.callback("onLoginAdvice", callback)
+end
+
+-- onAddThing(callback) -- callback = function(tile, thing)
+context.onAddThing = function(callback)
+  return context.callback("onAddThing", callback)
+end
+
+-- onRemoveThing(callback) -- callback = function(tile, thing)
+context.onRemoveThing = function(callback)
+  return context.callback("onRemoveThing", callback)
+end
+
+-- onCreatureAppear(callback) -- callback = function(creature)
+context.onCreatureAppear = function(callback)
+  return context.callback("onCreatureAppear", callback)
+end
+
+-- onCreatureDisappear(callback) -- callback = function(creature)
+context.onCreatureDisappear = function(callback)
+  return context.callback("onCreatureDisappear", callback)
+end
+
+-- onCreaturePositionChange(callback) -- callback = function(creature, newPos, oldPos)
+context.onCreaturePositionChange = function(callback)
+  return context.callback("onCreaturePositionChange", callback)
+end
+
+-- onCreatureHealthPercentChange(callback) -- callback = function(creature, healthPercent)
+context.onCreatureHealthPercentChange = function(callback)
+  return context.callback("onCreatureHealthPercentChange", callback)
+end
+
+-- onUse(callback) -- callback = function(pos, itemId, stackPos, subType)
+context.onUse = function(callback)
+  return context.callback("onUse", callback)
+end
+
+-- onUseWith(callback) -- callback = function(pos, itemId, target, subType)
+context.onUseWith = function(callback)
+  return context.callback("onUseWith", callback)
+end
+
+-- onContainerOpen -- callback = function(container, previousContainer)
+context.onContainerOpen = function(callback)
+  return context.callback("onContainerOpen", callback)
+end
+
+-- onContainerClose -- callback = function(container)
+context.onContainerClose = function(callback)
+  return context.callback("onContainerClose", callback)
+end
+
+-- onContainerUpdateItem -- callback = function(container, slot, item, oldItem)
+context.onContainerUpdateItem = function(callback)
+  return context.callback("onContainerUpdateItem", callback)
+end
+
+-- onMissle -- callback = function(missle)
+context.onMissle = function(callback)
+  return context.callback("onMissle", callback)
+end
+
+-- onAnimatedText -- callback = function(thing, text)
+context.onAnimatedText = function(callback)
+  return context.callback("onAnimatedText", callback)
+end
+
+-- onStaticText -- callback = function(thing, text)
+context.onStaticText = function(callback)
+  return context.callback("onStaticText", callback)
+end
+
+-- onChannelList -- callback = function(channels)
+context.onChannelList = function(callback)
+  return context.callback("onChannelList", callback)
+end
+
+-- onOpenChannel -- callback = function(channelId, name)
+context.onOpenChannel = function(callback)
+  return context.callback("onOpenChannel", callback)
+end
+
+-- onCloseChannel -- callback = function(channelId)
+context.onCloseChannel = function(callback)
+  return context.callback("onCloseChannel", callback)
+end
+
+-- onChannelEvent -- callback = function(channelId, name, event)
+context.onChannelEvent = function(callback)
+  return context.callback("onChannelEvent", callback)
+end
+
+-- onTurn -- callback = function(creature, direction)
+context.onTurn = function(callback)
+  return context.callback("onTurn", callback)
+end
+
+-- onWalk -- callback = function(creature, oldPos, newPos)
+context.onWalk = function(callback)
+  return context.callback("onWalk", callback)
+end
+
+-- onImbuementWindow -- callback = function(itemId, slots, activeSlots, imbuements, needItems)
+context.onImbuementWindow = function(callback)
+  return context.callback("onImbuementWindow", callback)
+end
+
+-- onModalDialog -- callback = function(id, title, message, buttons, enterButton, escapeButton, choices, priority) -- priority is unused, ignore it
+context.onModalDialog = function(callback)
+  return context.callback("onModalDialog", callback)
+end
+
+-- onAttackingCreatureChange -- callback = function(creature, oldCreature)
+context.onAttackingCreatureChange = function(callback)
+  return context.callback("onAttackingCreatureChange", callback)
+end
+
+-- onManaChange -- callback = function(player, mana, maxMana, oldMana, oldMaxMana)
+context.onManaChange = function(callback)
+  return context.callback("onManaChange", callback)
+end
+
+-- onAddItem - callback = function(container, slot, item, oldItem)
+context.onAddItem = function(callback)
+  return context.callback("onAddItem", callback)
+end
+
+-- onRemoveItem - callback = function(container, slot, item)
+context.onRemoveItem = function(callback)
+  return context.callback("onRemoveItem", callback)
+end
+
+-- onStatesChange - callback = function(player, states, oldStates)
+context.onStatesChange = function(callback)
+  return context.callback("onStatesChange", callback)
+end
+
+-- onGameEditText - callback = function(id, itemId, maxLength, text, writer, time)
+context.onGameEditText = function(callback)
+  return context.callback("onGameEditText", callback)
+end
+
+-- onSpellCooldown - callback = function(iconId, duration)
+context.onSpellCooldown = function(callback)
+  return context.callback("onSpellCooldown", callback)
+end
+
+-- onGroupSpellCooldown - callback = function(iconId, duration)
+context.onGroupSpellCooldown = function(callback)
+  return context.callback("onGroupSpellCooldown", callback)
+end
+
+-- onInventoryChange - callback = function(player, slot, item, oldItem)
+context.onInventoryChange = function(callback)
+  return context.callback("onInventoryChange", callback)
+end
+
+-- CUSTOM CALLBACKS
+
+-- listen(name, callback) -- callback = function(text, channelId, pos)
+context.listen = function(name, callback)
+  if not name then return context.error("listen: invalid name") end
+  name = name:lower()
+  return context.onTalk(function(name2, level, mode, text, channelId, pos)
+    if name == name2:lower() then
+      callback(text, channelId, pos)
+    end
+  end)
+end
+
+-- onPlayerPositionChange(callback) -- callback = function(newPos, oldPos)
+context.onPlayerPositionChange = function(callback)
+  return context.onCreaturePositionChange(function(creature, newPos, oldPos)
+    if creature == context.player then
+      callback(newPos, oldPos)
+    end
+  end)
+end
+
+-- onPlayerHealthChange(callback) -- callback = function(healthPercent)
+context.onPlayerHealthChange = function(callback)
+  return context.onCreatureHealthPercentChange(function(creature, healthPercent)
+    if creature == context.player then
+      callback(healthPercent)
+    end
+  end)
+end
+
+-- onPlayerInventoryChange -- callback = function(slot, item, oldItem)
+context.onPlayerInventoryChange = function(callback)
+  return context.onInventoryChange(function(player, slot, item, oldItem)
+    if player == context.player then
+      callback(slot, item, oldItem)
+    end
+  end)
+end
+]]
+SUPPORT_FILES["functions/config.lua"] = [=[
+--[[
+Config - create, load and save config file (.json / .cfg)
+Used by cavebot and other things
+]]
+   --
+
+local context = G.botContext
+context.Config = {}
+local Config = context.Config
+
+Config.exist = function(dir)
+  return g_resources.directoryExists(context.configDir .. "/" .. dir)
+end
+
+Config.create = function(dir)
+  g_resources.makeDir(context.configDir .. "/" .. dir)
+  return Config.exist(dir)
+end
+
+Config.list = function(dir)
+  if not Config.exist(dir) then
+    if not Config.create(dir) then
+      return contex.error("Can't create config dir: " .. context.configDir .. "/" .. dir)
+    end
+  end
+  local list = g_resources.listDirectoryFiles(context.configDir .. "/" .. dir)
+  local correctList = {}
+  for k, v in ipairs(list) do -- filter files
+    local nv = v:gsub(".json", ""):gsub(".cfg", "")
+    if nv ~= v then
+      table.insert(correctList, nv)
+    end
+  end
+  return correctList
+end
+
+-- load config from string insteaf of file
+Config.parse = function(data)
+  local status, result = pcall(function()
+    if data:len() < 2 then return {} end
+    return json.decode(data)
+  end)
+  if status and type(result) == 'table' then
+    return result
+  end
+  local status, result = pcall(function()
+    return table.decodeStringPairList(data)
+  end)
+  if status and type(result) == 'table' then
+    return result
+  end
+  return context.error("Invalid config format")
+end
+
+Config.load = function(dir, name)
+  local file = context.configDir .. "/" .. dir .. "/" .. name .. ".json"
+  if g_resources.fileExists(file) then -- load json
+    local status, result = pcall(function()
+      local data = g_resources.readFileContents(file)
+      if data:len() < 2 then return {} end
+      return json.decode(data)
+    end)
+    if not status then
+      context.error("Invalid json config (" .. name .. "): " .. result)
+      return {}
+    end
+    return result
+  end
+  file = context.configDir .. "/" .. dir .. "/" .. name .. ".cfg"
+  if g_resources.fileExists(file) then -- load cfg
+    local status, result = pcall(function()
+      return table.decodeStringPairList(g_resources.readFileContents(file))
+    end)
+    if not status then
+      context.error("Invalid cfg config (" .. name .. "): " .. result)
+      return {}
+    end
+    return result
+  end
+  return context.error("Config " .. file .. " doesn't exist")
+end
+
+Config.loadRaw = function(dir, name)
+  local file = context.configDir .. "/" .. dir .. "/" .. name .. ".json"
+  if g_resources.fileExists(file) then -- load json
+    return g_resources.readFileContents(file)
+  end
+  file = context.configDir .. "/" .. dir .. "/" .. name .. ".cfg"
+  if g_resources.fileExists(file) then -- load cfg
+    return g_resources.readFileContents(file)
+  end
+  return context.error("Config " .. file .. " doesn't exist")
+end
+
+Config.save = function(dir, name, value, forcedExtension)
+  if not Config.exist(dir) then
+    if not Config.create(dir) then
+      return contex.error("Can't create config dir: " .. context.configDir .. "/" .. dir)
+    end
+  end
+  if type(value) ~= 'table' then
+    return context.error("Invalid config value type: " .. type(value) .. ", should be table")
+  end
+  local file = context.configDir .. "/" .. dir .. "/" .. name
+  if (table.isStringPairList(value) and forcedExtension ~= "json") or forcedExtension == "cfg" then -- cfg
+    g_resources.writeFileContents(file .. ".cfg", table.encodeStringPairList(value))
+  else
+    g_resources.writeFileContents(file .. ".json", json.encode(value, 2))
+  end
+  return true
+end
+
+Config.remove = function(dir, name)
+  local file = context.configDir .. "/" .. dir .. "/" .. name .. ".json"
+  local ret = false
+  if g_resources.fileExists(file) then
+    g_resources.deleteFile(file)
+    ret = true
+  end
+  file = context.configDir .. "/" .. dir .. "/" .. name .. ".cfg"
+  if g_resources.fileExists(file) then
+    g_resources.deleteFile(file)
+    ret = true
+  end
+  return ret
+end
+
+-- setup is used for BotConfig widget
+-- not done yet
+Config.setup = function(dir, widget, configExtension, callback)
+  if type(dir) ~= 'string' or dir:len() == 0 then
+    return context.error("Invalid config dir")
+  end
+  if not Config.exist(dir) and not Config.create(dir) then
+    return context.error("Can't create config dir: " .. dir)
+  end
+  if type(context.storage._configs) ~= "table" then
+    context.storage._configs = {}
+  end
+  if type(context.storage._configs[dir]) ~= "table" then
+    context.storage._configs[dir] = {
+      enabled = false,
+      selected = ""
+    }
+  else
+    widget.switch:setOn(context.storage._configs[dir].enabled)
+  end
+
+  local isRefreshing = false
+  local refresh = function()
+    isRefreshing = true
+    local configs = Config.list(dir)
+    local configIndex = 1
+    widget.list:clear()
+    for v, k in ipairs(configs) do
+      widget.list:addOption(k)
+      if k == context.storage._configs[dir].selected then
+        configIndex = v
+      end
+    end
+    local data = nil
+    if #configs > 0 then
+      widget.list:setCurrentIndex(configIndex)
+      context.storage._configs[dir].selected = widget.list:getCurrentOption().text
+      data = Config.load(dir, configs[configIndex])
+    else
+      context.storage._configs[dir].selected = nil
+    end
+    context.storage._configs[dir].enabled = widget.switch:isOn()
+    isRefreshing = false
+    callback(context.storage._configs[dir].selected, widget.switch:isOn(), data)
+  end
+
+  widget.list.onOptionChange = function(widget)
+    if not isRefreshing then
+      context.storage._configs[dir].selected = widget:getCurrentOption().text
+      refresh()
+    end
+  end
+
+  widget.switch.onClick = function()
+    widget.switch:setOn(not widget.switch:isOn())
+    refresh()
+  end
+
+  widget.add.onClick = function()
+    context.UI.SinglelineEditorWindow("config_name", { title = "Enter config name" }, function(name)
+      name = name:gsub("%s+", "_")
+      if name:len() == 0 or name:len() >= 30 or name:find("/") or name:find("\\") then
+        return context.error("Invalid config name")
+      end
+      local file = context.configDir .. "/" .. dir .. "/" .. name .. "." .. configExtension
+      if g_resources.fileExists(file) then
+        return context.error("Config " .. name .. " already exist")
+      end
+      if configExtension == "json" then
+        g_resources.writeFileContents(file, json.encode({}))
+      else
+        g_resources.writeFileContents(file, "")
+      end
+      context.storage._configs[dir].selected = name
+      widget.switch:setOn(false)
+      refresh()
+    end)
+  end
+
+  widget.edit.onClick = function()
+    local name = context.storage._configs[dir].selected
+    if not name then return end
+    context.UI.MultilineEditorWindow(Config.loadRaw(dir, name), { title = "Config editor - " .. name .. " in " .. dir },
+      function(newValue)
+        local data = Config.parse(newValue)
+        Config.save(dir, name, data, configExtension)
+        refresh()
+      end)
+  end
+
+  widget.remove.onClick = function()
+    local name = context.storage._configs[dir].selected
+    if not name then return end
+    context.UI.ConfirmationWindow("Config removal", "Do you want to remove config " .. name .. " from " .. dir .. "?",
+      function()
+        Config.remove(dir, name)
+        widget.switch:setOn(false)
+        refresh()
+      end)
+  end
+
+  refresh()
+
+  return {
+    isOn = function()
+      return widget.switch:isOn()
+    end,
+    isOff = function()
+      return not widget.switch:isOn()
+    end,
+    setOn = function(val)
+      if val == false then
+        if widget.switch:isOn() then
+          widget.switch:onClick()
+        end
+        return
+      end
+      if not widget.switch:isOn() then
+        widget.switch:onClick()
+      end
+    end,
+    setOff = function(val)
+      if val == false then
+        if not widget.switch:isOn() then
+          widget.switch:onClick()
+        end
+        return
+      end
+      if widget.switch:isOn() then
+        widget.switch:onClick()
+      end
+    end,
+    save = function(data)
+      Config.save(dir, context.storage._configs[dir].selected, data, configExtension)
+    end,
+    refresh = refresh,
+    reload = refresh,
+    getActiveConfigName = function()
+      return context.storage._configs[dir].selected
+    end
+  }
+end
+]=]
+SUPPORT_FILES["functions/const.lua"] = [[
+local context = G.botContext
+
+context.North = 0
+context.East = 1
+context.South = 2
+context.West = 3
+context.NorthEast = 4
+context.SouthEast = 5
+context.SouthWest = 6
+context.NorthWest = 7
+
+context.InventorySlotOther = 0
+context.InventorySlotHead = 1
+context.InventorySlotNeck = 2
+context.InventorySlotBack = 3
+context.InventorySlotBody = 4
+context.InventorySlotRight = 5
+context.InventorySlotLeft = 6
+context.InventorySlotLeg = 7
+context.InventorySlotFeet = 8
+context.InventorySlotFinger = 9
+context.InventorySlotAmmo = 10
+context.InventorySlotPurse = 11
+context.InventorySlotFirst = 1
+context.InventorySlotLast = 10
+
+context.GameColorizedLootValue = GameColorizedLootValue
+]]
+SUPPORT_FILES["functions/icon.lua"] = [=[
+local context = G.botContext
+
+local iconsWithoutPosition = 0
+
+context.addIcon = function(id, options, callback)
+--[[
+  Available options:
+    item: {id=2160, count=100}
+    outfit: outfit table ({})
+    text: string
+    x: float (0.0 - 1.0)
+    y: float (0.0 - 1.0)
+    hotkey: string
+    switchable: true / false [default: true]
+    movable: true / false [default: true]
+    phantom: true / false [defaule: false]
+]]--
+  local panel = modules.game_interface.gameMapPanel
+  if type(id) ~= "string" or id:len() < 1 then
+    return context.error("Invalid id for addIcon")
+  end
+  if options.switchable == false and type(callback) ~= 'function' then
+    return context.error("Invalid callback for addIcon")
+  end
+  if type(context.storage._icons) ~= "table" then
+    context.storage._icons = {}
+  end
+  if type(context.storage._icons[id]) ~= "table" then
+    context.storage._icons[id] = {}
+  end
+  local config = context.storage._icons[id]
+  local widget = g_ui.createWidget("BotIcon", panel)
+  widget.botWidget = true
+  widget.botIcon = true
+
+  if type(config.x) ~= 'number' and type(config.y) ~= 'number' then
+    if type(options.x) == 'number' and type(options.y) == 'number' then
+      config.x = math.min(1.0, math.max(0.0, options.x))
+      config.y = math.min(1.0, math.max(0.0, options.y))
+    else
+      config.x = 0.01 + math.floor(iconsWithoutPosition / 5) / 10
+      config.y = 0.05 + (iconsWithoutPosition % 5) / 5
+      iconsWithoutPosition = iconsWithoutPosition + 1
+    end
+  end
+
+  if options.item then
+    if type(options.item) == 'number' then
+      widget.item:setItemId(options.item)
+    else
+      widget.item:setItemId(options.item.id)
+      widget.item:setItemCount(options.item.count or 1)
+      widget.item:setShowCount(false)
+    end
+  end
+
+  if options.outfit then
+    widget.creature:setOutfit(options.outfit)
+  end
+
+  if options.switchable == false then
+    widget.status:hide()
+    widget.status:setOn(true)
+  else
+    if config.enabled ~= true then
+      config.enabled = false
+    end
+    widget.status:setOn(config.enabled)
+  end
+
+  if options.text then
+    if options.switchable ~= false then
+      widget.status:hide()
+      if widget.status:isOn() then
+        widget.text:setColor('green')
+      else
+        widget.text:setColor('red')
+      end
+    end
+    widget.text:setText(options.text)
+  end
+
+  widget.setOn = function(val)
+    widget.status:setOn(val)
+    if widget.status:isOn() then
+      widget.text:setColor('green')
+    else
+      widget.text:setColor('red')
+    end
+    config.enabled = widget.status:isOn()
+  end
+
+  widget.onClick = function(widget)
+    if options.switchable ~= false then
+      widget.setOn(not widget.status:isOn())
+      if type(callback) == 'table' then
+        callback.setOn(config.enabled)
+        return
+      end
+    end
+
+    callback(widget, widget.status:isOn())
+  end
+
+  if options.hotkey then
+    widget.hotkey:setText(options.hotkey)
+    context.hotkey(options.hotkey, "", function()
+      widget:onClick()
+    end, nil, options.switchable ~= false)
+  else
+    widget.hotkey:hide()
+  end
+
+  if options.movable ~= false then
+    widget.onDragEnter = function(widget, mousePos)
+      if not g_keyboard.isCtrlPressed() then
+        return false
+      end
+      widget:breakAnchors()
+      widget.movingReference = { x = mousePos.x - widget:getX(), y = mousePos.y - widget:getY() }
+      return true
+    end
+
+    widget.onDragMove = function(widget, mousePos, moved)
+      local parentRect = widget:getParent():getRect()
+      local x = math.min(math.max(parentRect.x, mousePos.x - widget.movingReference.x), parentRect.x + parentRect.width - widget:getWidth())
+      local y = math.min(math.max(parentRect.y - widget:getParent():getMarginTop(), mousePos.y - widget.movingReference.y), parentRect.y + parentRect.height - widget:getHeight())
+      widget:move(x, y)
+      return true
+    end
+
+    widget.onDragLeave = function(widget, pos)
+      local parent = widget:getParent()
+      local parentRect = parent:getRect()
+      local x = widget:getX() - parentRect.x
+      local y = widget:getY() - parentRect.y
+      local width = parentRect.width - widget:getWidth()
+      local height = parentRect.height - widget:getHeight()
+
+      config.x = math.min(1, math.max(0, x / width))
+      config.y = math.min(1, math.max(0, y / height))
+
+      widget:addAnchor(AnchorHorizontalCenter, 'parent', AnchorHorizontalCenter)
+      widget:addAnchor(AnchorVerticalCenter, 'parent', AnchorVerticalCenter)
+      widget:setMarginTop(math.max(height * (-0.5) - parent:getMarginTop(), height * (-0.5 + config.y)))
+      widget:setMarginLeft(width * (-0.5 + config.x))
+      return true
+    end
+  end
+
+  widget.onGeometryChange = function(widget)
+    if widget:isDragging() then return end
+    local parent = widget:getParent()
+    local parentRect = parent:getRect()
+    local width = parentRect.width - widget:getWidth()
+    local height = parentRect.height - widget:getHeight()
+    widget:setMarginTop(math.max(height * (-0.5) - parent:getMarginTop(), height * (-0.5 + config.y)))
+    widget:setMarginLeft(width * (-0.5 + config.x))
+  end
+
+  if options.phantom ~= true then
+    widget.onMouseRelease = function()
+      return true
+    end
+  end
+
+  if options.switchable ~= false then
+    if type(callback) == 'table' then
+      callback.setOn(config.enabled)
+      callback.icon = widget
+    else
+      callback(widget, widget.status:isOn())
+    end
+  end
+  return widget
+end
+]=]
+SUPPORT_FILES["functions/main.lua"] = [[
+local context = G.botContext
+
+-- MAIN BOT FUNCTION
+-- macro(timeout, callback)
+-- macro(timeout, name, callback)
+-- macro(timeout, name, callback, parent)
+-- macro(timeout, name, hotkey, callback)
+-- macro(timeout, name, hotkey, callback, parent)
+context.macro = function(timeout, name, hotkey, callback, parent)
+  if type(timeout) ~= 'number' or timeout < 1 then
+    error("Invalid timeout for macro: " .. tostring(timeout))
+  end
+  if type(name) == 'function' then
+    callback = name
+    name = ""
+    hotkey = ""
+  elseif type(hotkey) == 'function' then
+    parent = callback
+    callback = hotkey
+    hotkey = ""
+  elseif type(callback) ~= 'function' then
+    error("Invalid callback for macro: " .. tostring(callback))
+  end
+  if hotkey == nil then
+    hotkey = ""
+  end
+  if type(name) ~= 'string' or type(hotkey) ~= 'string' then
+    error("Invalid name or hotkey for macro")
+  end
+  if not parent then
+    parent = context.panel
+  end
+  if hotkey:len() > 0 then
+    hotkey = retranslateKeyComboDesc(hotkey)
+  end
+
+  -- min timeout is 50, to avoid lags
+  if timeout < 50 then
+    timeout = 50
+  end
+
+  table.insert(context._macros, {
+    enabled = false,
+    name = name,
+    timeout = timeout,
+    lastExecution = context.now + math.random(0, 100),
+    hotkey = hotkey,
+  })
+  local macro = context._macros[#context._macros]
+
+  macro.isOn = function()
+    return macro.enabled
+  end
+  macro.isOff = function()
+    return not macro.enabled
+  end
+  macro.toggle = function(widget)
+    if macro.isOn() then
+      macro.setOff()
+    else
+      macro.setOn()
+    end
+  end
+  macro.setOn = function(val)
+    if val == false then
+      return macro.setOff()
+    end
+    macro.enabled = true
+    context.storage._macros[name] = true
+    if macro.switch then
+      macro.switch:setOn(true)
+    end
+    if macro.icon then
+      macro.icon.setOn(true)
+    end
+  end
+  macro.setOff = function(val)
+    if val == false then
+      return macro.setOn()
+    end
+    macro.enabled = false
+    context.storage._macros[name] = false
+    if macro.switch then
+      macro.switch:setOn(false)
+    end
+    if macro.icon then
+      macro.icon.setOn(false)
+    end
+  end
+
+  if name:len() > 0 then
+    -- creature switch
+    local text = name
+    if hotkey:len() > 0 then
+      text = name .. " [" .. hotkey .. "]"
+    end
+    macro.switch = context.addSwitch("macro_" .. (#context._macros + 1), text, macro.toggle, parent)
+
+    -- load state
+    if context.storage._macros[name] == true then
+      macro.setOn()
+    end
+  else
+    macro.enabled = true -- unnamed macros are enabled by default
+  end
+
+  local desc = "lua"
+  local info = debug.getinfo(2, "Sl")
+  if info then
+    desc = info.short_src .. ":" .. info.currentline
+  end
+
+  macro.callback = function(macro)
+    if not macro.delay or macro.delay < context.now then
+      context._currentExecution = macro
+      local start = g_clock.realMillis()
+      callback(macro)
+      local executionTime = g_clock.realMillis() - start
+      if executionTime > 100 then
+        context.warning("Slow macro (" .. executionTime .. "ms): " .. macro.name .. " - " .. desc)
+      end
+      context._currentExecution = nil
+      return true
+    end
+  end
+  return macro
+end
+
+-- hotkey(keys, callback)
+-- hotkey(keys, name, callback)
+-- hotkey(keys, name, callback, parent)
+context.hotkey = function(keys, name, callback, parent, single)
+  if type(name) == 'function' then
+    callback = name
+    name = ""
+  end
+  if not parent then
+    parent = context.panel
+  end
+  keys = retranslateKeyComboDesc(keys)
+  if not keys or #keys == 0 then
+    return context.error("Invalid hotkey keys " .. tostring(name))
+  end
+  if context._hotkeys[keys] then
+    return context.error("Duplicated hotkey: " .. keys)
+  end
+
+  local switch = nil
+  if name:len() > 0 then
+    switch = context._addHotkeySwitch(name, keys, parent)
+  end
+
+  context._hotkeys[keys] = {
+    name = name,
+    lastExecution = context.now,
+    switch = switch,
+    single = single
+  }
+
+  local desc = "lua"
+  local info = debug.getinfo(2, "Sl")
+  if info then
+    desc = info.short_src .. ":" .. info.currentline
+  end
+
+  local hotkeyData = context._hotkeys[keys]
+  hotkeyData.callback = function()
+    if not hotkeyData.delay or hotkeyData.delay < context.now then
+      context._currentExecution = hotkeyData
+      local start = g_clock.realMillis()
+      callback()
+      local executionTime = g_clock.realMillis() - start
+      if executionTime > 100 then
+        context.warning("Slow hotkey (" .. executionTime .. "ms): " .. hotkeyData.name .. " - " .. desc)
+      end
+      context._currentExecution = nil
+      return true
+    end
+  end
+
+  return hotkeyData
+end
+
+-- singlehotkey(keys, callback)
+-- singlehotkey(keys, name, callback)
+-- singlehotkey(keys, name, callback, parent)
+context.singlehotkey = function(keys, name, callback, parent)
+  if type(name) == 'function' then
+    callback = name
+    name = ""
+  end
+  return context.hotkey(keys, name, callback, parent, true)
+end
+
+-- schedule(timeout, callback)
+context.schedule = function(timeout, callback)
+  local extecute_time = g_clock.millis() + timeout
+  table.insert(context._scheduler, {
+    execution = extecute_time,
+    callback = callback
+  })
+  table.sort(context._scheduler, function(a, b) return a.execution < b.execution end)
+end
+
+-- delay(duration) -- block execution of current macro/hotkey/callback for x milliseconds
+context.delay = function(duration)
+  if not context._currentExecution then
+    return context.error("Invalid usage of delay function, it should be used inside callbacks")
+  end
+  context._currentExecution.delay = context.now + duration
+end
+]]
+SUPPORT_FILES["functions/map.lua"] = [=[
+local context = G.botContext
+
+context.getMapView = function() return modules.game_interface.getMapPanel() end
+context.getMapPanel = context.getMapView
+context.zoomIn = function() modules.game_interface.getMapPanel():zoomIn() end
+context.zoomOut = function() modules.game_interface.getMapPanel():zoomOut() end
+
+context.getSpectators = function(param1, param2)
+--[[
+  if param1 is table (position) then it's used for central position, then param2 is used as param1
+  if param1 is creature, then creature position and direction of creature is used, then param2 is used as param1
+  if param1 is true/false then it's used for multifloor, example: getSpectators(true)
+  if param1 is string then it's used for getSpectatorsByPattern
+]]--
+  local pos = context.player:getPosition()
+  local direction = context.player:getDirection()
+  if type(param1) == 'table' then
+    pos = param1
+    direction = 8 -- invalid direction
+    param1 = param2
+  end
+  if type(param1) == 'userdata' then
+    pos = param1:getPosition()
+    direction = param1:getDirection()
+    param1 = param2
+  end
+
+  if type(param1) == 'string' then
+    return g_map.getSpectatorsByPattern(pos, param1, direction)
+  end
+
+  local multifloor = false
+  if type(param1) == 'boolean' and param1 == true then
+    multifloor = true
+  end
+  return g_map.getSpectators(pos, multifloor)
+end
+
+context.getCreatureById = function(id, multifloor)
+  if type(id) ~= 'number' then return nil end
+  if multifloor ~= true then
+    multifloor = false
+  end
+  for i, spec in ipairs(g_map.getSpectators(context.player:getPosition(), multifloor)) do
+     if spec:getId() == id then
+        return spec
+     end
+  end
+  return nil
+end
+
+context.getCreatureByName = function(name, multifloor)
+  if not name then return nil end
+  name = name:lower()
+  if multifloor ~= true then
+    multifloor = false
+  end
+  for i, spec in ipairs(g_map.getSpectators(context.player:getPosition(), multifloor)) do
+     if spec:getName():lower() == name then
+        return spec
+     end
+  end
+  return nil
+end
+
+context.getPlayerByName = function(name, multifloor)
+  if not name then return nil end
+  name = name:lower()
+  if multifloor ~= true then
+    multifloor = false
+  end
+  for i, spec in ipairs(g_map.getSpectators(context.player:getPosition(), multifloor)) do
+     if spec:isPlayer() and spec:getName():lower() == name then
+        return spec
+     end
+  end
+  return nil
+end
+
+context.findAllPaths = function(start, maxDist, params)
+  --[[
+    Available params:
+      ignoreLastCreature
+      ignoreCreatures
+      ignoreNonPathable
+      ignoreNonWalkable
+      ignoreStairs
+      ignoreCost
+      allowUnseen
+      allowOnlyVisibleTiles
+      maxDistanceFrom
+  ]]--
+  if type(params) ~= 'table' then
+    params = {}
+  end
+  for key, value in pairs(params) do
+    if value == nil or value == false then
+      params[key] = 0
+    elseif value == true then
+      params[key] = 1
+    end
+  end
+  if type(params['maxDistanceFrom']) == 'table' then
+    if #params['maxDistanceFrom'] == 2 then
+      params['maxDistanceFrom'] = params['maxDistanceFrom'][1].x .. "," .. params['maxDistanceFrom'][1].y ..
+        "," .. params['maxDistanceFrom'][1].z .. "," .. params['maxDistanceFrom'][2]
+    elseif #params['maxDistanceFrom'] == 4 then
+      params['maxDistanceFrom'] = params['maxDistanceFrom'][1] .. "," .. params['maxDistanceFrom'][2] ..
+        "," .. params['maxDistanceFrom'][3] .. "," .. params['maxDistanceFrom'][4]
+    end
+  end
+  return g_map.findEveryPath(start, maxDist, params)
+end
+context.findEveryPath = context.findAllPaths
+
+context.translateAllPathsToPath = function(paths, destPos)
+  local predirections = {}
+  local directions = {}
+  local destPosStr = destPos
+  if type(destPos) ~= 'string' then
+    destPosStr = destPos.x .. "," .. destPos.y .. "," .. destPos.z
+  end
+
+  while destPosStr:len() > 0 do
+    local node = paths[destPosStr]
+    if not node then
+      break
+    end
+    if node[3] < 0 then
+      break
+    end
+    table.insert(predirections, node[3])
+    destPosStr = node[4]
+  end
+  -- reverse
+  for i=#predirections,1,-1 do
+    table.insert(directions, predirections[i])
+  end
+  return directions
+end
+context.translateEveryPathToPath = context.translateAllPathsToPath
+
+context.findPath = function(startPos, destPos, maxDist, params)
+  --[[
+    Available params:
+      ignoreLastCreature
+      ignoreCreatures
+      ignoreNonPathable
+      ignoreNonWalkable
+      ignoreStairs
+      ignoreCost
+      allowUnseen
+      allowOnlyVisibleTiles
+      precision
+      marginMin
+      marginMax
+      maxDistanceFrom
+  ]]--
+  if not destPos or startPos.z ~= destPos.z then
+    return
+  end
+  if type(maxDist) ~= 'number' then
+    maxDist = 100
+  end
+  if type(params) ~= 'table' then
+    params = {}
+  end
+  local destPosStr = destPos.x .. "," .. destPos.y .. "," .. destPos.z
+  params["destination"] = destPosStr
+  local paths = context.findAllPaths(startPos, maxDist, params)
+  local marginMin = params.marginMin or params.minMargin
+  local marginMax = params.marginMax or params.maxMargin
+  if type(marginMin) == 'number' and type(marginMax) == 'number' then
+    local bestCandidate = nil
+    local bestCandidatePos = nil
+    for x = -marginMax, marginMax do
+      for y = -marginMax, marginMax do
+        if math.abs(x) >= marginMin or math.abs(y) >= marginMin then
+          local dest = (destPos.x + x) .. "," .. (destPos.y + y) .. "," .. destPos.z
+          local node = paths[dest]
+          if node and (not bestCandidate or bestCandidate[1] > node[1]) then
+            bestCandidate = node
+            bestCandidatePos = dest
+          end
+        end
+      end
+    end
+    if bestCandidate then
+      return context.translateAllPathsToPath(paths, bestCandidatePos)
+    end
+    return
+  end
+
+  if not paths[destPosStr] then
+    local precision = params.precision
+    if type(precision) == 'number' then
+      for p = 1, precision do
+        local bestCandidate = nil
+        local bestCandidatePos = nil
+        for x = -p, p do
+          for y = -p, p do
+            local dest = (destPos.x + x) .. "," .. (destPos.y + y) .. "," .. destPos.z
+            local node = paths[dest]
+            if node and (not bestCandidate or bestCandidate[1] > node[1]) then
+              bestCandidate = node
+              bestCandidatePos = dest
+            end
+          end
+        end
+        if bestCandidate then
+          return context.translateAllPathsToPath(paths, bestCandidatePos)
+        end
+      end
+    end
+    return nil
+  end
+
+  return context.translateAllPathsToPath(paths, destPos)
+end
+context.getPath = context.findPath
+
+-- also works as autoWalk(dirs) where dirs is a list eg.: {1,2,3,0,1,1,2,}
+context.autoWalk = function(destination, maxDist, params)
+  if type(destination) == "table" and table.isList(destination) and not maxDist and not params then
+    g_game.autoWalk(destination, {x=0,y=0,z=0})
+    return true
+  end
+
+  -- Available params same as for findPath
+  local path = context.findPath(context.player:getPosition(), destination, maxDist, params)
+  if not path then
+    return false
+  end
+  -- autowalk without prewalk animation
+  g_game.autoWalk(path, {x=0,y=0,z=0})
+  return true
+end
+
+context.getTileUnderCursor = function()
+    local mousePosition = g_window.getMousePosition()
+    local clickedWidget = modules.game_interface.getRootPanel():recursiveGetChildByPos(mousePosition, false)
+    if not clickedWidget or clickedWidget.getClassName(clickedWidget) ~= "UIGameMap" then
+        return
+    end
+    local tile = clickedWidget.getTile(clickedWidget, mousePosition)
+  return tile
+end
+
+context.canShoot = function(pos, distance)
+  if not distance then distance = 5 end
+  local tile = g_map.getTile(pos, distance)
+  if tile then
+    return tile:canShoot(distance)
+  end
+  return false
+end
+
+context.isTrapped = function(creature)
+  if not creature then
+    creature = context.player
+  end
+  local pos = creature:getPosition()
+  local dirs = {{-1,1}, {0,1}, {1,1}, {-1, 0}, {1, 0}, {-1, -1}, {0, -1}, {1, -1}}
+  for i=1,#dirs do
+    local tile = g_map.getTile({x=pos.x-dirs[i][1],y=pos.y-dirs[i][2],z=pos.z})
+    if tile and tile:isWalkable(false) then
+      return false
+    end
+  end
+  return true
+end
+]=]
+SUPPORT_FILES["functions/npc.lua"] = [[
+local context = G.botContext
+
+context.NPC = {}
+
+context.NPC.talk = function(text)
+  if g_game.getClientVersion() >= 810 then
+    g_game.talkChannel(11, 0, text)
+  else
+    return context.say(text)
+  end
+end
+context.NPC.say = context.NPC.talk
+
+context.NPC.isTrading = function()
+  return modules.game_npctrade.isTrading()
+end
+context.NPC.hasTrade = context.NPC.isTrading
+context.NPC.hasTradeWindow = context.NPC.isTrading
+context.NPC.isTradeOpen = context.NPC.isTrading
+
+context.NPC.getSellItems = function()
+  if not context.NPC.isTrading() then return {} end
+  local items = {}
+  for i, item in ipairs(modules.game_npctrade.getSellItems()) do
+    table.insert(items, {
+      item = item.ptr,
+      id = item.ptr:getId(),
+      count = item.ptr:getCount(),
+      name = item.name,
+      subType = item.ptr:getSubType(),
+      weight = item.weight / 100,
+      price = item.price
+    })
+  end
+  return items
+end
+
+context.NPC.getBuyItems = function()
+  if not context.NPC.isTrading() then return {} end
+  local items = {}
+  for i, item in ipairs(modules.game_npctrade.getBuyItems()) do
+    table.insert(items, {
+      item = item.ptr,
+      id = item.ptr:getId(),
+      count = item.ptr:getCount(),
+      name = item.name,
+      subType = item.ptr:getSubType(),
+      weight = item.weight / 100,
+      price = item.price
+    })
+  end
+  return items
+end
+
+context.NPC.getSellQuantity = function(item)
+  if not context.NPC.isTrading() then return 0 end
+  if type(item) == 'number' then
+     item = Item.create(item)
+  end
+  return modules.game_npctrade.getSellQuantity(item)
+end
+
+context.NPC.canTradeItem = function(item)
+  if not context.NPC.isTrading() then return false end
+  if type(item) == 'number' then
+     item = Item.create(item)
+  end
+  return modules.game_npctrade.canTradeItem(item)
+end
+
+context.NPC.sell = function(item, count, ignoreEquipped)
+  if type(item) == 'number' then
+    for i, entry in ipairs(context.NPC.getSellItems()) do
+       if entry.id == item then
+         item = entry.item
+         break
+       end
+    end
+    if type(item) == 'number' then
+     item = Item.create(item)
+    end
+  end
+  if count == 0 then
+    count = 1
+  end
+  if count == nil or count == -1 then
+    count = context.NPC.getSellQuantity(item)
+  end
+  if ignoreEquipped == nil then
+    ignoreEquipped = true
+  end
+  g_game.sellItem(item, count, ignoreEquipped)
+end
+
+context.NPC.buy = function(item, count, ignoreCapacity, withBackpack)
+  if type(item) == 'number' then
+    for i, entry in ipairs(context.NPC.getBuyItems()) do
+       if entry.id == item then
+         item = entry.item
+         break
+       end
+    end
+    if type(item) == 'number' then
+     item = Item.create(item)
+    end
+  end
+  if count == nil or count <= 0 then
+    count = 1
+  end
+  if ignoreCapacity == nil then
+    ignoreCapacity = false
+  end
+  if withBackpack == nil then
+    withBackpack = false
+  end
+  g_game.buyItem(item, count, ignoreCapacity, withBackpack)
+end
+
+context.NPC.sellAll = function()
+  if not context.NPC.isTrading() then return false end
+  modules.game_npctrade.sellAll()
+end
+
+context.NPC.closeTrade = function()
+  return modules.game_npctrade.closeNpcTrade()
+end
+context.NPC.close = context.NPC.closeTrade
+context.NPC.finish = context.NPC.closeTrade
+context.NPC.endTrade = context.NPC.closeTrade
+context.NPC.finishTrade = context.NPC.closeTrade
+]]
+SUPPORT_FILES["functions/player.lua"] = [[
+local context = G.botContext
+
+context.name = function() return context.player:getName() end
+
+context.hp = function() return context.player:getHealth() end
+context.mana = function() return context.player:getMana() end
+context.hppercent = function() return context.player:getHealthPercent() end
+context.manapercent = function()
+  if context.player:getMaxMana() <= 1 then
+    return 100
+  else
+    return math.floor(context
+      .player:getMana() * 100 / context.player:getMaxMana())
+  end
+end
+context.maxhp = function() return context.player:getMaxHealth() end
+context.maxmana = function() return context.player:getMaxMana() end
+context.hpmax = function() return context.player:getMaxHealth() end
+context.manamax = function() return context.player:getMaxMana() end
+
+context.cap = function() return context.player:getCapacity() end
+context.freecap = function() return context.player:getFreeCapacity() end
+context.maxcap = function() return context.player:getTotalCapacity() end
+context.capmax = function() return context.player:getTotalCapacity() end
+
+context.exp = function() return context.player:getExperience() end
+context.lvl = function() return context.player:getLevel() end
+context.level = function() return context.player:getLevel() end
+
+context.mlev = function() return context.player:getMagicLevel() end
+context.magic = function() return context.player:getMagicLevel() end
+context.mlevel = function() return context.player:getMagicLevel() end
+
+context.soul = function() return context.player:getSoul() end
+context.stamina = function() return context.player:getStamina() end
+context.voc = function() return context.player:getVocation() end
+context.vocation = function() return context.player:getVocation() end
+
+context.bless = function() return context.player:getBlessings() end
+context.blesses = function() return context.player:getBlessings() end
+context.blessings = function() return context.player:getBlessings() end
+
+
+context.pos = function() return context.player:getPosition() end
+context.posx = function() return context.player:getPosition().x end
+context.posy = function() return context.player:getPosition().y end
+context.posz = function() return context.player:getPosition().z end
+
+context.direction = function() return context.player:getDirection() end
+context.speed = function() return context.player:getSpeed() end
+context.skull = function() return context.player:getSkull() end
+context.outfit = function() return context.player:getOutfit() end
+
+context.setOutfit = function(outfit)
+  modules.game_outfit.ignoreNextOutfitWindow = g_clock.millis()
+  g_game.requestOutfit()
+  context.schedule(100, function()
+    g_game.changeOutfit(outfit)
+  end)
+end
+context.changeOutfit = context.setOutfit
+context.setSpeed = function(value) context.player:setSpeed(value) end
+
+context.walk = function(dir) return modules.game_walk.smartWalk(dir) end
+context.turn = function(dir) return g_game.turn(dir) end
+
+-- game releated
+context.getChannels = function()
+  -- return { channelId = channelName }
+  return modules.game_console.channels
+end
+context.getChannelId = function(name)
+  for id, channel in pairs(context.getChannels()) do
+    if name:lower() == channel:lower() then
+      return id
+    end
+  end
+  return nil
+end
+context.getChannel = context.getChannelId
+
+context.say = g_game.talk
+context.talk = g_game.talk
+context.yell = function(text) g_game.talkChannel(3, 0, text) end
+context.talkChannel = function(channel, text) g_game.talkChannel(7, channel, text) end
+context.sayChannel = context.talkChannel
+context.talkPrivate = function(receiver, text) g_game.talkPrivate(5, receiver, text) end
+context.sayPrivate = context.talkPrivate
+
+context.talkNpc = function(text)
+  if g_game.getClientVersion() >= 810 then
+    g_game.talkChannel(11, 0, text)
+  else
+    return context.say(text)
+  end
+end
+context.sayNpc = context.talkNpc
+context.sayNPC = context.talkNpc
+context.talkNPC = context.talkNpc
+
+context.saySpell = function(text, lastSpellTimeout)
+  if not text or text:len() < 1 then
+    return
+  end
+  if context.lastSpell == nil then
+    context.lastSpell = 0
+  end
+  if not lastSpellTimeout then
+    lastSpellTimeout = 1000
+  end
+  if context.lastSpell + lastSpellTimeout > context.now then
+    return false
+  end
+  context.say(text)
+  context.lastSpell = context.now
+  return true
+end
+
+context.setSpellTimeout = function()
+  context.lastSpell = context.now
+end
+
+context.use = function(thing, subtype)
+  if type(thing) == 'number' then
+    return g_game.useInventoryItem(thing, subtype)
+  else
+    return g_game.use(thing)
+  end
+end
+context.usewith = function(thing, target, subtype)
+  if not thing then
+    return
+  end
+  if type(thing) == 'number' then
+    return g_game.useInventoryItemWith(thing, target, subtype)
+  else
+    return g_game.useWith(thing, target, subtype)
+  end
+end
+context.useWith = context.usewith
+
+context.useRune = function(itemid, target, lastSpellTimeout)
+  if context.lastRuneUse == nil then
+    context.lastRuneUse = 0
+  end
+  if not lastRuneTimeout then
+    lastRuneTimeout = 1000
+  end
+  if context.lastRuneUse + lastRuneTimeout > context.now then
+    return false
+  end
+  context.usewith(itemid, target)
+  context.lastRuneUse = context.now
+  return true
+end
+context.userune = context.useRune
+
+context.findItem = function(itemId, subType, tier)
+  -- Delegate to the canonical helper so the bot shares the same inventory
+  -- traversal order as the rest of the client (equipped slots from HEAD to
+  -- AMMO, then open containers) and inherits its tier support.
+  return g_game.findPlayerItem(itemId, subType or -1, tier)
+end
+
+context.attack = g_game.attack
+context.cancelAttack = g_game.cancelAttack
+context.follow = g_game.follow
+context.cancelFollow = g_game.cancelFollow
+context.cancelAttackAndFollow = g_game.cancelAttackAndFollow
+
+context.logout = g_game.forceLogout
+context.safeLogout = g_game.safeLogout
+context.ping = g_game.getPing
+
+modules.game_cooldown.isGroupCooldownIconActive(id)
+modules.game_cooldown.isCooldownIconActive(id)
+]]
+SUPPORT_FILES["functions/player_conditions.lua"] = [[
+local context = G.botContext
+
+for i, state in ipairs(PlayerStates) do
+  context[state] = state
+end
+
+context.hasCondition = function(condition) return Bit.band(context.player:getStates(), condition) > 0 end
+
+context.isPoisioned = function() return context.hasCondition(PlayerStates.Poison) end
+context.isBurning = function() return context.hasCondition(PlayerStates.Burn) end
+context.isEnergized = function() return context.hasCondition(PlayerStates.Energy) end
+context.isDrunk = function() return context.hasCondition(PlayerStates.Drunk) end
+context.hasManaShield = function() return context.hasCondition(PlayerStates.ManaShield) end
+context.hasNewManaShield = function() return context.hasCondition(PlayerStates.NewManaShield) end
+context.isParalyzed = function() return context.hasCondition(PlayerStates.Paralyze) end
+context.hasHaste = function() return context.hasCondition(PlayerStates.Haste) end
+context.hasSwords = function() return context.hasCondition(PlayerStates.Swords) end
+context.isInFight = function() return context.hasCondition(PlayerStates.Swords) end
+context.canLogout = function() return not context.hasCondition(PlayerStates.Swords) end
+context.isDrowning = function() return context.hasCondition(PlayerStates.Drowning) end
+context.isFreezing = function() return context.hasCondition(PlayerStates.Freezing) end
+context.isDazzled = function() return context.hasCondition(PlayerStates.Dazzled) end
+context.isCursed = function() return context.hasCondition(PlayerStates.Cursed) end
+context.hasPartyBuff = function() return context.hasCondition(PlayerStates.PartyBuff) end
+context.hasPzLock = function() return context.hasCondition(PlayerStates.PzBlock) end
+context.hasPzBlock = function() return context.hasCondition(PlayerStates.PzBlock) end
+context.isPzLocked = function() return context.hasCondition(PlayerStates.PzBlock) end
+context.isPzBlocked = function() return context.hasCondition(PlayerStates.PzBlock) end
+context.isInProtectionZone = function() return context.hasCondition(PlayerStates.Pz) end
+context.hasPz = function() return context.hasCondition(PlayerStates.Pz) end
+context.isInPz = function() return context.hasCondition(PlayerStates.Pz) end
+context.isBleeding = function() return context.hasCondition(PlayerStates.Bleeding) end
+context.isHungry = function() return context.hasCondition(PlayerStates.Hungry) end
+]]
+SUPPORT_FILES["functions/player_inventory.lua"] = [[
+local context = G.botContext
+
+context.SlotOther = InventorySlotOther
+context.SlotHead = InventorySlotHead
+context.SlotNeck = InventorySlotNeck
+context.SlotBack = InventorySlotBack
+context.SlotBody = InventorySlotBody
+context.SlotRight = InventorySlotRight
+context.SlotLeft = InventorySlotLeft
+context.SlotLeg = InventorySlotLeg
+context.SlotFeet = InventorySlotFeet
+context.SlotFinger = InventorySlotFinger
+context.SlotAmmo = InventorySlotAmmo
+context.SlotPurse = InventorySlotPurse
+
+context.getInventoryItem = function(slot) return context.player:getInventoryItem(slot) end
+context.getSlot = context.getInventoryItem
+
+context.getHead = function() return context.getInventoryItem(context.SlotHead) end
+context.getNeck = function() return context.getInventoryItem(context.SlotNeck) end
+context.getBack = function() return context.getInventoryItem(context.SlotBack) end
+context.getBody = function() return context.getInventoryItem(context.SlotBody) end
+context.getRight = function() return context.getInventoryItem(context.SlotRight) end
+context.getLeft = function() return context.getInventoryItem(context.SlotLeft) end
+context.getLeg = function() return context.getInventoryItem(context.SlotLeg) end
+context.getFeet = function() return context.getInventoryItem(context.SlotFeet) end
+context.getFinger = function() return context.getInventoryItem(context.SlotFinger) end
+context.getAmmo = function() return context.getInventoryItem(context.SlotAmmo) end
+context.getPurse = function() return context.getInventoryItem(context.SlotPurse) end
+
+context.getContainers = function() return g_game.getContainers() end
+context.getContainer = function(index) return g_game.getContainer(index) end
+
+context.moveToSlot = function(item, slot, count)
+  if type(item) == 'number' then
+    item = context.findItem(item)
+  end
+  if not item then
+    return
+  end
+  if count == nil then
+    count = item:getCount()
+  end
+  return g_game.move(item, {x=65535, y=slot, z=0}, count)
+end
+]]
+SUPPORT_FILES["functions/script_loader.lua"] = [[
+local context = G.botContext
+
+context.loadScript = function(path, onLoadCallback)
+  if type(path) ~= 'string' then
+    return context.error("Invalid path for loadScript: " .. tostring(path))
+  end
+  if path:lower():find("http") == 1 then
+    return context.loadRemoteScript(path)
+  end
+  if not g_resources.fileExists(path) then
+    return context.error("File " .. path .. " doesn't exist")
+  end
+  local status, result = pcall(function()
+    if _VERSION == "Lua 5.1" and type(jit) ~= "table" then
+      local func = assert(loadstring(g_resources.readFileContents(path)))
+      setfenv(func, context)
+      func()
+    else        
+      assert(load(g_resources.readFileContents(path), path, nil, context))()
+    end
+  end)
+  if not status then
+    return context.error("Error while loading script from: " .. path .. ":\n" .. result)
+  end
+  if onLoadCallback then
+    onLoadCallback()
+  end
+end
+
+context.loadRemoteScript = function(url, onLoadCallback)
+  if type(url) ~= 'string' or url:lower():find("http") ~= 1 then
+    return context.error("Invalid url for loadRemoteScript: " .. tostring(url))
+  end
+
+  HTTP.get(url, function(data, err)
+    if err or data:len() == 0 then
+      -- try to load from cache
+      if type(context.storage.scriptsCache) ~= 'table' then
+        context.storage.scriptsCache = {}
+      end
+      local cache = context.storage.scriptsCache[url]
+      if cache and type(cache) == 'string' and cache:len() > 0 then
+        data = cache
+      else
+        return context.error("Can't load script from: " .. url .. ", error: " .. err)
+      end
+    end
+
+    local status, result = pcall(function()
+      if _VERSION == "Lua 5.1" and type(jit) ~= "table" then
+        local func = assert(loadstring(data))
+        setfenv(func, context)
+        func()
+      else        
+        assert(load(data, url, nil, context))()
+      end
+    end)
+    if not status then
+      return context.error("Error while loading script from: " .. url .. ":\n" .. result)
+    end
+    -- cache script
+    if type(context.storage.scriptsCache) ~= 'table' then
+      context.storage.scriptsCache = {}
+    end
+    context.storage.scriptsCache[url] = data
+    if onLoadCallback then
+      onLoadCallback()
+    end
+  end)
+end
+]]
+SUPPORT_FILES["functions/server.lua"] = [=[
+local context = G.botContext
+
+context.BotServer = {}
+context.BotServer.url = "ws://arm.skalski.pro:8000/"
+context.BotServer.timeout = 3
+context.BotServer.ping = 0
+context.BotServer._callbacks = {}
+context.BotServer._lastMessageId = 0
+context.BotServer._wasConnected = true -- show first warning
+
+context.BotServer.stopReconnect = false
+context.BotServer.reconnectAttempts = 0
+context.BotServer.maxReconnectAttempts = 10
+context.BotServer.reconnectDelay = 2000
+
+local function tryReconnect(name, channel)
+  if not context.BotServer.stopReconnect and context.BotServer.reconnectAttempts < context.BotServer.maxReconnectAttempts then
+    context.BotServer.reconnectAttempts = context.BotServer.reconnectAttempts + 1
+    local cappedAttempts = math.min(context.BotServer.reconnectAttempts, 5)
+    local delay = context.BotServer.reconnectDelay * (2 ^ (cappedAttempts  - 1))
+    scheduleEvent(function()
+      context.BotServer.init(name, channel)
+    end, delay)
+  else
+    context.BotServer.stopReconnect = false
+    context.BotServer.reconnectAttempts = 0
+  end
+end
+
+context.BotServer.init = function(name, channel)
+  if not channel or not name or channel:len() < 1 or name:len() < 1 then
+    return context.error("Invalid params for BotServer.init")
+  end
+  if context.BotServer._websocket then
+    return context.error("BotServer is already initialized")
+  end
+  context.BotServer._websocket = HTTP.WebSocketJSON(context.BotServer.url, {
+    onError = function(message, websocketId)
+      if message and message:find("resolve error") then
+        context.BotServer.stopReconnect = true
+      end
+    end,
+    onMessage = function(message, socketId)
+      if not context._websockets[socketId] then
+        return g_http.cancel(socketId)
+      end
+      if not context.BotServer._websocket or context.BotServer._websocket.id ~= socketId then
+        return g_http.cancel(socketId)
+      end
+      context.BotServer._wasConnected = true
+      if message["type"] == "ping" then
+        context.BotServer.ping = message["ping"]
+        return context.BotServer._websocket.send({type="ping"})
+      end
+      if message["type"] == "message" then
+        context.BotServer._lastMessageId = message["id"]
+        local topics = context.BotServer._callbacks[message["topic"]]
+        if topics then
+          for i=1,#topics do
+            topics[i](message["name"], message["message"], message["topic"])
+          end
+        end
+        topics = context.BotServer._callbacks["*"]
+        if topics then
+          for i=1,#topics do
+            topics[i](message["name"], message["message"], message["topic"])
+          end
+        end
+        return
+      end
+    end,
+    onClose = function(message, socketId)
+      if not context._websockets[socketId] then
+        return
+      end
+      context._websockets[socketId] = nil
+      if not context.BotServer._websocket or context.BotServer._websocket.id ~= socketId then
+        return
+      end
+      if context.BotServer._wasConnected then
+        context.warn("BotServer disconnected")
+		HTTP.cancel(socketId)
+      end
+      context.BotServer._wasConnected = false
+      context.BotServer._websocket = nil
+      context.BotServer.ping = 0
+      tryReconnect(name, channel)
+    end
+  }, context.BotServer.timeout)
+  context._websockets[context.BotServer._websocket.id] = 1
+  context.BotServer._websocket.send({type="init", name=name, channel=channel, lastMessage=context.BotServer._lastMessageId})
+end
+
+context.BotServer.terminate = function()
+  if context.BotServer._websocket then
+    context.BotServer._websocket:close()
+    context.BotServer._websocket = nil
+	context.BotServer._callbacks = {}
+  end
+end
+
+context.BotServer.listen = function(topic, callback) -- callback = function(name, message, topic) -- message is parsed json = table
+  if not context.BotServer._websocket then
+    return context.error("BotServer is not initialized")
+  end
+  if not context.BotServer._callbacks[topic] then
+    context.BotServer._callbacks[topic] = {}
+  end
+  table.insert(context.BotServer._callbacks[topic], callback)
+end
+
+context.BotServer.send = function(topic, message)
+  if not context.BotServer._websocket then
+    return context.error("BotServer is not initialized")
+  end
+  context.BotServer._websocket.send({type="message", topic=topic, message=message})
+end
+
+context.BotServer.isConnected = function()
+  return context.BotServer._wasConnected and context.BotServer._websocket ~= nil
+end
+
+context.BotServer.hasListen = function(topic)
+  return context.BotServer._callbacks and context.BotServer._callbacks[topic] ~= nil
+end
+
+context.BotServer.resetReconnect = function()
+  context.BotServer.stopReconnect = true
+end
+]=]
+SUPPORT_FILES["functions/sound.lua"] = [[
+local context = G.botContext
+
+context.getSoundChannel = function()
+  if not g_sounds then
+    return
+  end
+  return g_sounds.getChannel(SoundChannels.Bot)
+end
+
+context.playSound = function(file)
+  local botSoundChannel = context.getSoundChannel()
+  if not botSoundChannel then
+    return
+  end
+  botSoundChannel:setEnabled(true)
+  botSoundChannel:stop(0)
+  botSoundChannel:play(file, 0, 1.0)
+  return botSoundChannel
+end
+
+context.stopSound = function()
+  local botSoundChannel = context.getSoundChannel()
+  if not botSoundChannel then
+    return
+  end
+  botSoundChannel:stop()
+end
+
+context.playAlarm = function()
+  return context.playSound("/sounds/alarm.ogg")
+end
+]]
+SUPPORT_FILES["functions/test.lua"] = [[
+local context = G.botContext
+
+context.test = function() return context.info("test") end
+]]
+SUPPORT_FILES["functions/tools.lua"] = [[
+local context = G.botContext
+
+context.encode = function(data, indent) return json.encode(data, indent or 2) end
+context.decode = function(text) local status, result = pcall(function() return json.decode(text) end) if status then return result end return {} end
+
+context.displayGeneralBox = function(title, message, buttons, onEnterCallback, onEscapeCallback)
+  local box = displayGeneralBox(title, message, buttons, onEnterCallback, onEscapeCallback)
+  box.botWidget = true
+  return box
+end
+
+context.doScreenshot = function(filename)
+  g_app.doScreenshot(filename)
+end
+context.screenshot = context.doScreenshot
+
+context.getVersion = function()
+  return g_app.getVersion()
+end
+]]
+SUPPORT_FILES["functions/ui.lua"] = [[
+local context = G.botContext
+if type(context.UI) ~= "table" then
+  context.UI = {}
+end
+local UI = context.UI
+
+UI.createWidget = function(name, parent)
+  if parent == nil then
+    parent = context.panel
+  end
+  local widget = g_ui.createWidget(name, parent)
+  widget.botWidget = true
+  return widget
+end
+
+UI.createMiniWindow = function(name, parent)
+  if parent == nil then
+    parent = modules.game_interface.getRightPanel()
+  end
+  local widget = g_ui.createWidget(name, parent)
+  widget:setup()
+  widget.botWidget = true
+  return widget
+end
+
+UI.createWindow = function(name)
+  local widget = g_ui.createWidget(name, g_ui.getRootWidget())
+  widget.botWidget = true
+  widget:show()
+  widget:raise()
+  widget:focus()
+  return widget
+end
+]]
+SUPPORT_FILES["functions/ui_elements.lua"] = [=[
+local context = G.botContext
+if type(context.UI) ~= "table" then
+  context.UI = {}
+end
+local UI = context.UI
+
+UI.Button = function(text, callback, parent)
+  local widget = UI.createWidget("BotButton", parent)
+  widget:setText(text)
+  widget.onClick = callback
+  return widget
+end
+
+UI.Config = function(parent)
+  return UI.createWidget("BotConfig", parent)
+end
+
+-- call :setItems(table) to set items, call :getItems() to get them
+-- unique if true, won't allow duplicates
+-- callback (can be nil) gets table with new item list, eg: {{id=2160, count=1}, {id=268, count=100}, {id=269, count=20}}
+UI.Container = function(callback, unique, parent, widget)
+  if not widget then
+    widget = UI.createWidget("BotContainer", parent)
+  end
+
+  local oldItems = {}
+
+  local scrollToBottom = function()
+    local scrollbar = widget.scroll
+    if scrollbar and scrollbar.setValue and scrollbar.getMaximum then
+      scrollbar:setValue(scrollbar:getMaximum())
+    end
+  end
+
+  local updateItems = function()
+    local items = widget:getItems()
+
+    -- callback part
+    local somethingNew = (#items ~= #oldItems)
+    for i, item in ipairs(items) do
+      if type(oldItems[i]) ~= "table" then
+        somethingNew = true
+        break
+      end
+      if oldItems[i].id ~= item.id or oldItems[i].count ~= item.count then
+        somethingNew = true
+        break
+      end
+    end
+
+    if somethingNew then
+      oldItems = items
+      callback(widget, items)
+    end
+
+    widget:setItems(items)
+  end
+
+  widget.setItems = function(self, items)
+    if type(self) == 'table' then
+      items = self
+    end
+    local itemsToShow = math.max(10, #items + 2)
+    if itemsToShow % 5 ~= 0 then
+      itemsToShow = itemsToShow + 5 - itemsToShow % 5
+    end
+    widget.items:destroyChildren()
+    for i = 1, itemsToShow do
+      local widget = g_ui.createWidget("BotItem", widget.items)
+      if type(items[i]) == 'number' then
+        items[i] = { id = items[i], count = 1 }
+      end
+      if type(items[i]) == 'table' then
+        widget:setItem(Item.create(items[i].id, items[i].count))
+      end
+    end
+    oldItems = items
+    for i, child in ipairs(widget.items:getChildren()) do
+      child.onItemChange = updateItems
+    end
+    scrollToBottom()
+  end
+
+  widget.getItems = function()
+    local items = {}
+    local duplicates = {}
+    for i, child in ipairs(widget.items:getChildren()) do
+      if child:getItemId() >= 100 then
+        if not duplicates[child:getItemId()] or not unique then
+          table.insert(items, { id = child:getItemId(), count = child:getItemCountOrSubType() })
+          duplicates[child:getItemId()] = true
+        end
+      end
+    end
+    return items
+  end
+
+  widget:setItems({})
+
+  return widget
+end
+
+UI.DualScrollPanel = function(params, callback, parent) -- callback = function(widget, newParams)
+  --[[ params:
+    on - bool,
+    text - string,
+    title - string,
+    min - number,
+    max - number,
+  ]]
+  params.title = params.title or "title"
+  params.text = params.text or ""
+  params.min = params.min or 20
+  params.max = params.max or 80
+
+  local widget = UI.createWidget('DualScrollPanel', parent)
+
+  widget.title:setOn(params.on)
+  widget.title.onClick = function()
+    params.on = not params.on
+    widget.title:setOn(params.on)
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  widget.text:setText(params.text or "")
+  widget.text.onTextChange = function(widget, text)
+    params.text = text
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  local update = function(dontSignal)
+    widget.title:setText("" .. params.min .. "% <= " .. params.title .. " <= " .. params.max .. "%")
+    if callback and not dontSignal then
+      callback(widget, params)
+    end
+  end
+
+  widget.scroll1:setValue(params.min)
+  widget.scroll2:setValue(params.max)
+
+  widget.scroll1.onValueChange = function(scroll, value)
+    params.min = value
+    update()
+  end
+  widget.scroll2.onValueChange = function(scroll, value)
+    params.max = value
+    update()
+  end
+  update(true)
+end
+
+UI.DualScrollItemPanel = function(params, callback, parent) -- callback = function(widget, newParams)
+  --[[ params:
+    on - bool,
+    item - number,
+    subType - number,
+    title - string,
+    min - number,
+    max - number,
+  ]]
+  params.title = params.title or "title"
+  params.item = params.item or 0
+  params.subType = params.subType or 0
+  params.min = params.min or 20
+  params.max = params.max or 80
+
+  local widget = UI.createWidget('DualScrollItemPanel', parent)
+
+  widget.title:setOn(params.on)
+  widget.title.onClick = function()
+    params.on = not params.on
+    widget.title:setOn(params.on)
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  widget.item:setItem(Item.create(params.item, params.subType))
+  widget.item.onItemChange = function()
+    params.item = widget.item:getItemId()
+    params.subType = widget.item:getItemSubType()
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  local update = function(dontSignal)
+    widget.title:setText("" .. params.min .. "% <= " .. params.title .. " <= " .. params.max .. "%")
+    if callback and not dontSignal then
+      callback(widget, params)
+    end
+  end
+
+  widget.scroll1:setValue(params.min)
+  widget.scroll2:setValue(params.max)
+
+  widget.scroll1.onValueChange = function(scroll, value)
+    params.min = value
+    update()
+  end
+  widget.scroll2.onValueChange = function(scroll, value)
+    params.max = value
+    update()
+  end
+  update(true)
+end
+
+UI.Label = function(text, parent)
+  local label = UI.createWidget('BotLabel', parent)
+  label:setText(text)
+  return label
+end
+
+UI.Separator = function(parent)
+  local separator = UI.createWidget('BotSeparator', parent)
+  return separator
+end
+
+UI.TextEdit = function(text, callback, parent)
+  local widget = UI.createWidget('BotTextEdit', parent)
+  widget.onTextChange = callback
+  widget:setText(text)
+  return widget
+end
+
+UI.TwoItemsAndSlotPanel = function(params, callback, parent)
+  --[[ params:
+    on - bool,
+    title - string,
+    item1 - number,
+    item2 - number,
+    slot - number,
+  ]]
+  params.title = params.title or "title"
+  params.item1 = params.item1 or 0
+  params.item2 = params.item2 or 0
+  params.slot = params.slot or 1
+
+  local widget = UI.createWidget("TwoItemsAndSlotPanel", parent)
+
+  widget.title:setText(params.title)
+  widget.title:setOn(params.on)
+  widget.title.onClick = function()
+    params.on = not params.on
+    widget.title:setOn(params.on)
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  widget.slot:setCurrentIndex(params.slot)
+  widget.slot.onOptionChange = function()
+    params.slot = widget.slot.currentIndex
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  widget.item1:setItemId(params.item1)
+  widget.item1.onItemChange = function()
+    params.item1 = widget.item1:getItemId()
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  widget.item2:setItemId(params.item2)
+  widget.item2.onItemChange = function()
+    params.item2 = widget.item2:getItemId()
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  return widget
+end
+
+UI.DualLabel = function(left, right, params, parent)
+  --[[ params:
+    height - int,
+    maxWidth - number
+  ]]
+
+  left = left or ""
+  right = right or ""
+  params = params or {}
+  if not type(params) == "table" then
+    parent = params
+    params = {}
+  end
+  params.height = params.height or 20
+  params.maxWidth = params.maxWidth or 88
+
+  local widget = UI.createWidget('DualLabelPanel', parent)
+
+  widget.left:setText(left)
+  widget.right:setText(right)
+  widget:setHeight(params.height)
+  if widget.left:getWidth() > params.maxWidth then
+    widget.left:setWidth(params.maxWidth)
+  end
+  return widget
+end
+
+UI.LabelAndTextEdit = function(params, callback, parent)
+  --[[ params:
+    left - str,
+    right - str,
+    height - int,
+    maxWidth - int,
+  ]]
+
+  params = params or {}
+  params.left = params.left or ""
+  params.right = params.right or ""
+  params.height = params.height or 20
+  params.maxWidth = params.maxWidth or 88
+
+  local widget = UI.createWidget('LabelAndTextEditPanel', parent)
+
+  widget.left:setText(params.left)
+  widget.right:setText(params.right)
+  widget:setHeight(params.height)
+  if widget.left:getWidth() > params.maxWidth then
+    widget.left:setWidth(params.maxWidth)
+  end
+
+  widget.right.onTextChange = function(widget, text)
+    params.right = text
+    if callback then
+      callback(widget, params)
+    end
+  end
+
+  --[[example:
+
+      storage.testParams = storage.testParams or {left = "hotkey", right = "F5"}
+      UI.LabelAndTextEdit(storage.testParams, function(widget, newParams)
+          storage.testParams = newParams
+      end)
+
+  ]]
+  return widget
+end
+
+
+UI.SwitchAndButton = function(params, callbackSwitch, callbackButton, callback, parent)
+  --[[ params:
+    on - bool,
+    left - str,
+    right - str,
+    height - int,
+    maxWidth - int,
+  ]]
+
+  params = params or {}
+  params.on = params.on or false
+  params.left = params.left or ""
+  params.right = params.right or ""
+  params.height = params.height or 20
+  params.maxWidth = params.maxWidth or 88
+
+  local widget = UI.createWidget('SwitchAndButtonPanel', parent)
+
+  widget.left:setOn(params.on)
+  widget.left:setText(params.left)
+  widget.right:setText(params.right)
+  widget:setHeight(params.height)
+  if widget.right:getWidth() > params.maxWidth then
+    widget.right:setWidth(params.maxWidth)
+  end
+
+  widget.left.onClick = function()
+    params.on = not params.on
+    widget.left:setOn(params.on)
+    if callback then
+      callback(widget, params)
+    end
+    if callbackSwitch then
+      callbackSwitch()
+    else
+      warn("callback not set!")
+    end
+  end
+
+  widget.right.onClick = function()
+    if callbackButton then
+      callbackButton()
+    else
+      warn("callback not set!")
+    end
+  end
+
+  --[[ params:
+    if type(storage.test1) ~= "table" then
+        storage.test1 = storage.test1 or {on = false, left = "new script", right = "config"}
+    end
+
+    UI.SwitchAndButton(storage.test1, test, test, function(widget, newParams)
+        storage.test1 = newParams
+    end)
+  ]]
+  return widget
+end
+]=]
+SUPPORT_FILES["functions/ui_legacy.lua"] = [[
+local context = G.botContext
+
+-- DO NOT USE THIS CODE.
+-- IT'S ONLY HERE FOR BACKWARD COMPATIBILITY, MAY BE REMOVED IN THE FUTURE
+
+context.createWidget = function(name, parent)
+  if parent == nil then
+    parent = context.panel
+  end
+  g_ui.createWidget(name, parent)
+end
+
+context.setupUI = function(otml, parent)
+  if parent == nil then
+    parent = context.panel
+  end
+  local widget = g_ui.loadUIFromString(otml, parent)
+  widget.botWidget = true
+  return widget
+end
+
+context.importStyle = function(otml)
+  if type(otml) ~= "string" then
+    return error("Invalid parameter for importStyle, should be string")
+  end
+  if otml:find(".otui") and not otml:find("\n") then
+    return g_ui.importStyle(context.configDir .. "/" .. otml)
+  end
+  return g_ui.importStyleFromString(otml)
+end
+
+context.addTab = function(name)
+  local tab = context.tabs:getTab(name)
+  if tab then -- return existing tab
+    return tab.tabPanel.content
+  end
+
+  local newTab = context.tabs:addTab(name, g_ui.createWidget('BotPanel')).tabPanel.content
+  context.tabs:setOn(true)
+  for k, tab in pairs(context.tabs.tabs) do
+    if string.len(tab:getText()) > 7 then
+      tab:setFont('small-9px')
+    end
+  end
+
+  return newTab
+end
+context.getTab = context.addTab
+
+context.setDefaultTab = function(name)
+  local tab = context.addTab(name)
+  context.panel = tab
+end
+
+context.addSwitch = function(id, text, onClickCallback, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local switch = g_ui.createWidget('BotSwitch', parent)
+  switch:setId(id)
+  switch:setText(text)
+  switch.onClick = onClickCallback
+  return switch
+end
+
+context.addButton = function(id, text, onClickCallback, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local button = g_ui.createWidget('BotButton', parent)
+  button:setId(id)
+  button:setText(text)
+  button.onClick = onClickCallback
+  return button
+end
+
+context.addLabel = function(id, text, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local label = g_ui.createWidget('BotLabel', parent)
+  label:setId(id)
+  label:setText(text)
+  return label
+end
+
+context.addTextEdit = function(id, text, onTextChangeCallback, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local widget = g_ui.createWidget('BotTextEdit', parent)
+  widget:setId(id)
+  widget.onTextChange = onTextChangeCallback
+  widget:setText(text)
+  return widget
+end
+
+context.addSeparator = function(id, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local separator = g_ui.createWidget('BotSeparator', parent)
+  separator:setId(id)
+  return separator
+end
+
+context._addMacroSwitch = function(name, keys, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local text = name
+  if keys:len() > 0 then
+    text = name .. " [" .. keys .. "]"
+  end
+  local switch = context.addSwitch("macro_" .. #context._macros, text, function(widget)
+    context.storage._macros[name] = not context.storage._macros[name]
+    widget:setOn(context.storage._macros[name])
+  end, parent)
+  switch:setOn(context.storage._macros[name])
+  return switch
+end
+
+context._addHotkeySwitch = function(name, keys, parent)
+  if not parent then
+    parent = context.panel
+  end
+  local text = name
+  if keys:len() > 0 then
+    text = name .. " [" .. keys .. "]"
+  end
+  local switch = context.addSwitch("hotkey_" .. #context._hotkeys, text, nil, parent)
+  switch:setOn(false)
+  return switch
+end
+]]
+SUPPORT_FILES["functions/ui_windows.lua"] = [=[
+local context = G.botContext
+if type(context.UI) ~= "table" then
+  context.UI = {}
+end
+local UI = context.UI
+
+UI.EditorWindow = function(text, options, callback)
+  --[[
+    Available options:
+      title = text
+      description = text
+      multiline = true / false
+      width = number
+      validation = text (regex)
+      examples = {{name, text}, {name, text}}
+  ]]--
+  local window = modules.client_textedit.edit(text, options, callback)
+  window.botWidget = true
+  return window
+end
+
+UI.SinglelineEditorWindow = function(text, options, callback)
+  options = options or {}
+  options.multiline = false
+  return UI.EditorWindow(text, options, callback)
+end
+
+UI.MultilineEditorWindow = function(text, options, callback)
+  options = options or {}
+  options.multiline = true
+  return UI.EditorWindow(text, options, callback)
+end
+
+UI.ConfirmationWindow = function(title, question, callback)
+  local window = nil
+  local onConfirm = function()
+    window:destroy()
+    callback()
+  end
+  local closeWindow = function()
+    window:destroy()
+  end
+  window = context.displayGeneralBox(title, question, {
+    { text=tr('Yes'), callback=onConfirm },
+    { text=tr('No'), callback=closeWindow },
+    anchor=AnchorHorizontalCenter}, onConfirm, closeWindow)
+  window.botWidget = true
+  return window
+end
+]=]
+SUPPORT_FILES["panels/attacking.lua"] = [=[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.MonsterEditor = function(monster, config, callback, parent)
+  local otherWindow = g_ui.getRootWidget():getChildById('monsterEditor')
+  if otherWindow then
+    otherWindow:destory()
+  end
+
+  local window = context.setupUI([[
+MainWindow
+  id: monsterEditor
+  size: 450 450
+  !text: tr("Edit monster")
+
+  Label
+    id: info
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    text: Use monster name * for any other monster not on the list
+
+  Label
+    id: info2
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    text-align: center
+    text: Add number (1-5) at the end of the name to create multiple configs
+
+  TextEdit
+    id: name
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-left: 100
+    margin-top: 5
+    multiline: false
+
+  Label
+    anchors.verticalCenter: prev.verticalCenter
+    anchors.left: parent.left
+    text: Target name:
+
+  Label
+    id: priorityText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Priority
+    text-align: center
+
+  HorizontalScrollBar
+    id: priority
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 10
+    step: 1
+
+  Label
+    id: dangerText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Danger
+    text-align: center
+
+  HorizontalScrollBar
+    id: danger
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 10
+    step: 1
+
+  Label
+    id: maxDistanceText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Max distance to target
+    text-align: center
+
+  HorizontalScrollBar
+    id: maxDistance
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 1
+    maximum: 10
+    step: 1
+
+  Label
+    id: distanceText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Keep distance
+    text-align: center
+
+  HorizontalScrollBar
+    id: distance
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 5
+    step: 1
+
+  Label
+    id: minHealthText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Minimum Health
+    text-align: center
+
+  HorizontalScrollBar
+    id: minHealth
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 100
+    step: 1
+
+  Label
+    id: maxHealthText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 10
+    margin-top: 10
+    text: Maximum Health
+    text-align: center
+
+  HorizontalScrollBar
+    id: maxHealth
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 5
+    minimum: 0
+    maximum: 100
+    step: 1
+
+  Label
+    id: dangerText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 5
+    margin-top: 10
+    text: If total danger is high (>8) bot won't auto loot until it's low again and will be trying to minimize it
+    text-align: center
+    text-wrap: true
+    text-auto-resize: true
+
+  Label
+    id: attackSpellText
+    anchors.left: parent.left
+    anchors.right: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-right: 5
+    margin-top: 10
+    text: Attack spell and attack rune are only used when you have more than 30% health
+    text-align: center
+    text-wrap: true
+    text-auto-resize: true
+
+  BotSwitch
+    id: attack
+    anchors.left: parent.horizontalCenter
+    anchors.top: name.bottom
+    margin-left: 10
+    margin-top: 10
+    width: 55
+    text: Attack
+
+  BotSwitch
+    id: ignore
+    anchors.left: prev.right
+    anchors.top: name.bottom
+    margin-left: 18
+    margin-top: 10
+    width: 55
+    text: Ignore
+
+  BotSwitch
+    id: avoid
+    anchors.left: prev.right
+    anchors.top: name.bottom
+    margin-left: 18
+    margin-top: 10
+    width: 55
+    text: Avoid
+
+  BotSwitch
+    id: keepDistance
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Keep distance
+
+  BotSwitch
+    id: avoidAttacks
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Avoid monster attacks
+
+  BotSwitch
+    id: chase
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Chase when has low health
+
+  BotSwitch
+    id: loot
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Loot corpse
+
+  BotSwitch
+    id: monstersOnly
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Only for monsters
+
+  BotSwitch
+    id: dontWalk
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Don't walk to target
+
+  Label
+    id: attackSpellText
+    anchors.left: parent.horizontalCenter
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+    margin-left: 10
+    margin-top: 10
+    text: Attack Spell:
+    text-align: center
+
+  TextEdit
+    id: attackSpell
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 2
+
+  Label
+    id: attackItemText
+    anchors.left: parent.horizontalCenter
+    anchors.top: prev.bottom
+    margin-top: 20
+    margin-left: 20
+    text: Attack rune:
+    text-align: left
+
+  BotItem
+    id: attackItem
+    anchors.right: parent.right
+    anchors.verticalCenter: prev.verticalCenter
+    margin-right: 30
+
+  Button
+    id: okButton
+    !text: tr('Ok')
+    anchors.bottom: parent.bottom
+    anchors.right: next.left
+    margin-right: 10
+    width: 60
+
+  Button
+    id: cancelButton
+    !text: tr('Cancel')
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+    width: 60
+]], g_ui.getRootWidget())
+
+  local destroy = function()
+    window:destroy()
+  end
+  local doneFunc = function()
+    local monster = window.name:getText()
+    local config = {
+      priority = window.priority:getValue(),
+      danger = window.danger:getValue(),
+      maxDistance = window.maxDistance:getValue(),
+      distance = window.distance:getValue(),
+      minHealth = window.minHealth:getValue(),
+      maxHealth = window.maxHealth:getValue(),
+      attack = window.attack:isOn(),
+      ignore = window.ignore:isOn(),
+      avoid = window.avoid:isOn(),
+      keepDistance = window.keepDistance:isOn(),
+      avoidAttacks = window.avoidAttacks:isOn(),
+      chase = window.chase:isOn(),
+      loot = window.loot:isOn(),
+      monstersOnly = window.monstersOnly:isOn(),
+      dontWalk = window.dontWalk:isOn(),
+      attackItem = window.attackItem:getItemId(),
+      attackSpell = window.attackSpell:getText()
+    }
+    destroy()
+    callback(monster, config)
+  end
+
+  window.okButton.onClick = doneFunc
+  window.cancelButton.onClick = destroy
+  window.onEnter = doneFunc
+  window.onEscape = destroy
+
+
+  window.priority.onValueChange = function(scroll, value)
+    window.priorityText:setText("Priority: " .. value)
+  end
+  window.danger.onValueChange = function(scroll, value)
+    window.dangerText:setText("Danger: " .. value)
+  end
+  window.maxDistance.onValueChange = function(scroll, value)
+    window.maxDistanceText:setText("Max distance to target: " .. value)
+  end
+  window.distance.onValueChange = function(scroll, value)
+    window.distanceText:setText("Keep distance: " .. value)
+  end
+  window.minHealth.onValueChange = function(scroll, value)
+    window.minHealthText:setText("Minimum health: " .. value .. "%")
+  end
+  window.maxHealth.onValueChange = function(scroll, value)
+    window.maxHealthText:setText("Maximum health: " .. value .. "%")
+  end
+
+  window.priority:setValue(config.priority or 1)
+  window.danger:setValue(config.danger or 1)
+  window.maxDistance:setValue(config.maxDistance or 6)
+  window.distance:setValue(config.distance or 1)
+  window.minHealth:setValue(1) -- to force onValueChange update
+  window.maxHealth:setValue(1) -- to force onValueChange update
+  window.minHealth:setValue(config.minHealth or 0)
+  window.maxHealth:setValue(config.maxHealth or 100)
+
+  window.attackSpell:setText(config.attackSpell or "")
+  window.attackItem:setItemId(config.attackItem or 0)
+
+  window.attack.onClick = function(widget)
+    if widget:isOn() then
+      return
+    end
+    widget:setOn(true)
+    window.ignore:setOn(false)
+    window.avoid:setOn(false)
+  end
+  window.ignore.onClick = function(widget)
+    if widget:isOn() then
+      return
+    end
+    widget:setOn(true)
+    window.attack:setOn(false)
+    window.avoid:setOn(false)
+  end
+  window.avoid.onClick = function(widget)
+    if widget:isOn() then
+      return
+    end
+    widget:setOn(true)
+    window.attack:setOn(false)
+    window.ignore:setOn(false)
+  end
+
+  window.attack:setOn(config.attack)
+  window.ignore:setOn(config.ignore)
+  window.avoid:setOn(config.avoid)
+  if not window.attack:isOn() and not window.ignore:isOn() and not window.avoid:isOn() then
+    window.attack:setOn(true)
+  end
+
+  window.keepDistance.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+  window.avoidAttacks.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+  window.chase.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+  window.loot.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+  window.monstersOnly.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+  window.dontWalk.onClick = function(widget)
+    widget:setOn(not widget:isOn())
+  end
+
+  window.keepDistance:setOn(config.keepDistance)
+  window.avoidAttacks:setOn(config.avoidAttacks)
+  window.chase:setOn(config.chase)
+  window.loot:setOn(config.loot)
+  if config.loot == nil then
+    window.loot:setOn(true)
+  end
+  window.monstersOnly:setOn(config.monstersOnly)
+  if config.monstersOnly == nil then
+    window.monstersOnly:setOn(true)
+  end
+  window.dontWalk:setOn(config.dontWalk)
+
+  window.name:setText(monster)
+
+  window:show()
+  window:raise()
+  window:focus()
+end
+
+Panels.Attacking = function(parent)
+  local ui = context.setupUI([[
+Panel
+  id: attacking
+  height: 140
+
+  BotLabel
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Attacking
+
+  ComboBox
+    id: config
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    margin-top: 5
+    text-offset: 3 0
+    width: 130
+
+  Button
+    id: enableButton
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 5
+
+  Button
+    margin-top: 1
+    id: add
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Add
+    width: 60
+    height: 17
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    text: Edit
+    width: 60
+    height: 17
+
+  Button
+    id: remove
+    anchors.top: prev.top
+    anchors.right: parent.right
+    text: Remove
+    width: 60
+    height: 17
+
+  TextList
+    id: list
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    vertical-scrollbar: listScrollbar
+    margin-right: 15
+    margin-top: 2
+    height: 60
+    focusable: false
+    auto-focus: first
+
+  VerticalScrollBar
+    id: listScrollbar
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.right: parent.right
+    pixels-scroll: true
+    step: 5
+
+  Button
+    margin-top: 2
+    id: mAdd
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Add
+    width: 60
+    height: 17
+
+  Button
+    id: mEdit
+    anchors.top: prev.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    text: Edit
+    width: 60
+    height: 17
+
+  Button
+    id: mRemove
+    anchors.top: prev.top
+    anchors.right: parent.right
+    text: Remove
+    width: 60
+    height: 17
+
+]], parent)
+
+  if type(context.storage.attacking) ~= "table" then
+    context.storage.attacking = {}
+  end
+  if type(context.storage.attacking.configs) ~= "table" then
+    context.storage.attacking.configs = {}
+  end
+
+  local getConfigName = function(config)
+    local matches = regexMatch(config, [[name:\s*([^\n]*)$]])
+    if matches[1] and matches[1][2] then
+      return matches[1][2]:trim()
+    end
+    return nil
+  end
+
+  local commands = {}
+  local monsters = {}
+  local configName = nil
+  local refreshConfig = nil -- declared later
+
+  local createNewConfig = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+
+    local newConfig = ""
+    if configName ~= nil then
+      newConfig = "name:" .. configName .. "\n"
+    end
+    for monster, config in pairs(monsters) do
+      newConfig = newConfig .. "\n" .. monster .. ":" .. json.encode(config, 2) .. "\n"
+    end
+
+    context.storage.attacking.configs[context.storage.attacking.activeConfig] = newConfig
+    refreshConfig()
+  end
+
+  local parseConfig = function(config)
+    commands = {}
+    monsters = {}
+    configName = nil
+
+    local matches = regexMatch(config, [[([^:^\n]+)(:?)([^\n]*)]])
+    for i = 1, #matches do
+      local command = matches[i][2]
+      local validation = (matches[i][3] == ":")
+      local text = matches[i][4]
+      if validation then
+        table.insert(commands, { command = command:lower(), text = text })
+      elseif #commands > 0 then
+        commands[#commands].text = commands[#commands].text .. "\n" .. matches[i][1]
+      end
+    end
+    local labels = {}
+    for i, command in ipairs(commands) do
+      if commands[i].command == "name" then
+        configName = commands[i].text
+      else
+        local status, result = pcall(function() return json.decode(command.text) end)
+        if not status then
+          context.error("Invalid monster config: " .. commands[i].command .. ", error: " .. result)
+        else
+          monsters[commands[i].command] = result
+          table.insert(labels, commands[i].command)
+        end
+      end
+    end
+    table.sort(labels)
+    for i, text in ipairs(labels) do
+      local label = g_ui.createWidget("CaveBotLabel", ui.list)
+      label:setText(text)
+    end
+  end
+
+  local ignoreOnOptionChange = true
+  refreshConfig = function(scrollDown)
+    ignoreOnOptionChange = true
+    if context.storage.attacking.enabled then
+      ui.enableButton:setText("On")
+      ui.enableButton:setColor('#00AA00FF')
+    else
+      ui.enableButton:setText("Off")
+      ui.enableButton:setColor('#FF0000FF')
+    end
+
+    ui.config:clear()
+    for i, config in ipairs(context.storage.attacking.configs) do
+      local name = getConfigName(config)
+      if not name then
+        name = "Unnamed config"
+      end
+      ui.config:addOption(name)
+    end
+
+    if (not context.storage.attacking.activeConfig or context.storage.attacking.activeConfig == 0) and #context.storage.attacking.configs > 0 then
+      context.storage.attacking.activeConfig = 1
+    end
+
+    ui.list:destroyChildren()
+
+    if context.storage.attacking.activeConfig and context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      ui.config:setCurrentIndex(context.storage.attacking.activeConfig)
+      parseConfig(context.storage.attacking.configs[context.storage.attacking.activeConfig])
+    end
+
+    context.saveConfig()
+    if scrollDown and ui.list:getLastChild() then
+      ui.list:focusChild(ui.list:getLastChild())
+    end
+
+    ignoreOnOptionChange = false
+  end
+
+  ui.config.onOptionChange = function(widget)
+    if not ignoreOnOptionChange then
+      context.storage.attacking.activeConfig = widget.currentIndex
+      refreshConfig()
+    end
+  end
+  ui.enableButton.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    context.storage.attacking.enabled = not context.storage.attacking.enabled
+    refreshConfig()
+  end
+  ui.add.onClick = function()
+    modules.client_textedit.multilineEditor("Target list editor", "name:Config name", function(newText)
+      table.insert(context.storage.attacking.configs, newText)
+      context.storage.attacking.activeConfig = #context.storage.attacking.configs
+      refreshConfig()
+    end)
+  end
+  ui.edit.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    modules.client_textedit.multilineEditor("Target list editor",
+      context.storage.attacking.configs[context.storage.attacking.activeConfig], function(newText)
+        context.storage.attacking.configs[context.storage.attacking.activeConfig] = newText
+        refreshConfig()
+      end)
+  end
+  ui.remove.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    local questionWindow = nil
+    local closeWindow = function()
+      questionWindow:destroy()
+    end
+    local removeConfig = function()
+      closeWindow()
+      if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+        return
+      end
+      context.storage.attacking.enabled = false
+      table.remove(context.storage.attacking.configs, context.storage.attacking.activeConfig)
+      context.storage.attacking.activeConfig = 0
+      refreshConfig()
+    end
+    questionWindow = context.displayGeneralBox(tr('Remove config'), tr('Do you want to remove current attacking config?'),
+      {
+        { text = tr('Yes'), callback = removeConfig },
+        { text = tr('No'),  callback = closeWindow },
+        anchor = AnchorHorizontalCenter
+      }, removeConfig, closeWindow)
+  end
+
+  ui.mAdd.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    Panels.MonsterEditor("", {}, function(name, config)
+      if name:len() > 0 then
+        monsters[name] = config
+      end
+      createNewConfig()
+    end, parent)
+  end
+  ui.mEdit.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    local monsterWidget = ui.list:getFocusedChild()
+    if not monsterWidget or not monsters[monsterWidget:getText()] then
+      return
+    end
+    Panels.MonsterEditor(monsterWidget:getText(), monsters[monsterWidget:getText()], function(name, config)
+      monsters[monsterWidget:getText()] = nil
+      if name:len() > 0 then
+        monsters[name] = config
+      end
+      createNewConfig()
+    end, parent)
+  end
+  ui.mRemove.onClick = function()
+    if not context.storage.attacking.activeConfig or not context.storage.attacking.configs[context.storage.attacking.activeConfig] then
+      return
+    end
+    local monsterWidget = ui.list:getFocusedChild()
+    if not monsterWidget or not monsters[monsterWidget:getText()] then
+      return
+    end
+    monsters[monsterWidget:getText()] = nil
+    createNewConfig()
+  end
+
+  refreshConfig()
+
+  -- processing
+  local isConfigPassingConditions = function(monster, config)
+    if not config or type(config.priority) ~= 'number' or type(config.danger) ~= 'number' then
+      return false
+    end
+
+    if not config.attack then
+      return false
+    end
+
+    if monster:isPlayer() and (config.monstersOnly == true or config.monstersOnly == nil) then
+      return false
+    end
+
+    local pos = context.player:getPosition()
+    local mpos = monster:getPosition()
+    local hp = monster:getHealthPercent()
+
+    if config.minHealth > hp or config.maxHealth < hp then
+      return false
+    end
+
+    local maxDistance = 5
+    if type(config.maxDistance) == 'number' then
+      maxDistance = config.maxDistance
+    end
+    if config.chase and hp < 25 then
+      maxDistance = maxDistance + 2
+    end
+
+    local distance = math.max(math.abs(pos.x - mpos.x), math.abs(pos.y - mpos.y))
+    if distance > maxDistance then
+      return false
+    end
+
+    local pathTo = context.findPath(context.player:getPosition(), { x = mpos.x, y = mpos.y, z = mpos.z }, maxDistance + 2,
+      { ignoreNonPathable = true, precision = 1, allowOnlyVisibleTiles = true, ignoreCost = true })
+    if not pathTo or #pathTo > maxDistance + 1 then
+      return false
+    end
+    return true
+  end
+
+  local getMonsterConfig = function(monster)
+    local name = monster:getName():lower()
+    local hasConfig = false
+    hasConfig = hasConfig or (monsters[name] ~= nil)
+    if isConfigPassingConditions(monster, monsters[name]) then
+      return monsters[name]
+    end
+    for i = 1, 5 do
+      hasConfig = hasConfig or (monsters[name .. i] ~= nil)
+      if isConfigPassingConditions(monster, monsters[name .. i]) then
+        return monsters[name .. i]
+      end
+    end
+    if not hasConfig and isConfigPassingConditions(monster, monsters["*"]) then
+      return monsters["*"]
+    end
+    return nil
+  end
+
+  local calculatePriority = function(monster)
+    local priority = 0
+    local config = getMonsterConfig(monster)
+    if not config then
+      return -1
+    end
+
+    local pos = context.player:getPosition()
+    local mpos = monster:getPosition()
+    local hp = monster:getHealthPercent()
+    local pathTo = context.findPath(context.player:getPosition(), { x = mpos.x, y = mpos.y, z = mpos.z }, 10,
+      { ignoreNonPathable = true, ignoreLastCreature = true, precision = 0, allowOnlyVisibleTiles = true })
+    if not pathTo then
+      pathTo = context.findPath(context.player:getPosition(), { x = mpos.x, y = mpos.y, z = mpos.z }, 10,
+        { ignoreNonPathable = true, precision = 1, allowOnlyVisibleTiles = true })
+      if not pathTo then
+        return -1
+      end
+    end
+    local distance = #pathTo
+
+    if monster == g_game.getAttackingCreature() then
+      priority = priority + 10
+    end
+
+    if distance <= 4 then
+      priority = priority + 10
+    end
+    if distance <= 2 then
+      priority = priority + 10
+    end
+    if distance <= 1 then
+      priority = priority + 10
+    end
+
+    if hp <= 25 and config.chase then
+      priority = priority + 30
+    end
+
+    if hp <= 10 then
+      priority = priority + 10
+    end
+    if hp <= 25 then
+      priority = priority + 10
+    end
+    if hp <= 50 then
+      priority = priority + 10
+    end
+    if hp <= 75 then
+      priority = priority + 10
+    end
+
+    priority = priority + config.priority * 10
+    return priority
+  end
+
+  local calculateMonsterDanger = function(monster)
+    local danger = 0
+    local config = getMonsterConfig(monster)
+    if not config or type(config.danger) ~= 'number' then
+      return danger
+    end
+    danger = danger + config.danger
+    return danger
+  end
+
+  local lastAttack = context.now
+  local lootContainers = {}
+  local lootTries = 0
+  local openContainerRequest = 0
+  local waitForLooting = 0
+  local lastAttackSpell = 0
+  local lastAttackRune = 0
+
+  local goForLoot = function()
+    if #lootContainers == 0 or not context.storage.looting.enabled then
+      return false
+    end
+    if modules.game_interface.lastManualWalk + 500 > context.now then
+      return true
+    end
+
+    local pos = context.player:getPosition()
+    table.sort(lootContainers, function(pos1, pos2)
+      local dist1 = math.max(math.abs(pos.x - pos1.x), math.abs(pos.y - pos1.y))
+      local dist2 = math.max(math.abs(pos.x - pos2.x), math.abs(pos.y - pos2.y))
+      return dist1 < dist2
+    end)
+
+    local cpos = lootContainers[1]
+    if cpos.z ~= pos.z then
+      table.remove(lootContainers, 1)
+      return true
+    end
+
+    if lootTries >= 5 then
+      lootTries = 0
+      table.remove(lootContainers, 1)
+      return true
+    end
+    local dist = math.max(math.abs(pos.x - cpos.x), math.abs(pos.y - cpos.y))
+    if dist <= 5 then
+      local tile = g_map.getTile(cpos)
+      if not tile then
+        table.remove(lootContainers, 1)
+        return true
+      end
+
+      local topItem = tile:getTopUseThing()
+      if not topItem or not topItem:isContainer() then
+        table.remove(lootContainers, 1)
+        return true
+      end
+      topItem:setMarked('orange')
+
+      if dist <= 1 then
+        lootTries = lootTries + 1
+        openContainerRequest = context.now
+        g_game.open(topItem)
+        waitForLooting = math.max(waitForLooting, context.now + 500)
+        return true
+      end
+    end
+
+    if dist <= 25 then
+      if context.player:isWalking() then
+        return true
+      end
+
+      lootTries = lootTries + 1
+      if context.autoWalk(cpos, 20, { precision = 1 }) then
+        return true
+      end
+
+      if context.autoWalk(cpos, 20, { ignoreNonPathable = true, precision = 1 }) then
+        return true
+      end
+
+      if context.autoWalk(cpos, 20, { ignoreNonPathable = true, precision = 2 }) then
+        return true
+      end
+
+      if context.autoWalk(cpos, 20, { ignoreNonPathable = true, ignoreCreatures = true, precision = 2 }) then
+        return true
+      end
+    else
+      table.remove(lootContainers, 1)
+      return false
+    end
+    return true
+  end
+
+  context.onCreatureDisappear(function(creature)
+    if not creature:isMonster() then
+      return
+    end
+    local pos = context.player:getPosition()
+    local tpos = creature:getPosition()
+    if tpos.z ~= pos.z then
+      return
+    end
+
+    local config = getMonsterConfig(creature)
+    if not config or not config.loot then
+      return
+    end
+    local distance = math.max(math.abs(pos.x - tpos.x), math.abs(pos.y - tpos.y))
+    if distance > 6 then
+      return
+    end
+
+    local tile = g_map.getTile(tpos)
+    if not tile then
+      return
+    end
+
+    local topItem = tile:getTopUseThing()
+    if not topItem or not topItem:isContainer() then
+      return
+    end
+
+    topItem:setMarked('blue')
+    table.insert(lootContainers, tpos)
+  end)
+
+  context.onContainerOpen(function(container, prevContainer)
+    lootTries = 0
+    if not context.storage.attacking.enabled then
+      return
+    end
+
+    if openContainerRequest + 500 > context.now and #lootContainers > 0 then
+      waitForLooting = math.max(waitForLooting, context.now + 1000 + container:getItemsCount() * 100)
+      table.remove(lootContainers, 1)
+    end
+    if prevContainer then
+      container.autoLooting = prevContainer.autoLooting
+    else
+      container.autoLooting = (openContainerRequest + 3000 > context.now)
+    end
+  end)
+
+  context.macro(200, function()
+    if not context.storage.attacking.enabled then
+      return
+    end
+
+    local attacking = nil
+    local following = nil
+    local attackingCandidate = g_game.getAttackingCreature()
+    local followingCandidate = g_game.getFollowingCreature()
+    local spectators = context.getSpectators()
+    local monsters = {}
+    local danger = 0
+
+    for i, spec in ipairs(spectators) do
+      if attackingCandidate and attackingCandidate:getId() == spec:getId() then
+        attacking = spec
+      end
+      if followingCandidate and followingCandidate:getId() == spec:getId() then
+        following = spec
+      end
+      if spec:isMonster() or (spec:isPlayer() and not spec:isLocalPlayer()) then
+        danger = danger + calculateMonsterDanger(spec)
+        spec.attackingPriority = calculatePriority(spec)
+        table.insert(monsters, spec)
+      end
+    end
+
+    if following then
+      return
+    end
+
+    if waitForLooting > context.now then
+      return
+    end
+
+    if #monsters == 0 or context.isInProtectionZone() then
+      goForLoot()
+      return
+    end
+
+    table.sort(monsters, function(a, b)
+      return a.attackingPriority > b.attackingPriority
+    end)
+
+    local target = monsters[1]
+    if target.attackingPriority < 0 then
+      return
+    end
+
+    local pos = context.player:getPosition()
+    local tpos = target:getPosition()
+    local config = getMonsterConfig(target)
+    local offsetX = pos.x - tpos.x
+    local offsetY = pos.y - tpos.y
+
+    local justStartedAttack = false
+    if target ~= attacking then
+      g_game.attack(target)
+      attacking = target
+      lastAttack = context.now
+      justStartedAttack = true
+    end
+
+    -- proceed attack
+    if not target:isPlayer() and lastAttack + 15000 < context.now then
+      -- stop and attack again, just in case
+      g_game.cancelAttack()
+      g_game.attack(target)
+      lastAttack = context.now
+      return
+    end
+
+    if not justStartedAttack and config.attackSpell and config.attackSpell:len() > 0 then
+      if context.now > lastAttackSpell + 1000 and context.player:getHealthPercent() > 30 then
+        if context.saySpell(config.attackSpell, 1500) then
+          lastAttackRune = context.now
+        end
+      end
+    end
+
+    if not justStartedAttack and config.attackItem and config.attackItem >= 100 then
+      if context.now > lastAttackRune + 1000 and context.player:getHealthPercent() > 30 then
+        if context.useRune(config.attackItem, target, 1500) then
+          lastAttackRune = context.now
+        end
+      end
+    end
+
+    if modules.game_interface.lastManualWalk + 500 > context.now then
+      return
+    end
+
+    if danger < 8 then
+      -- low danger, go for loot first
+      if goForLoot() then
+        return
+      end
+    end
+
+    target.ignoreByWaypoints = config.dontWalk
+    if config.dontWalk then
+      if goForLoot() then
+        return
+      end
+      return
+    end
+
+    local distance = math.max(math.abs(offsetX), math.abs(offsetY))
+    if config.keepDistance then
+      local minDistance = config.distance
+      if target:getHealthPercent() <= 25 and config.chase and danger < 10 then
+        minDistance = 1
+      end
+      if (distance == minDistance or distance == minDistance + 1) then
+        return
+      else
+        local bestDist = 10
+        local bestPos = pos
+        if not context.autoWalk(tpos, 10, { minMargin = minDistance, maxMargin = minDistance + 1, allowOnlyVisibleTiles = true }) then
+          if not context.autoWalk(tpos, 10, { ignoreNonPathable = true, minMargin = minDistance, maxMargin = minDistance +
+                  1, allowOnlyVisibleTiles = true }) then
+            if not context.autoWalk(tpos, 10, { ignoreNonPathable = true, ignoreCreatures = true, minMargin = minDistance, maxMargin =
+                    minDistance + 2, allowOnlyVisibleTiles = true }) then
+              return
+            end
+          end
+        end
+        if not target:isPlayer() then
+          context.delay(300)
+        end
+      end
+      return
+    end
+
+    if config.avoidAttacks and distance <= 1 then
+      if (offsetX == 0 and offsetY ~= 0) then
+        if context.player:canWalk(Directions.East) then
+          g_game.walk(Directions.East)
+        elseif context.player:canWalk(Directions.West) then
+          g_game.walk(Directions.West)
+        end
+      elseif (offsetX ~= 0 and offsetY == 0) then
+        if context.player:canWalk(Directions.North) then
+          g_game.walk(Directions.North)
+        elseif context.player:canWalk(Directions.South) then
+          g_game.walk(Directions.South)
+        end
+      end
+    end
+
+    if distance > 1 then
+      if not context.autoWalk(tpos, 10, { precision = 1, allowOnlyVisibleTiles = true }) then
+        if not context.autoWalk(tpos, 10, { ignoreNonPathable = true, precision = 1, allowOnlyVisibleTiles = true }) then
+          if not context.autoWalk(tpos, 10, { ignoreNonPathable = true, precision = 2, allowOnlyVisibleTiles = true }) then
+            return
+          end
+        end
+      end
+      if not target:isPlayer() then
+        context.delay(300)
+      end
+    end
+  end)
+end
+]=]
+SUPPORT_FILES["panels/basic.lua"] = [[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.Turning = function(parent)
+  context.macro(1000, "Turning / AntiIdle", nil, function()
+    context.turn(math.random(1, 4))
+  end, parent)
+end
+Panels.AntiIdle = Panels.Turning
+
+Panels.AttackSpell = function(parent)
+  context.macro(500, "Auto attack spell", nil, function()
+    local target = g_game.getAttackingCreature()
+    if target and context.getCreatureById(target:getId()) and context.storage.autoAttackText:len() > 0 then
+      if context.saySpell(context.storage.autoAttackText, 1000) then
+        context.delay(1000)
+      end
+    end
+  end, parent)
+  context.addTextEdit("autoAttackText", context.storage.autoAttackText or "exori vis", function(widget, text)
+    context.storage.autoAttackText = text
+  end, parent)
+end
+
+Panels.AttackItem = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "attackItem"
+  local ui = g_ui.createWidget("ItemAndButtonPanel", parent)
+  ui:setId(panelName)
+
+  ui.title:setText("Auto attack item")
+
+  if not context.storage.attackItem then
+    context.storage.attackItem = {}
+  end
+
+  ui.title:setOn(context.storage.attackItem.enabled)
+  ui.title.onClick = function(widget)
+    context.storage.attackItem.enabled = not context.storage.attackItem.enabled
+    widget:setOn(context.storage.attackItem.enabled)
+  end
+
+  ui.item.onItemChange = function(widget)
+    context.storage.attackItem.item = widget:getItemId()
+  end
+  ui.item:setItemId(context.storage.attackItem.item or 3155)
+
+  context.macro(500, function()
+    local target = g_game.getAttackingCreature()
+    if context.storage.attackItem.enabled and target and context.getCreatureById(target:getId()) and context.storage.attackItem.item and context.storage.attackItem.item >= 100 then
+      context.useWith(context.storage.attackItem.item, target)
+    end
+  end)
+end
+]]
+SUPPORT_FILES["panels/healing.lua"] = [[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.Haste = function(parent)
+  context.macro(500, "Auto Haste", nil, function()
+    if not context.hasHaste() and context.storage.autoHasteText:len() > 0 then
+      if context.saySpell(context.storage.autoHasteText, 2500) then
+        context.delay(5000)
+      end
+    end
+  end, parent)
+  context.addTextEdit("autoHasteText", context.storage.autoHasteText or "utani hur", function(widget, text)
+    context.storage.autoHasteText = text
+  end, parent)
+end
+
+Panels.ManaShield = function(parent)
+  local lastManaShield = 0
+  context.macro(100, "Auto Mana Shield", nil, function()
+    if not context.hasManaShield() or context.now > lastManaShield + 90000 then
+      if context.saySpell("utamo vita", 200) then
+        lastManaShield = context.now
+      end
+    end
+  end, parent)
+end
+
+Panels.AntiParalyze = function(parent)
+  context.macro(100, "Anti Paralyze", nil, function()
+    if context.isParalyzed() and context.storage.autoAntiParalyzeText:len() > 0 then
+      context.saySpell(context.storage.autoAntiParalyzeText, 750)
+    end
+  end, parent)
+  context.addTextEdit("autoAntiParalyzeText", context.storage.autoAntiParalyzeText or "utani hur", function(widget, text)
+    context.storage.autoAntiParalyzeText = text
+  end, parent)
+end
+
+Panels.Health = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "autoHealthPanel"
+  local panelId = 1
+  while parent:getChildById(panelName .. panelId) do
+    panelId = panelId + 1
+  end
+  panelName = panelName .. panelId
+
+  local ui = g_ui.createWidget("DualScrollPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {
+      item = 266,
+      min = 20,
+      max = 80,
+      text = "exura"
+    }
+  end
+
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  ui.text.onTextChange = function(widget, text)
+    context.storage[panelName].text = text
+  end
+  ui.text:setText(context.storage[panelName].text or "exura")
+
+  local updateText = function()
+    ui.title:setText("" .. context.storage[panelName].min .. "% <= hp <= " .. context.storage[panelName].max .. "%")
+  end
+
+  ui.scroll1.onValueChange = function(scroll, value)
+    context.storage[panelName].min = value
+    updateText()
+  end
+  ui.scroll2.onValueChange = function(scroll, value)
+    context.storage[panelName].max = value
+    updateText()
+  end
+
+  ui.scroll1:setValue(context.storage[panelName].min)
+  ui.scroll2:setValue(context.storage[panelName].max)
+
+  context.macro(25, function()
+    if context.storage[panelName].enabled and context.storage[panelName].text:len() > 0 and context.storage[panelName].min <= context.hppercent() and context.hppercent() <= context.storage[panelName].max then
+      if context.saySpell(context.storage[panelName].text, 500) then
+        context.delay(200)
+      end
+    end
+  end)
+end
+
+Panels.HealthItem = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "autoHealthItemPanel"
+  local panelId = 1
+  while parent:getChildById(panelName .. panelId) do
+    panelId = panelId + 1
+  end
+  panelName = panelName .. panelId
+
+  local ui = g_ui.createWidget("DualScrollItemPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {
+      item = 266,
+      min = 0,
+      max = 60
+    }
+  end
+
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  ui.item.onItemChange = function(widget)
+    context.storage[panelName].item = widget:getItemId()
+  end
+  ui.item:setItemId(context.storage[panelName].item)
+
+  local updateText = function()
+    ui.title:setText("" .. (context.storage[panelName].min or "") .. "% <= hp <= " .. (context.storage[panelName].max or "") .. "%")
+  end
+
+  ui.scroll1.onValueChange = function(scroll, value)
+    context.storage[panelName].min = value
+    updateText()
+  end
+  ui.scroll2.onValueChange = function(scroll, value)
+    context.storage[panelName].max = value
+    updateText()
+  end
+
+  ui.scroll1:setValue(context.storage[panelName].min)
+  ui.scroll2:setValue(context.storage[panelName].max)
+
+  context.macro(25, function()
+    if context.storage[panelName].enabled and context.storage[panelName].item >= 100 and context.storage[panelName].min <= context.hppercent() and context.hppercent() <= context.storage[panelName].max then
+      if context.useRune(context.storage[panelName].item, context.player, 500) then
+        context.delay(300)
+      end
+    end
+  end)
+end
+
+Panels.Mana = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "autoManaItemPanel"
+  local panelId = 1
+  while parent:getChildById(panelName .. panelId) do
+    panelId = panelId + 1
+  end
+  panelName = panelName .. panelId
+
+  local ui = g_ui.createWidget("DualScrollItemPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {
+      item = 268,
+      min = 0,
+      max = 60
+    }
+  end
+
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  ui.item.onItemChange = function(widget)
+    context.storage[panelName].item = widget:getItemId()
+  end
+  ui.item:setItemId(context.storage[panelName].item)
+
+  local updateText = function()
+    ui.title:setText("" .. (context.storage[panelName].min or "") .. "% <= mana <= " .. (context.storage[panelName].max or "") .. "%")
+  end
+
+  ui.scroll1.onValueChange = function(scroll, value)
+    context.storage[panelName].min = value
+    updateText()
+  end
+  ui.scroll2.onValueChange = function(scroll, value)
+    context.storage[panelName].max = value
+    updateText()
+  end
+
+  ui.scroll1:setValue(context.storage[panelName].min)
+  ui.scroll2:setValue(context.storage[panelName].max)
+
+  context.macro(25, function()
+    if context.storage[panelName].enabled and context.storage[panelName].item >= 100 and context.storage[panelName].min <= context.manapercent() and context.manapercent() <= context.storage[panelName].max then
+      if context.useRune(context.storage[panelName].item, context.player, 500) then
+        context.delay(300)
+      end
+    end
+  end)
+end
+Panels.ManaItem = Panels.Mana
+
+Panels.Equip = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "autoEquipItem"
+  local panelId = 1
+  while parent:getChildById(panelName .. panelId) do
+    panelId = panelId + 1
+  end
+  panelName = panelName .. panelId
+
+  local ui = g_ui.createWidget("TwoItemsAndSlotPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {}
+    if panelId == 1 then
+      context.storage[panelName].item1 = 3052
+      context.storage[panelName].item2 = 3089
+      context.storage[panelName].slot = 9
+    end
+  end
+
+  ui.title:setText("Auto equip")
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  ui.item1:setItemId(context.storage[panelName].item1 or 0)
+  ui.item1.onItemChange = function(widget)
+    context.storage[panelName].item1 = widget:getItemId()
+  end
+
+  ui.item2:setItemId(context.storage[panelName].item2 or 0)
+  ui.item2.onItemChange = function(widget)
+    context.storage[panelName].item2 = widget:getItemId()
+  end
+
+  if not context.storage[panelName].slot then
+    context.storage[panelName].slot = 1
+  end
+  ui.slot:setCurrentIndex(context.storage[panelName].slot)
+  ui.slot.onOptionChange = function(widget)
+    context.storage[panelName].slot = widget.currentIndex
+  end
+
+  context.macro(250, function()
+    if context.storage[panelName].enabled and context.storage[panelName].slot > 0 then
+      local item1 = context.storage[panelName].item1 or 0
+      local item2 = context.storage[panelName].item2 or 0
+      if item1 < 100 and item2 < 100 then
+        return
+      end
+      local slotItem = context.getSlot(context.storage[panelName].slot)
+      if slotItem and (slotItem:getId() == item1 or slotItem:getId() == item2) then
+        return
+      end
+      local newItem = context.findItem(context.storage[panelName].item1)
+      if not newItem then
+        newItem = context.findItem(context.storage[panelName].item2)
+        if not newItem then
+          return
+        end
+      end
+      g_game.move(newItem, {x=65535, y=context.storage[panelName].slot, z=0})
+      context.delay(1000)
+    end
+  end)
+end
+Panels.AutoEquip = Panels.Equip
+
+Panels.Eating = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "autoEatingPanel"
+  local panelId = 1
+  while parent:getChildById(panelName .. panelId) do
+    panelId = panelId + 1
+  end
+  panelName = panelName .. panelId
+
+  local ui = g_ui.createWidget("ItemsPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {}
+  end
+
+  ui.title:setText("Auto eating")
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  if type(context.storage[panelName].items) ~= 'table' then
+    context.storage[panelName].items = {3725, 0, 0, 0, 0}
+  end
+
+  for i=1,5 do
+    ui.items:getChildByIndex(i).onItemChange = function(widget)
+      context.storage[panelName].items[i] = widget:getItemId()
+    end
+    ui.items:getChildByIndex(i):setItemId(context.storage[panelName].items[i])
+  end
+
+  context.macro(15000, function()
+    if not context.storage[panelName].enabled then
+      return
+    end
+    local candidates = {}
+    for i, item in pairs(context.storage[panelName].items) do
+      if item >= 100 then
+        table.insert(candidates, item)
+      end
+    end
+    if #candidates == 0 then
+      return
+    end
+    context.use(candidates[math.random(1, #candidates)])
+  end)
+end
+]]
+SUPPORT_FILES["panels/looting.lua"] = [=[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.Looting = function(parent)
+  local ui = context.setupUI([[
+Panel
+  id: looting
+  height: 180
+
+  BotLabel
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Looting
+
+  ComboBox
+    id: config
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    margin-top: 5
+    text-offset: 3 0
+    width: 130
+
+  Button
+    id: enableButton
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 5
+
+  Button
+    margin-top: 1
+    id: add
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Add
+    width: 60
+    height: 17
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    text: Edit
+    width: 60
+    height: 17
+
+  Button
+    id: remove
+    anchors.top: prev.top
+    anchors.right: parent.right
+    text: Remove
+    width: 60
+    height: 17
+
+  ScrollablePanel
+    id: items
+    anchors.top: prev.bottom
+    anchors.right: parent.right
+    anchors.left: parent.left
+    vertical-scrollbar: scrollBar
+    margin-right: 5
+    margin-top: 2
+    height: 70
+    layout:
+      type: grid
+      cell-size: 34 34
+      flow: true
+
+  BotSmallScrollBar
+    id: scrollBar
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.right: parent.right
+    step: 10
+    pixels-scroll: true
+
+  BotLabel
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    margin-top: 4
+    text: Loot Containers
+
+  ItemsRow
+    id: containers
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 33
+    margin-top: 2
+
+]], parent)
+
+  local lootContainers = { ui.containers.item1, ui.containers.item2, ui.containers.item3, ui.containers.item4, ui.containers.item5 }
+
+  if type(context.storage.looting) ~= "table" then
+    context.storage.looting = {}
+  end
+  if type(context.storage.looting.configs) ~= "table" then
+    context.storage.looting.configs = {}
+  end
+
+  local getConfigName = function(config)
+    local matches = regexMatch(config, [[name:\s*([^\n]*)$]])
+    if matches[1] and matches[1][2] then
+      return matches[1][2]:trim()
+    end
+    return nil
+  end
+
+  local items = {}
+  local itemsByKey = {}
+  local containers = {}
+  local commands = {}
+  local refreshConfig = nil -- declared later
+
+  local createNewConfig = function(focusedWidget)
+    if not context.storage.looting.activeConfig or not context.storage.looting.configs[context.storage.looting.activeConfig] then
+      return
+    end
+
+    local tmpItems = {}
+    local tmpContainers = {}
+    local focusIndex = 0
+
+    local newConfig = ""
+    for i, text in ipairs(commands) do
+      newConfig = newConfig .. text .. "\n"
+    end
+    for i=1,ui.items:getChildCount() do
+      local widget = ui.items:getChildByIndex(i)
+      if widget and widget:getItemId() >= 100 then
+        if tmpItems[widget:getItemId()] == nil then
+          tmpItems[widget:getItemId()] = 1
+          newConfig = newConfig .. "\n" .. widget:getItemId()
+        end
+      end
+      if widget == focusedWidget then
+        focusIndex = i
+      end
+    end
+    for i, widget in ipairs(lootContainers) do
+      if widget:getItemId() >= 100 then
+        if tmpContainers[widget:getItemId()] == nil then
+          tmpContainers[widget:getItemId()] = 1 -- remove duplicates
+          newConfig = newConfig .. "\ncontainer:" .. widget:getItemId()
+        end
+      end
+    end
+
+    context.storage.looting.configs[context.storage.looting.activeConfig] = newConfig
+    refreshConfig(focusIndex)
+  end
+
+  local parseConfig = function(config)
+    items = {}
+    itemsByKey = {}
+    containers = {}
+    commands = {}
+    local matches = regexMatch(config, [[([^:^\n^\s]+)(:?)([^\n]*)]])
+    for i=1,#matches do
+      local command = matches[i][2]
+      local validation = (matches[i][3] == ":")
+      local text = matches[i][4]
+      local commandAsNumber = tonumber(command)
+      local textAsNumber = tonumber(text)
+      if commandAsNumber and commandAsNumber >= 100 then
+        table.insert(items, commandAsNumber)
+        itemsByKey[commandAsNumber] = 1
+      elseif command == "container" and validation and textAsNumber and textAsNumber >= 100 then
+        containers[textAsNumber] = 1
+      elseif validation then
+        table.insert(commands, command .. ":" .. text)
+      end
+    end
+
+    local itemsToShow = #items + 2
+    if itemsToShow % 5 ~= 0 then
+      itemsToShow = itemsToShow + 5 - itemsToShow % 5
+    end
+    if itemsToShow < 10 then
+      itemsToShow = 10
+    end
+
+    for i=1,itemsToShow do
+      local widget = g_ui.createWidget("BotItem", ui.items)
+      local itemId = 0
+      if i <= #items then
+        itemId = items[i]
+      end
+      widget:setItemId(itemId)
+      widget.onItemChange = createNewConfig
+    end
+
+    for i, widget in ipairs(lootContainers) do
+        widget:setItemId(0)
+    end
+    local containerIndex = 1
+    for containerId, i in pairs(containers) do
+      if lootContainers[containerIndex] then
+        lootContainers[containerIndex]:setItemId(containerId)
+      end
+      containerIndex = containerIndex + 1
+    end
+    for i, widget in ipairs(lootContainers) do
+      widget.onItemChange = createNewConfig
+    end
+  end
+
+  local ignoreOnOptionChange = true
+  refreshConfig = function(focusIndex)
+    ignoreOnOptionChange = true
+    if context.storage.looting.enabled then
+      ui.enableButton:setText("On")
+      ui.enableButton:setColor('#00AA00FF')
+    else
+      ui.enableButton:setText("Off")
+      ui.enableButton:setColor('#FF0000FF')
+    end
+
+    ui.config:clear()
+    for i, config in ipairs(context.storage.looting.configs) do
+      local name = getConfigName(config)
+      if not name then
+        name = "Unnamed config"
+      end
+      ui.config:addOption(name)
+    end
+
+    if (not context.storage.looting.activeConfig or context.storage.looting.activeConfig == 0) and #context.storage.looting.configs > 0 then
+       context.storage.looting.activeConfig = 1
+    end
+
+    ui.items:destroyChildren()
+    for i, widget in ipairs(lootContainers) do
+      widget.onItemChange = nil
+      widget:setItemId(0)
+      widget:setItemCount(0)
+    end
+
+    if context.storage.looting.activeConfig and context.storage.looting.configs[context.storage.looting.activeConfig] then
+      ui.config:setCurrentIndex(context.storage.looting.activeConfig)
+      parseConfig(context.storage.looting.configs[context.storage.looting.activeConfig])
+    end
+
+    context.saveConfig()
+    if focusIndex and focusIndex > 0 and ui.items:getChildByIndex(focusIndex) then
+      ui.items:focusChild(ui.items:getChildByIndex(focusIndex))
+    end
+
+    ignoreOnOptionChange = false
+  end
+
+  ui.config.onOptionChange = function(widget)
+    if not ignoreOnOptionChange then
+      context.storage.looting.activeConfig = widget.currentIndex
+      refreshConfig()
+    end
+  end
+  ui.enableButton.onClick = function()
+    if not context.storage.looting.activeConfig or not context.storage.looting.configs[context.storage.looting.activeConfig] then
+      return
+    end
+    context.storage.looting.enabled = not context.storage.looting.enabled
+    refreshConfig()
+  end
+  ui.add.onClick = function()
+    modules.client_textedit.multilineEditor("Looting editor", "name:Config name", function(newText)
+      table.insert(context.storage.looting.configs, newText)
+      context.storage.looting.activeConfig = #context.storage.looting.configs
+      refreshConfig()
+    end)
+  end
+  ui.edit.onClick = function()
+    if not context.storage.looting.activeConfig or not context.storage.looting.configs[context.storage.looting.activeConfig] then
+      return
+    end
+    modules.client_textedit.multilineEditor("Looting editor", context.storage.looting.configs[context.storage.looting.activeConfig], function(newText)
+      context.storage.looting.configs[context.storage.looting.activeConfig] = newText
+      refreshConfig()
+    end)
+  end
+  ui.remove.onClick = function()
+    if not context.storage.looting.activeConfig or not context.storage.looting.configs[context.storage.looting.activeConfig] then
+      return
+    end
+    local questionWindow = nil
+    local closeWindow = function()
+      questionWindow:destroy()
+    end
+    local removeConfig = function()
+      closeWindow()
+      if not context.storage.looting.activeConfig or not context.storage.looting.configs[context.storage.looting.activeConfig] then
+        return
+      end
+      context.storage.looting.enabled = false
+      table.remove(context.storage.looting.configs, context.storage.looting.activeConfig)
+      context.storage.looting.activeConfig = 0
+      refreshConfig()
+    end
+    questionWindow = context.displayGeneralBox(tr('Remove config'), tr('Do you want to remove current looting config?'), {
+      { text=tr('Yes'), callback=removeConfig },
+      { text=tr('No'), callback=closeWindow },
+      anchor=AnchorHorizontalCenter}, removeConfig, closeWindow)
+  end
+  refreshConfig()
+
+  context.onContainerOpen(function(container, prevContainer)
+    if context.storage.attacking.enabled then
+      return
+    end
+    if prevContainer then
+      container.autoLooting = prevContainer.autoLooting
+    else
+      container.autoLooting = true
+    end
+  end)
+
+  context.macro(200, function()
+    if not context.storage.looting.enabled then
+      return
+    end
+    local candidates = {}
+    local lootContainersCandidates = {}
+    for containerId, container in pairs(g_game.getContainers()) do
+      local containerItem = container:getContainerItem()
+      if container.autoLooting and container:getItemsCount() > 0 and (not containerItem or containers[containerItem:getId()] == nil) then
+        table.insert(candidates, container)
+      elseif containerItem and containers[containerItem:getId()] ~= nil then
+        table.insert(lootContainersCandidates, container)
+      end
+    end
+    if #lootContainersCandidates == 0 then
+      for slot = InventorySlotFirst, InventorySlotLast do
+        local item = context.getInventoryItem(slot)
+        if item and item:isContainer() and containers[item:getId()] ~= nil then
+          table.insert(lootContainersCandidates, item)
+        end
+      end
+      if #lootContainersCandidates > 0 then
+        -- try to open inventory backpack
+        local target = lootContainersCandidates[math.random(1,#lootContainersCandidates)]
+        g_game.open(target, nil)
+        context.delay(200)
+      end
+      return
+    end
+
+    if #candidates == 0 then
+      return
+    end
+
+    local container = candidates[math.random(1,#candidates)]
+    local nextContainers = {}
+    local foundItem = nil
+    for i, item in ipairs(container:getItems()) do
+      if item:isContainer() then
+        table.insert(nextContainers, item)
+      elseif itemsByKey[item:getId()] ~= nil then
+        foundItem = item
+        break
+      end
+    end
+
+    -- found item to loot
+    if foundItem then
+      -- find backpack for it, first backpack with same items
+      for i, container in ipairs(lootContainersCandidates) do
+        if container:getItemsCount() < container:getCapacity() or foundItem:isStackable() then -- has space
+          for j, item in ipairs(container:getItems()) do
+            if item:getId() == foundItem:getId() then
+              if foundItem:isStackable() then
+                if item:getCount() ~= 100  then
+                  g_game.move(foundItem, container:getSlotPosition(j - 1), foundItem:getCount())
+                  return
+                end
+              else
+                g_game.move(foundItem, container:getSlotPosition(container:getItemsCount()), foundItem:getCount())
+                return
+              end
+            end
+          end
+        end
+      end
+      -- now any backpack with empty slot
+      for i, container in ipairs(lootContainersCandidates) do
+        if container:getItemsCount() < container:getCapacity() then -- has space
+          g_game.move(foundItem, container:getSlotPosition(container:getItemsCount()), foundItem:getCount())
+          return
+        end
+      end
+
+      -- can't find backpack, try to open new
+      for i, container in ipairs(lootContainersCandidates) do
+        local candidates = {}
+        for j, item in ipairs(container:getItems()) do
+          if item:isContainer() and containers[item:getId()] ~= nil then
+            table.insert(candidates, item)
+          end
+        end
+        if #candidates > 0 then
+          g_game.open(candidates[math.random(1,#candidates)], container)
+          return
+        end
+        -- full, close it
+        g_game.close(container)
+        return
+      end
+      return
+    end
+
+    -- open remaining containers
+    if #nextContainers == 0 then
+      return
+    end
+    local delay = 1
+    for i=2,#nextContainers do
+      -- if more than 1 container, open them in new window
+      context.schedule(delay, function()
+        g_game.open(nextContainers[i], nil)
+      end)
+      delay = delay + 250
+    end
+    context.schedule(delay, function()
+      g_game.open(nextContainers[1], container)
+    end)
+    context.delay(150 + delay)
+  end)
+end
+]=]
+SUPPORT_FILES["panels/tools.lua"] = [[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.TradeMessage = function(parent)
+  context.macro(60000, "Send message on trade", nil, function()
+    local trade = context.getChannelId("advertising")
+    if not trade then
+      trade = context.getChannelId("trade")
+    end
+    if context.storage.autoTradeMessage:len() > 0 and trade then
+      context.sayChannel(trade, context.storage.autoTradeMessage)
+    end
+  end, parent)
+  context.addTextEdit("autoTradeMessage", context.storage.autoTradeMessage or "I'm using OTClient Redemption - https://github.com/mehah/otclient", function(widget, text)
+    context.storage.autoTradeMessage = text
+  end, parent)
+end
+
+Panels.AutoStackItems = function(parent)
+  context.macro(500, "Auto stacking items", nil, function()
+    local containers = context.getContainers()
+    for i, container in pairs(containers) do
+      local toStack = {}
+      for j, item in ipairs(container:getItems()) do
+        if item:isStackable() and item:getCount() ~= 100 then
+          local otherItem = toStack[item:getId()]
+          if otherItem then
+            g_game.move(item, otherItem, item:getCount())
+            return
+          end
+          toStack[item:getId()] = container:getSlotPosition(j - 1)
+        end
+      end
+    end
+  end, parent)
+end
+]]
+SUPPORT_FILES["panels/war.lua"] = [[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.AttackLeaderTarget = function(parent)
+  local toAttack = nil
+  context.onMissle(function(missle)
+    if not context.storage.attackLeader or context.storage.attackLeader:len() == 0 then
+      return
+    end
+    local src = missle:getSource()
+    if src.z ~= context.posz() then
+      return
+    end
+    local from = g_map.getTile(src)
+    local to = g_map.getTile(missle:getDestination())
+    if not from or not to then
+      return
+    end
+    local fromCreatures = from:getCreatures()
+    local toCreatures = to:getCreatures()
+    if #fromCreatures ~= 1 or #toCreatures ~= 1 then
+      return
+    end
+    local c1 = fromCreatures[1]
+    if c1:getName():lower() == context.storage.attackLeader:lower() then
+      toAttack = toCreatures[1]
+    end
+  end)
+  context.macro(50, "Attack leader's target", nil, function()
+    if toAttack and context.storage.attackLeader:len() > 0 and toAttack ~= g_game.getAttackingCreature() then
+      g_game.attack(toAttack)
+      toAttack = nil
+    end
+  end, parent)
+  context.addTextEdit("attackLeader", context.storage.attackLeader or "player name", function(widget, text)
+    context.storage.attackLeader = text
+  end, parent)
+end
+
+
+Panels.LimitFloor = function(parent)
+  context.onPlayerPositionChange(function(pos)
+    if context.storage.limitFloor then
+      local gameMapPanel = modules.game_interface.getMapPanel()
+      if gameMapPanel then
+        gameMapPanel:lockVisibleFloor(pos.z)
+      end
+    end
+  end)
+
+  local switch = context.addSwitch("limitFloor", "Don't show higher floors", function(widget)
+    widget:setOn(not widget:isOn())
+    context.storage.limitFloor = widget:isOn()
+    local gameMapPanel = modules.game_interface.getMapPanel()
+    if gameMapPanel then
+      if context.storage.limitFloor then
+        gameMapPanel:lockVisibleFloor(context.posz())
+      else
+        gameMapPanel:unlockVisibleFloor()
+      end
+    end
+  end, parent)
+  switch:setOn(context.storage.limitFloor)
+end
+
+Panels.AntiPush = function(parent)
+  if not parent then
+    parent = context.panel
+  end
+
+  local panelName = "antiPushPanel"
+  local ui = g_ui.createWidget("ItemsPanel", parent)
+  ui:setId(panelName)
+
+  if not context.storage[panelName] then
+    context.storage[panelName] = {}
+  end
+
+  ui.title:setText("Anti push")
+  ui.title:setOn(context.storage[panelName].enabled)
+  ui.title.onClick = function(widget)
+    context.storage[panelName].enabled = not context.storage[panelName].enabled
+    widget:setOn(context.storage[panelName].enabled)
+  end
+
+  if type(context.storage[panelName].items) ~= 'table' then
+    context.storage[panelName].items = {3031, 3035, 0, 0, 0}
+  end
+
+  for i=1,5 do
+    ui.items:getChildByIndex(i).onItemChange = function(widget)
+      context.storage[panelName].items[i] = widget:getItemId()
+    end
+    ui.items:getChildByIndex(i):setItemId(context.storage[panelName].items[i])
+  end
+
+  context.macro(100, function()
+    if not context.storage[panelName].enabled then
+      return
+    end
+    local tile = g_map.getTile(context.player:getPosition())
+    if not tile then
+      return
+    end
+    local topItem = tile:getTopUseThing()
+    if topItem and topItem:isStackable() then
+      topItem = topItem:getId()
+    else
+      topItem = 0
+    end
+    local candidates = {}
+    for i, item in pairs(context.storage[panelName].items) do
+      if item >= 100 and item ~= topItem and context.findItem(item) then
+        table.insert(candidates, item)
+      end
+    end
+    if #candidates == 0 then
+      return
+    end
+    if type(context.storage[panelName].lastItem) ~= 'number' or context.storage[panelName].lastItem > #candidates then
+      context.storage[panelName].lastItem = 1
+    end
+    local item = context.findItem(candidates[context.storage[panelName].lastItem])
+    g_game.move(item, context.player:getPosition(), 1)
+    context.storage[panelName].lastItem = context.storage[panelName].lastItem + 1
+  end)
+end
+]]
+SUPPORT_FILES["panels/waypoints.lua"] = [=[
+local context = G.botContext
+local Panels = context.Panels
+
+Panels.Waypoints = function(parent)
+  local ui = context.setupUI([[
+Panel
+  id: waypoints
+  height: 206
+
+  BotLabel
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Waypoints
+
+  ComboBox
+    id: config
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    margin-top: 5
+    text-offset: 3 0
+    width: 130
+
+  Button
+    id: enableButton
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 5
+
+  Button
+    margin-top: 1
+    id: add
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Add
+    width: 60
+    height: 17
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    text: Edit
+    width: 60
+    height: 17
+
+  Button
+    id: remove
+    anchors.top: prev.top
+    anchors.right: parent.right
+    text: Remove
+    width: 60
+    height: 17
+
+  TextList
+    id: list
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    vertical-scrollbar: listScrollbar
+    margin-right: 15
+    margin-top: 2
+    height: 60
+    focusable: false
+    auto-focus: first
+
+  VerticalScrollBar
+    id: listScrollbar
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.right: parent.right
+    pixels-scroll: true
+    step: 5
+
+  Label
+    id: pos
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text-align: center
+    margin-top: 2
+
+  Button
+    id: wGoto
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Goto
+    width: 61
+    margin-top: 1
+    height: 17
+
+  Button
+    id: wUse
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: Use
+    width: 61
+    height: 17
+
+  Button
+    id: wUseWith
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: UseWith
+    width: 61
+    height: 17
+
+  Button
+    id: wWait
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Wait
+    width: 61
+    margin-top: 1
+    height: 17
+
+  Button
+    id: wSay
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: Say
+    width: 61
+    height: 17
+
+  Button
+    id: wNpc
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: Say NPC
+    width: 61
+    height: 17
+
+  Button
+    id: wLabel
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Label
+    width: 61
+    margin-top: 1
+    height: 17
+
+  Button
+    id: wFollow
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: Follow
+    width: 61
+    height: 17
+
+  Button
+    id: wFunction
+    anchors.top: prev.top
+    anchors.left: prev.right
+    text: Function
+    width: 61
+    height: 17
+
+  BotSwitch
+    id: recording
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text: Auto Recording
+    height: 17
+
+]], parent)
+
+  if type(context.storage.cavebot) ~= "table" then
+    context.storage.cavebot = {}
+  end
+  if type(context.storage.cavebot.configs) ~= "table" then
+    context.storage.cavebot.configs = {}
+  end
+
+  local getConfigName = function(config)
+    local matches = regexMatch(config, [[name:\s*([^\n]*)$]])
+    if matches[1] and matches[1][2] then
+      return matches[1][2]:trim()
+    end
+    return nil
+  end
+
+  local isValidCommand = function(command)
+    if command == "goto" then
+      return true
+    elseif command == "use" then
+      return true
+    elseif command == "usewith" then
+      return true
+    elseif command == "wait" then
+      return true
+    elseif command == "say" then
+      return true
+    elseif command == "npc" then
+      return true
+    elseif command == "follow" then
+      return true
+    elseif command == "label" then
+      return true
+    elseif command == "gotolabel" then
+      return true
+    elseif command == "comment" then
+      return true
+    elseif command == "function" then
+      return true
+    end
+    return false
+  end
+
+  local commands = {}
+  local waitTo = 0
+  local autoRecording = false
+
+  local parseConfig = function(config)
+    commands = {}
+    local matches = regexMatch(config, [[([^:^\n^\s]+)(:?)([^\n]*)]])
+    for i = 1, #matches do
+      local command = matches[i][2]
+      local validation = (matches[i][3] == ":")
+      if not validation or isValidCommand(command) then
+        local text = matches[i][4]
+        if validation then
+          table.insert(commands, { command = command:lower(), text = text })
+        elseif #commands > 0 then
+          commands[#commands].text = commands[#commands].text .. "\n" .. matches[i][1]
+        end
+      end
+    end
+
+    for i = 1, #commands do
+      local label = g_ui.createWidget("CaveBotLabel", ui.list)
+      label:setText(commands[i].command .. ":" .. commands[i].text)
+      if commands[i].command == "goto" then
+        label:setColor("green")
+      elseif commands[i].command == "label" then
+        label:setColor("yellow")
+      elseif commands[i].command == "comment" then
+        label:setText(commands[i].text)
+        label:setColor("white")
+      elseif commands[i].command == "use" or commands[i].command == "usewith" then
+        label:setColor("orange")
+      elseif commands[i].command == "gotolabel" then
+        label:setColor("red")
+      end
+    end
+  end
+
+  local ignoreOnOptionChange = true
+  local refreshConfig = function(scrollDown)
+    ignoreOnOptionChange = true
+    if context.storage.cavebot.enabled then
+      autoRecording = false
+      ui.recording:setOn(false)
+      ui.enableButton:setText("On")
+      ui.enableButton:setColor('#00AA00FF')
+    else
+      ui.enableButton:setText("Off")
+      ui.enableButton:setColor('#FF0000FF')
+      ui.recording:setOn(autoRecording)
+    end
+
+    ui.config:clear()
+    for i, config in ipairs(context.storage.cavebot.configs) do
+      local name = getConfigName(config)
+      if not name then
+        name = "Unnamed config"
+      end
+      ui.config:addOption(name)
+    end
+
+    if (not context.storage.cavebot.activeConfig or context.storage.cavebot.activeConfig == 0) and #context.storage.cavebot.configs > 0 then
+      context.storage.cavebot.activeConfig = 1
+    end
+
+    ui.list:destroyChildren()
+
+    if context.storage.cavebot.activeConfig and context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      ui.config:setCurrentIndex(context.storage.cavebot.activeConfig)
+      parseConfig(context.storage.cavebot.configs[context.storage.cavebot.activeConfig])
+    end
+
+    context.saveConfig()
+    if scrollDown and ui.list:getLastChild() then
+      ui.list:focusChild(ui.list:getLastChild())
+    end
+
+    waitTo = 0
+    ignoreOnOptionChange = false
+  end
+
+  ui.config.onOptionChange = function(widget)
+    if not ignoreOnOptionChange then
+      context.storage.cavebot.activeConfig = widget.currentIndex
+      refreshConfig()
+    end
+  end
+  ui.enableButton.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    context.storage.cavebot.enabled = not context.storage.cavebot.enabled
+    if autoRecording then
+      refreshConfig()
+    elseif context.storage.cavebot.enabled then
+      ui.enableButton:setText("On")
+      ui.enableButton:setColor('#00AA00FF')
+    else
+      ui.enableButton:setText("Off")
+      ui.enableButton:setColor('#FF0000FF')
+    end
+  end
+  ui.add.onClick = function()
+    modules.client_textedit.multilineEditor("Waypoints editor", "name:Config name\nlabel:start\n", function(newText)
+      table.insert(context.storage.cavebot.configs, newText)
+      context.storage.cavebot.activeConfig = #context.storage.cavebot.configs
+      refreshConfig()
+    end)
+  end
+  ui.edit.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.multilineEditor("Waypoints editor",
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig], function(newText)
+        context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = newText
+        refreshConfig()
+      end)
+  end
+  ui.remove.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    local questionWindow = nil
+    local closeWindow = function()
+      questionWindow:destroy()
+    end
+    local removeConfig = function()
+      closeWindow()
+      if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+        return
+      end
+      context.storage.cavebot.enabled = false
+      table.remove(context.storage.cavebot.configs, context.storage.cavebot.activeConfig)
+      context.storage.cavebot.activeConfig = 0
+      refreshConfig()
+    end
+    questionWindow = context.displayGeneralBox(tr('Remove config'), tr('Do you want to remove current waypoints config?'),
+      {
+        { text = tr('Yes'), callback = removeConfig },
+        { text = tr('No'),  callback = closeWindow },
+        anchor = AnchorHorizontalCenter
+      }, removeConfig, closeWindow)
+  end
+
+  -- waypoint editor
+  -- auto recording
+  local stepsSincleLastPos = 0
+
+  context.onPlayerPositionChange(function(newPos, oldPos)
+    ui.pos:setText("Position: " .. newPos.x .. ", " .. newPos.y .. ", " .. newPos.z)
+    if not autoRecording then
+      return
+    end
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    local newText = ""
+    if newPos.z ~= oldPos.z then
+      newText = "goto:" .. oldPos.x .. "," .. oldPos.y .. "," .. oldPos.z
+      newText = newText .. "\ngoto:" .. newPos.x .. "," .. newPos.y .. "," .. newPos.z
+      stepsSincleLastPos = 0
+    else
+      stepsSincleLastPos = stepsSincleLastPos + 1
+      if stepsSincleLastPos > 10 then
+        newText = "goto:" .. oldPos.x .. "," .. oldPos.y .. "," .. oldPos.z
+        stepsSincleLastPos = 0
+      end
+    end
+
+    if newText:len() > 0 then
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\n" .. newText
+      refreshConfig(true)
+    end
+  end)
+
+  context.onUse(function(pos, itemId, stackPos, subType)
+    if not autoRecording then
+      return
+    end
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    if pos.x == 0xFFFF then
+      return
+    end
+    stepsSincleLastPos = 0
+    local playerPos = context.player:getPosition()
+    newText = "goto:" ..
+        playerPos.x .. "," .. playerPos.y .. "," .. playerPos.z .. "\nuse:" .. pos.x .. "," .. pos.y .. "," .. pos.z
+    context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+        [context.storage.cavebot.activeConfig] .. "\n" .. newText
+    refreshConfig(true)
+  end)
+  context.onUseWith(function(pos, itemId, target, subType)
+    if not autoRecording then
+      return
+    end
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    if not target:isItem() then
+      return
+    end
+    local targetPos = target:getPosition()
+    if targetPos.x == 0xFFFF then
+      return
+    end
+    stepsSincleLastPos = 0
+    local playerPos = context.player:getPosition()
+    newText = "goto:" ..
+        playerPos.x ..
+        "," ..
+        playerPos.y ..
+        "," .. playerPos.z .. "\nusewith:" .. itemId .. "," .. targetPos.x .. "," .. targetPos.y .. "," .. targetPos.z
+    context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+        [context.storage.cavebot.activeConfig] .. "\n" .. newText
+    refreshConfig(true)
+  end)
+
+  -- ui
+  local pos = context.player:getPosition()
+  ui.pos:setText("Position: " .. pos.x .. ", " .. pos.y .. ", " .. pos.z)
+
+  ui.wGoto.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    local pos = context.player:getPosition()
+    modules.client_textedit.singlelineEditor("" .. pos.x .. "," .. pos.y .. "," .. pos.z, function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\ngoto:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wUse.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    local pos = context.player:getPosition()
+    modules.client_textedit.singlelineEditor("" .. pos.x .. "," .. pos.y .. "," .. pos.z, function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nuse:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wUseWith.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    local pos = context.player:getPosition()
+    modules.client_textedit.singlelineEditor("ITEMID," .. pos.x .. "," .. pos.y .. "," .. pos.z, function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nusewith:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wWait.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.singlelineEditor("1000", function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nwait:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wSay.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.singlelineEditor("text", function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nsay:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wNpc.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.singlelineEditor("text", function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nnpc:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wLabel.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.singlelineEditor("label name", function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nlabel:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wFollow.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.singlelineEditor("creature name", function(newText)
+      context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+          [context.storage.cavebot.activeConfig] .. "\nfollow:" .. newText
+      refreshConfig(true)
+    end)
+  end
+
+  ui.wFunction.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    modules.client_textedit.multilineEditor("Add function",
+      "function(waypoints)\n  -- your lua code, function is executed if previous goto was successful or is just after label\n\n  -- must return true to execute next command, otherwise will run in loop till correct return\n  return true\nend",
+      function(newText)
+        context.storage.cavebot.configs[context.storage.cavebot.activeConfig] = context.storage.cavebot.configs
+            [context.storage.cavebot.activeConfig] .. "\nfunction:" .. newText
+        refreshConfig(true)
+      end)
+  end
+
+  ui.recording.onClick = function()
+    if not context.storage.cavebot.activeConfig or not context.storage.cavebot.configs[context.storage.cavebot.activeConfig] then
+      return
+    end
+    autoRecording = not autoRecording
+    if autoRecording then
+      context.storage.cavebot.enabled = false
+      stepsSincleLastPos = 10
+    end
+    refreshConfig(true)
+  end
+
+  refreshConfig()
+
+  local usedGotoLabel = false
+  local executeNextMacroCall = false
+  local commandExecutionNo = 0
+  local lastGotoSuccesful = true
+  local lastOpenedContainer = 0
+
+  local functions = {
+    enable = function()
+      context.storage.cavebot.enabled = true
+      refreshConfig()
+    end,
+    disable = function()
+      context.storage.cavebot.enabled = false
+      refreshConfig()
+    end,
+    refresh = function()
+      refreshConfig()
+    end,
+    wait = function(peroid)
+      waitTo = context.now + peroid
+    end,
+    waitTo = function(timepoint)
+      waitTo = timepoint
+    end,
+    gotoLabel = function(name)
+      for i = 1, ui.list:getChildCount() do
+        local command = commands[i]
+        if command and command.command == "label" and command.text == name then
+          ui.list:focusChild(ui.list:getChildByIndex(i))
+          usedGotoLabel = true
+          lastGotoSuccesful = true
+          return true
+        end
+      end
+    end
+  }
+
+  context.onContainerOpen(function(container)
+    if container:getItemsCount() > 0 then
+      lastOpenedContainer = context.now + container:getItemsCount() * 100
+    end
+  end)
+
+  context.macro(250, function()
+    if not context.storage.cavebot.enabled then
+      return
+    end
+
+    if modules.game_interface.lastManualWalk + 500 > context.now then
+      return
+    end
+
+    -- wait if walked or opened container recently
+    if context.player:isWalking() or lastOpenedContainer + 1000 > context.now then
+      executeNextMacroCall = false
+      return
+    end
+
+    -- wait if attacking/following creature
+    local attacking = g_game.getAttackingCreature()
+    local following = g_game.getFollowingCreature()
+    if (attacking and context.getCreatureById(attacking:getId()) and not attacking.ignoreByWaypoints) or (following and context.getCreatureById(following:getId())) then
+      executeNextMacroCall = false
+      return
+    end
+
+    if not executeNextMacroCall then
+      executeNextMacroCall = true
+      return
+    end
+    executeNextMacroCall = false
+
+    local commandWidget = ui.list:getFocusedChild()
+    if not commandWidget then
+      if ui.list:getFirstChild() then
+        ui.list:focusChild(ui.list:getFirstChild())
+      end
+      return
+    end
+
+    local commandIndex = ui.list:getChildIndex(commandWidget)
+    local command = commands[commandIndex]
+    if not command then
+      if ui.list:getFirstChild() then
+        ui.list:focusChild(ui.list:getFirstChild())
+      end
+      return
+    end
+
+    if commandIndex == 1 then
+      lastGotoSuccesful = true
+    end
+
+    if command.command == "goto" or command.command == "follow" then
+      local matches = regexMatch(command.text, [[([0-9]+)[^0-9]+([0-9]+)[^0-9]+([0-9]+)]])
+      if (#matches == 1 and #matches[1] == 4) or command.command == "follow" then
+        local position = nil
+        if command.command == "follow" then
+          local creature = context.getCreatureByName(command.text)
+          if creature then
+            position = creature:getPosition()
+          end
+        else
+          position = { x = tonumber(matches[1][2]), y = tonumber(matches[1][3]), z = tonumber(matches[1][4]) }
+        end
+        local distance = 0
+        if position then
+          distance = context.getDistanceBetween(position, context.player:getPosition())
+        end
+        if distance > 100 or not position or position.z ~= context.player:getPosition().z then
+          lastGotoSuccesful = false
+        elseif distance > 0 then
+          if not context.findPath(context.player:getPosition(), position, 100, { ignoreNonPathable = true, precision = 1, ignoreCreatures = true }) then
+            lastGotoSuccesful = false
+            executeNextMacroCall = true
+          else
+            commandExecutionNo = commandExecutionNo + 1
+            lastGotoSuccesful = false
+            if commandExecutionNo <= 3 then -- try max 3 times
+              if not context.autoWalk(position, distance * 2, { ignoreNonPathable = false }) then
+                if commandExecutionNo > 1 then
+                  if context.autoWalk(position, distance * 2, { ignoreNonPathable = true, precision = 1 }) then
+                    context.delay(500)
+                  end
+                end
+                return
+              end
+              return
+            elseif commandExecutionNo == 4 then -- try last time, location close to destination
+              if context.autoWalk(position, distance * 2, { ignoreNonPathable = true, ignoreLastCreature = true, precision = 2, allowUnseen = true }) then
+                context.delay(500)
+                return
+              end
+            elseif distance <= 2 then
+              lastGotoSuccesful = true
+              executeNextMacroCall = true
+            end
+          end
+        else
+          lastGotoSuccesful = true
+          executeNextMacroCall = true
+        end
+      else
+        context.error("Waypoints: invalid use of goto function")
+      end
+    elseif command.command == "use" then
+      local matches = regexMatch(command.text, [[([0-9]+)[^0-9]+([0-9]+)[^0-9]+([0-9]+)]])
+      if #matches == 1 and #matches[1] == 4 then
+        local position = { x = tonumber(matches[1][2]), y = tonumber(matches[1][3]), z = tonumber(matches[1][4]) }
+        if context.player:getPosition().z == position.z then
+          local tile = g_map.getTile(position)
+          if tile then
+            local topThing = tile:getTopUseThing()
+            if topThing then
+              g_game.use(topThing)
+              context.delay(500)
+            end
+          end
+        end
+      else
+        context.error("Waypoints: invalid use of use function")
+      end
+    elseif command.command == "usewith" then
+      local matches = regexMatch(command.text, [[([0-9]+)[^0-9]+([0-9]+)[^0-9]+([0-9]+)[^0-9]+([0-9]+)]])
+      if #matches == 1 and #matches[1] == 5 then
+        local itemId = tonumber(matches[1][2])
+        local position = { x = tonumber(matches[1][3]), y = tonumber(matches[1][4]), z = tonumber(matches[1][5]) }
+        if context.player:getPosition().z == position.z then
+          local tile = g_map.getTile(position)
+          if tile then
+            local topThing = tile:getTopUseThing()
+            if topThing then
+              context.useWith(itemId, topThing)
+              context.delay(500)
+            end
+          end
+        end
+      else
+        context.error("Waypoints: invalid use of usewith function")
+      end
+    elseif command.command == "wait" and lastGotoSuccesful then
+      if not waitTo or waitTo == 0 then
+        waitTo = context.now + tonumber(command.text)
+      end
+      if context.now < waitTo then
+        return
+      end
+      waitTo = 0
+    elseif command.command == "say" and lastGotoSuccesful then
+      context.say(command.text)
+    elseif command.command == "npc" and lastGotoSuccesful then
+      context.sayNpc(command.text)
+    elseif command.command == "function" and lastGotoSuccesful then
+      usedGotoLabel = false
+      local status, result = pcall(function()
+        if _VERSION == "Lua 5.1" and type(jit) ~= "table" then
+          local func = assert(loadstring("return " .. command.text))
+          setfenv(func, context)
+          return func()(functions)
+        else        
+          return assert(load("return " .. command.text, nil, nil, context))()(functions)
+        end
+      end)
+      if not status then
+        context.error("Waypoints function execution error:\n" .. result)
+        context.delay(2500)
+      end
+      if not result or usedGotoLabel then
+        return
+      end
+    elseif command.command == "gotolabel" then
+      if functions.gotoLabel(command.text) then
+        return
+      end
+    end
+
+    local nextIndex = 1 + commandIndex % #commands
+    local nextChild = ui.list:getChildByIndex(nextIndex)
+    if nextChild then
+      ui.list:focusChild(nextChild)
+      commandExecutionNo = 0
+    end
+  end)
+
+  return functions
+end
+]=]
+SUPPORT_FILES["ui/basic.otui"] = [[
+BotButton < Button
+  height: 17
+  margin-top: 2
+
+BotSwitch < Button
+  margin-top: 2
+  height: 17
+  image-color: green
+  $!on:
+    image-color: red
+
+SmallBotSwitch < Button
+  margin-top: 2
+  height: 15
+  image-color: green
+  $!on:
+    image-color: red
+
+BotLabel < Label
+  margin-top: 2
+  height: 15
+  text-auto-resize: true
+  text-align: center
+  text-wrap: true
+
+BotItem < Item
+  virtual: true
+  &selectable: true
+  &editable: true
+
+BotTextEdit < TextEdit
+  @onClick: modules.client_textedit.show(self)
+  text-align: center
+  multiline: false
+  focusable: false
+  height: 20
+
+BotSeparator < HorizontalSeparator
+  margin-top: 5
+  margin-bottom: 3
+
+BotSmallScrollBar < SmallScrollBar
+
+BotPanel < Panel
+  margin-top: 1
+  ScrollablePanel
+    id: content
+    anchors.fill: parent
+    margin-right: 8
+    margin-left: 1
+    margin-bottom: 5
+    vertical-scrollbar: botPanelScroll
+    layout:
+      type: verticalBox
+    $mobile:
+      margin-right: 16
+
+  BotSmallScrollBar
+    id: botPanelScroll
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+
+CaveBotLabel < Label
+  background-color: alpha
+  text-offset: 2 0
+  focusable: true
+
+  $focus:
+    background-color: #00000055
+
+SlotComboBoxPopupMenu < ComboBoxPopupMenu
+SlotComboBoxPopupMenuButton < ComboBoxPopupMenuButton
+SlotComboBox < ComboBox
+  @onSetup: |
+    self:addOption("Head")
+    self:addOption("Neck")
+    self:addOption("Back")
+    self:addOption("Body")
+    self:addOption("Right")
+    self:addOption("Left")
+    self:addOption("Leg")
+    self:addOption("Feet")
+    self:addOption("Finger")
+    self:addOption("Ammo")
+    self:addOption("Purse")
+]]
+SUPPORT_FILES["ui/config.otui"] = [[
+BotConfig < Panel
+  id: botConfig
+  height: 45
+  margin-left: 2
+  margin-right: 2
+
+  ComboBox
+    id: list
+    &menuScroll: true
+    &menuHeight: 450
+    &menuScrollStep: 100
+    &parentWidth: true
+    anchors.top: parent.top
+    anchors.left: parent.left
+    text-offset: 3 0
+    width: 130
+
+  Button
+    id: switch
+    anchors.top: prev.top
+    anchors.left: prev.right
+    anchors.right: parent.right
+    margin-left: 5
+    $on:
+      text: On
+      color: #00AA00
+
+    $!on:
+      text: Off
+      color: #FF0000
+
+  Button
+    margin-top: 2
+    id: add
+    anchors.top: prev.bottom
+    anchors.left: parent.left
+    text: Add
+    width: 56
+    height: 18
+    text-offet: 0 2
+
+  Button
+    id: edit
+    anchors.top: prev.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    text: Edit
+    width: 56
+    height: 18
+    text-offet: 0 2
+
+  Button
+    id: remove
+    anchors.top: prev.top
+    anchors.right: parent.right
+    text: Remove
+    width: 56
+    height: 18
+    text-offet: 0 2
+]]
+SUPPORT_FILES["ui/container.otui"] = [[
+BotContainer < Panel
+  height: 68
+
+  ScrollablePanel
+    id: items
+    anchors.fill: parent
+    vertical-scrollbar: scroll
+    layout:
+      type: grid
+      cell-size: 34 34
+      flow: true
+
+  BotSmallScrollBar
+    id: scroll
+    anchors.top: prev.top
+    anchors.bottom: prev.bottom
+    anchors.right: parent.right
+    step: 10
+    pixels-scroll: true
+]]
+SUPPORT_FILES["ui/icons.otui"] = [[
+BotIcon < UIWidget
+  size: 50 50
+  anchors.horizontalCenter: parent.horizontalCenter
+  anchors.verticalCenter: parent.verticalCenter
+  focusable: false
+  phantom: false
+  draggable: true
+
+  UIItem
+    id: item
+    anchors.top: parent.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    margin-top: 6
+    virtual: true
+    phantom: true
+    size: 32 32
+
+  UICreature
+    id: creature
+    anchors.top: parent.top
+    anchors.horizontalCenter: parent.horizontalCenter
+    margin-top: 0
+    size: 48 48
+    phantom: true
+
+  UIWidget
+    id: status
+    anchors.top: parent.top
+    anchors.left: parent.left
+    size: 18 10
+    color: black
+    font: terminus-10px
+    phantom: true
+
+    $on:
+      text: ON
+      background: green
+
+    $!on:
+      text: OFF
+      background: red
+
+  UIWidget
+    id: hotkey
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    size: 18 10
+    color: white
+    phantom: true
+    text-align: right
+
+  UIWidget
+    id: text
+    anchors.bottom: parent.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    text-wrap: true
+    text-auto-resize: true
+    phantom: true
+]]
+SUPPORT_FILES["ui/panels.otui"] = [[
+DualScrollPanel < Panel
+  height: 51
+  margin-top: 3
+
+  SmallBotSwitch
+    id: title
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll1
+    anchors.left: title.left
+    anchors.right: title.horizontalCenter
+    anchors.top: title.bottom
+    margin-right: 2
+    margin-top: 2
+    minimum: 0
+    maximum: 100
+    step: 1
+    &disableScroll: true
+
+  HorizontalScrollBar
+    id: scroll2
+    anchors.left: title.horizontalCenter
+    anchors.right: title.right
+    anchors.top: prev.top
+    margin-left: 2
+    minimum: 0
+    maximum: 100
+    step: 1
+    &disableScroll: true
+
+  BotTextEdit
+    id: text
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: scroll1.bottom
+    margin-top: 3
+    margin-left: 2
+    margin-right: 1
+
+SingleScrollItemPanel < Panel
+  height: 45
+  margin-top: 2
+
+  BotItem
+    id: item
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    margin-top: 3
+
+  SmallBotSwitch
+    id: title
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: prev.top
+    margin-left: 2
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll
+    anchors.left: title.left
+    anchors.right: title.right
+    anchors.top: title.bottom
+    margin-top: 2
+    minimum: 0
+    maximum: 100
+    step: 1
+    &disableScroll: true
+
+DualScrollItemPanel < Panel
+  height: 33
+  margin-top: 3
+
+  BotItem
+    id: item
+    anchors.left: parent.left
+    anchors.top: prev.bottom
+    margin-top: 3
+
+  SmallBotSwitch
+    id: title
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: prev.top
+    margin-left: 2
+    text-align: center
+
+  HorizontalScrollBar
+    id: scroll1
+    anchors.left: title.left
+    anchors.right: title.horizontalCenter
+    anchors.top: title.bottom
+    margin-top: 2
+    margin-right: 2
+    minimum: 0
+    maximum: 100
+    step: 1
+    &disableScroll: true
+
+  HorizontalScrollBar
+    id: scroll2
+    anchors.left: title.horizontalCenter
+    anchors.right: title.right
+    anchors.top: prev.top
+    margin-left: 2
+    minimum: 0
+    maximum: 100
+    step: 1
+    &disableScroll: true
+
+ItemsRow < Panel
+  height: 33
+  margin-top: 2
+
+  BotItem
+    id: item1
+    anchors.top: parent.top
+    anchors.left: parent.left
+
+  BotItem
+    id: item2
+    anchors.top: prev.top
+    anchors.left: prev.right
+    margin-left: 2
+
+  BotItem
+    id: item3
+    anchors.top: prev.top
+    anchors.left: prev.right
+    margin-left: 2
+
+  BotItem
+    id: item4
+    anchors.top: prev.top
+    anchors.left: prev.right
+    margin-left: 2
+
+  BotItem
+    id: item5
+    anchors.top: prev.top
+    anchors.left: prev.right
+    margin-left: 2
+
+ItemsPanel < Panel
+  height: 55
+
+  SmallBotSwitch
+    id: title
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+
+  ItemsRow
+    id: items
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.top: prev.bottom
+
+ItemAndButtonPanel < Panel
+  height: 40
+
+  BotItem
+    id: item
+    anchors.left: parent.left
+    anchors.top: parent.top
+
+  BotSwitch
+    id: title
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.verticalCenter: prev.verticalCenter
+    text-align: center
+    margin-left: 2
+    margin-top: 0
+
+ItemAndSlotPanel < Panel
+  height: 40
+
+  BotItem
+    id: item
+    anchors.left: parent.left
+    anchors.top: parent.top
+
+  SmallBotSwitch
+    id: title
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: prev.top
+    text-align: center
+    margin-left: 2
+    margin-top: 0
+
+  SlotComboBox
+    id: slot
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 2
+    height: 20
+    &disableScroll: true
+
+TwoItemsAndSlotPanel < Panel
+  height: 35
+  margin-top: 4
+
+  BotItem
+    id: item1
+    anchors.left: parent.left
+    anchors.top: parent.top
+    margin-top: 1
+
+  BotItem
+    id: item2
+    anchors.left: prev.right
+    anchors.top: prev.top
+    margin-left: 1
+
+  SmallBotSwitch
+    id: title
+    anchors.left: prev.right
+    anchors.right: parent.right
+    anchors.top: parent.top
+    text-align: center
+    margin-left: 2
+    margin-top: 0
+
+  SlotComboBox
+    id: slot
+    anchors.left: prev.left
+    anchors.right: prev.right
+    anchors.top: prev.bottom
+    margin-top: 2
+    height: 20
+    &disableScroll: true
+
+DualLabelPanel < Panel
+  height: 20
+  padding: 1
+
+  Label
+    id: left
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    text-align: left
+    text-wrap: true
+    text-auto-resize: true
+    margin-left: 3
+    font: verdana-11px-rounded
+
+  Label
+    id: right
+    anchors.right: parent.right
+    anchors.left: prev.right
+    margin-left: 2
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    text-align: right
+    text-auto-resize: true
+    margin-right: 3
+    font: verdana-11px-rounded
+
+LabelAndTextEditPanel < Panel
+  height: 20
+  padding: 1
+
+  Label
+    id: left
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.right: parent.horizontalCenter
+    text-align: center
+    text-wrap: true
+    margin-right: 2
+
+  BotTextEdit
+    id: right
+    anchors.left: prev.right
+    margin-left: 3
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+
+SwitchAndButtonPanel < Panel
+  height: 20
+  padding: 1
+
+  Button
+    id: right
+    anchors.top: parent.top
+    margin-top: 2
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+    text-auto-resize: true
+    text-align: center
+
+  BotSwitch
+    id: left
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.left: parent.left
+    anchors.right: prev.left
+    margin-right: 3
+    text-align: center
+]]
+
+local RUNTIME_CODE = [[
+-- Zenith Mobile standalone runtime for OTClient Redemption mobile.
 -- Bypasses the native game_bot window/config UI and drives the bot executor directly.
 
 local existing = rawget(_G, "ZenithMobileRuntime")
@@ -28339,6 +34966,7 @@ _G.ZenithMobileRuntime = Runtime
 
 Runtime.name = "Zenith Mobile"
 Runtime.root = "/bot/Zenith Mobile"
+Runtime.supportRoot = "/zenith_mobile/game_bot"
 Runtime.running = false
 Runtime.executor = nil
 Runtime.host = nil
@@ -28547,7 +35175,7 @@ local function connectCallbacks()
     onRemoveItem = function(container, slot, item)
       safeCallback("onRemoveItem", container, slot, item)
     end,
-    onGameEditText = function(id, itemId, maxLength, text, writer, time)
+    onEditText = function(id, itemId, maxLength, text, writer, time)
       safeCallback("onGameEditText", id, itemId, maxLength, text, writer, time)
     end,
     onSpellCooldown = function(iconId, duration)
@@ -28646,6 +35274,31 @@ local function connectCallbacks()
 end
 
 local function findExecutor()
+  local bundledPath = Runtime.supportRoot .. "/executor.lua"
+  if g_resources.fileExists(bundledPath) then
+    G = rawget(_G, "G") or _G
+    rawset(_G, "executeBot", nil)
+
+    local source = g_resources.readFileContents(bundledPath)
+    local loader = loadstring or load
+    local chunk, loadError = loader(source)
+    if not chunk then
+      log("Erro ao carregar executor incorporado: " .. tostring(loadError))
+      return nil
+    end
+
+    local ok, runError = pcall(chunk)
+    if not ok then
+      log("Erro ao preparar executor incorporado: " .. tostring(runError))
+      return nil
+    end
+
+    local bundled = rawget(_G, "executeBot")
+    if type(bundled) == "function" then
+      return bundled
+    end
+  end
+
   if modules.game_bot and type(modules.game_bot.executeBot) == "function" then
     return modules.game_bot.executeBot
   end
@@ -28656,9 +35309,12 @@ local function findExecutor()
 end
 
 local function prepareCompatibility()
+  G = rawget(_G, "G") or _G
   modules.game_bot = modules.game_bot or {}
   modules.game_bot.g_app = modules.game_bot.g_app or g_app
   modules.game_bot.connect = modules.game_bot.connect or connect
+  modules.game_bot.refresh = Runtime.restart
+  modules.game_bot.save = Runtime.save
 
   -- Some old retained scripts inspect the selected config. Keep a tiny fake selector.
   modules.game_bot.contentsPanel = modules.game_bot.contentsPanel or {}
@@ -28671,6 +35327,11 @@ end
 
 local function importExecutorStyles()
   local styles = {
+    Runtime.supportRoot .. "/ui/basic.otui",
+    Runtime.supportRoot .. "/ui/panels.otui",
+    Runtime.supportRoot .. "/ui/config.otui",
+    Runtime.supportRoot .. "/ui/icons.otui",
+    Runtime.supportRoot .. "/ui/container.otui",
     "/game_bot/ui/basic.otui",
     "/game_bot/ui/panels.otui",
     "/game_bot/ui/config.otui",
@@ -28782,8 +35443,8 @@ function Runtime.start()
 
   local execute = findExecutor()
   if not execute then
-    log("O executor interno do bot nao foi encontrado neste APK.")
-    log("O client possui a tela mobile, mas precisa manter os arquivos internos de game_bot/functions e game_bot/panels.")
+    log("O executor incorporado nao foi encontrado ou nao conseguiu carregar.")
+    log("Reinstale usando o install.lua novo, que inclui o runtime retirado deste client.")
     return false
   end
 
@@ -28820,7 +35481,7 @@ function Runtime.start()
   modules.game_bot.refresh = Runtime.restart
   modules.game_bot.save = Runtime.save
 
-  log("Iniciado sem usar a janela lateral do game_bot.")
+  log("Iniciado com o runtime game_bot incorporado do client, sem a janela lateral nativa.")
   return true
 end
 
@@ -28902,12 +35563,35 @@ local function stopOldRuntime()
   end
 end
 
+local function writeFileMap(rootPath, fileMap)
+  local paths = {}
+  for relativePath in pairs(fileMap) do
+    paths[#paths + 1] = relativePath
+  end
+  table.sort(paths)
+
+  local written = 0
+  for _, relativePath in ipairs(paths) do
+    local fullPath = rootPath .. "/" .. relativePath
+    ensureParent(fullPath)
+    g_resources.writeFileContents(fullPath, fileMap[relativePath])
+    if not g_resources.fileExists(fullPath) then
+      error("Falha ao gravar: " .. fullPath)
+    end
+    written = written + 1
+  end
+  return written
+end
+
 local function installFiles()
   if not g_resources then
     error("Este cliente nao possui g_resources.")
   end
   if type(FILES["_Loader.lua"]) ~= "string" then
     error("O pacote interno nao possui _Loader.lua.")
+  end
+  if type(SUPPORT_FILES["executor.lua"]) ~= "string" then
+    error("O pacote interno nao possui o executor do game_bot.")
   end
 
   stopOldRuntime()
@@ -28949,6 +35633,8 @@ local function installFiles()
   end
 
   ensureDirectory(RUNTIME_DIR)
+  local supportWritten = writeFileMap(SUPPORT_ROOT, SUPPORT_FILES)
+
   g_resources.writeFileContents(RUNTIME_FILE, RUNTIME_CODE)
   if not g_resources.fileExists(RUNTIME_FILE) then
     error("Falha ao gravar o runtime mobile.")
@@ -28959,7 +35645,7 @@ local function installFiles()
     g_resources.deleteFile(OLD_MANIFEST_FILE)
   end
 
-  return written, preserved
+  return written, preserved, supportWritten
 end
 
 local function startRuntime()
@@ -28996,12 +35682,13 @@ local function startRuntime()
   end
 end
 
-log("Instalando arquivos...")
-local ok, written, preserved = pcall(installFiles)
+log("Instalando arquivos e runtime do client...")
+local ok, written, preserved, supportWritten = pcall(installFiles)
 if not ok then
   log("Falha na instalacao: " .. tostring(written))
   return
 end
 
-log(tostring(written) .. " arquivos gravados; " .. tostring(preserved) .. " configuracoes preservadas.")
+log(tostring(written) .. " arquivos do Zenith gravados; " .. tostring(preserved) .. " configuracoes preservadas.")
+log(tostring(supportWritten) .. " arquivos do game_bot incorporados ao runtime.")
 startRuntime()
