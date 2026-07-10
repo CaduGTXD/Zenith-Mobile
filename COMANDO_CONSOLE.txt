@@ -1,0 +1,10 @@
+Cole esta linha no console Lua do OTClient Redemption:
+
+HTTP.get("https://raw.githubusercontent.com/CaduGTXD/Zenith-Mobile/main/install.lua",function(d,e)if e then print(e)else local f,x=loadstring(d);if not f then print(x)else f()end end end)
+
+Arquivos que precisam ficar na raiz da branch main:
+- install.lua
+- ZenithMobile.zip
+
+O repositório é público, então não precisa login, token ou autenticação.
+Para atualizar o bot, substitua ZenithMobile.zip no GitHub e execute o mesmo comando novamente.
