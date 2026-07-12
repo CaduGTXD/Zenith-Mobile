@@ -8,7 +8,7 @@ local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-12-start-end-lure-only"
+local VERSION = "2026-07-12-mobile-touch-ui-v1"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -102,6 +102,17 @@ O instalador cria um runtime proprio, conecta os callbacks do jogo, agenda as ma
 - O editor de ações foi movido para a aba `WP+`.
 - A lista de waypoints ficou maior, com linhas legíveis e status da ação atual.
 - A visualização no mapa usa marcadores curtos para evitar texto sobreposto.
+
+
+## Mobile Touch UI v1
+
+- Janela principal maior e adaptada ao modo paisagem.
+- Abas com área de toque maior.
+- Scrollbars largos em todas as abas principais.
+- Botões, switches, campos e seletor de perfil maiores.
+- CaveBot com linhas de waypoint maiores e navegação Previous/Edit/Next.
+- Editor WP+ com grade de ações maior.
+- TargetBot com lista e botões ampliados.
 ]]
 FILES["_Loader.lua"] = [[
 -- Zenith Mobile loader.
@@ -2044,6 +2055,43 @@ if ui then
     end
   end)
 
+  -- Touch-friendly waypoint navigation. This avoids needing to drag the tiny
+  -- scrollbar or double-tap a row precisely on mobile.
+  local function focusRelativeWaypoint(delta)
+    local count = ui.list:getChildCount()
+    if count <= 0 then return end
+    local focused = ui.list:getFocusedChild() or ui.list:getFirstChild()
+    local index = ui.list:getChildIndex(focused)
+    if index <= 0 then index = 1 end
+    index = math.max(1, math.min(count, index + delta))
+    local target = ui.list:getChildByIndex(index)
+    if target then
+      ui.list:focusChild(target)
+      ui.list:ensureChildVisible(target)
+      CaveBot.updateWaypointListInfo()
+    end
+  end
+
+  local navigation = ui.waypointNavigation
+  if navigation and navigation.previousWaypoint then
+    navigation.previousWaypoint.onClick = function() focusRelativeWaypoint(-1) end
+  end
+
+  if navigation and navigation.nextWaypoint then
+    navigation.nextWaypoint.onClick = function() focusRelativeWaypoint(1) end
+  end
+
+  if navigation and navigation.editWaypoint then
+    navigation.editWaypoint.onClick = function()
+      local action = ui.list:getFocusedChild()
+      if not action or not CaveBot.Editor then return end
+      CaveBot.Editor.edit(action.action, action.value, function(newAction, newValue)
+        CaveBot.editAction(action, newAction, newValue)
+        CaveBot.save()
+      end)
+    end
+  end
+
   -- ui callbacks
   ui.showEditor.onClick = function()
     if CaveBot.Editor then
@@ -2360,11 +2408,12 @@ CaveBotList = function()
   return ui.list
 end
 ]=]
-FILES["cavebot/cavebot.otui"] = [[CaveBotAction < Label
-  height: 23
-  margin-bottom: 1
+FILES["cavebot/cavebot.otui"] = [[
+CaveBotAction < Label
+  height: 34
+  margin-bottom: 2
   background-color: #20242bcc
-  text-offset: 6 0
+  text-offset: 9 0
   font: verdana-11px-rounded
   focusable: true
 
@@ -2383,23 +2432,23 @@ CaveBotPanel < Panel
   BotSwitch
     id: autoRecording
     text: Auto Recording
-    margin-bottom: 2
+    margin-bottom: 3
 
   HorizontalSeparator
-    margin-top: 2
-    margin-bottom: 3
+    margin-top: 4
+    margin-bottom: 5
 
   Panel
     id: listHeader
-    height: 22
-    margin-bottom: 2
+    height: 31
+    margin-bottom: 3
     background-color: #171b21dd
 
     Label
       id: listTitle
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
-      margin-left: 6
+      margin-left: 9
       text: WAYPOINTS
       font: verdana-11px-rounded
       color: #9dd1ce
@@ -2408,24 +2457,24 @@ CaveBotPanel < Panel
       id: listInfo
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      margin-right: 6
+      margin-right: 9
       text: 0 actions
       font: verdana-11px-rounded
       color: #c8cdd5
 
   Panel
     id: listPanel
-    height: 270
-    margin-top: 1
-    margin-bottom: 3
+    height: 350
+    margin-top: 2
+    margin-bottom: 5
     border-width: 1
-    border-color: #4a535f
+    border-color: #596573
 
     TextList
       id: list
       anchors.fill: parent
       vertical-scrollbar: listScrollbar
-      margin-right: 17
+      margin-right: 29
       focusable: false
       auto-focus: first
       background-color: #11151bdd
@@ -2435,18 +2484,51 @@ CaveBotPanel < Panel
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.right: parent.right
+      width: 27
       pixels-scroll: true
-      step: 23
+      step: 68
+
+  Panel
+    id: waypointNavigation
+    height: 36
+    margin-top: 2
+    margin-bottom: 3
+
+    Button
+      id: previousWaypoint
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: 112
+      text: < Previous
+      font: verdana-11px-rounded
+
+    Button
+      id: editWaypoint
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: 132
+      text: Edit selected
+      font: verdana-11px-rounded
+
+    Button
+      id: nextWaypoint
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: 112
+      text: Next >
+      font: verdana-11px-rounded
 
   BotButton
     id: showEditor
-    text: Open waypoint editor
-    height: 22
+    text: Add or organize waypoints
     margin-top: 3
 
   BotSwitch
     id: showConfig
-    margin-top: 2
+    margin-top: 3
 
     $on:
       text: Hide config
@@ -2456,7 +2538,7 @@ CaveBotPanel < Panel
 
   BotSwitch
     id: showMapWaypoints
-    margin-top: 2
+    margin-top: 3
 
     $on:
       text: Hide map waypoints
@@ -4126,17 +4208,17 @@ end
 ]]
 FILES["cavebot/editor.otui"] = [[
 CaveBotEditorButton < Button
-  height: 24
+  height: 38
   font: verdana-11px-rounded
   text-align: center
 
 CaveBotDirectionButton < Button
-  width: 44
-  height: 28
+  width: 54
+  height: 38
 
 CaveBotWalkDirectionWindow < MainWindow
   text: Walk Direction
-  size: 180 190
+  size: 220 245
   padding: 14
   @onEscape: self:hide()
 
@@ -4158,8 +4240,8 @@ CaveBotWalkDirectionWindow < MainWindow
     layout:
       type: grid
       num-columns: 3
-      cell-size: 48 30
-      cell-spacing: 4
+      cell-size: 58 40
+      cell-spacing: 7
 
     CaveBotDirectionButton
       id: nw
@@ -4202,16 +4284,17 @@ CaveBotWalkDirectionWindow < MainWindow
     text: Close
     anchors.bottom: parent.bottom
     anchors.horizontalCenter: parent.horizontalCenter
-    width: 80
+    width: 100
+    height: 34
 
 
 CaveBotExaniHurChoiceButton < Button
-  height: 28
-  width: 78
+  height: 36
+  width: 96
 
 CaveBotStowAllChoiceButton < Button
-  height: 30
-  width: 92
+  height: 38
+  width: 105
 
 CaveBotExaniHurWindow < MainWindow
   text: Exani Hur
@@ -4370,7 +4453,7 @@ CaveBotStowAllWindow < MainWindow
 CaveBotEditorPanel < Panel
   id: cavebotEditor
   visible: true
-  width: 360
+  width: 500
   layout:
     type: verticalBox
     fit-children: true
@@ -4378,12 +4461,12 @@ CaveBotEditorPanel < Panel
   BotButton
     id: backToWaypoints
     text: Back to waypoint list
-    height: 24
-    margin-bottom: 4
+    height: 34
+    margin-bottom: 6
 
   Label
     id: pos
-    height: 20
+    height: 28
     text-align: center
     text: -
     font: verdana-11px-rounded
@@ -4393,11 +4476,11 @@ CaveBotEditorPanel < Panel
   Panel
     id: buttons
     margin-top: 4
-    width: 358
+    width: 496
     layout:
       type: grid
-      cell-size: 118 24
-      cell-spacing: 1
+      cell-size: 162 38
+      cell-spacing: 4
       num-columns: 3
       fit-children: true
 
@@ -4406,8 +4489,8 @@ CaveBotEditorPanel < Panel
     text-align: center
     text-auto-resize: true
     text-wrap: true
-    margin-top: 5
-    margin-left: 3
+    margin-top: 8
+    margin-left: 6
     margin-right: 3
     color: #b8bec8
 ]]
@@ -12743,7 +12826,7 @@ TargetBotCreatureEditorItem < Panel
 
 
 TargetBotCreatureEditorCheckBox < BotSwitch
-  height: 20
+  height: 32
   margin-top: 7
 
 TargetBotCreatureEditorWindow < MainWindow
@@ -12752,7 +12835,8 @@ TargetBotCreatureEditorWindow < MainWindow
   height: 515
   
   $mobile:
-    height: 300
+    width: 540
+    height: 620
 
   Label
     anchors.left: parent.left
@@ -12786,9 +12870,10 @@ TargetBotCreatureEditorWindow < MainWindow
     anchors.top: name.bottom
     anchors.right: parent.right
     anchors.bottom: help.top
-    step: 28
+    width: 26
+    step: 56
     pixels-scroll: true
-    margin-right: -10
+    margin-right: 0
     margin-top: 5
     margin-bottom: 5
 
@@ -12799,6 +12884,7 @@ TargetBotCreatureEditorWindow < MainWindow
     anchors.right: parent.right
     anchors.bottom: help.top
     vertical-scrollbar: contentScroll
+    margin-right: 28
     margin-bottom: 10
       
     Panel
@@ -12839,7 +12925,8 @@ TargetBotCreatureEditorWindow < MainWindow
     anchors.bottom: parent.bottom
     anchors.right: next.left
     margin-right: 10
-    width: 60
+    width: 90
+    height: 32
 
   Button
     id: cancel
@@ -14529,29 +14616,37 @@ UI.Separator()
 ]=]
 FILES["targetbot/target.otui"] = [[
 TargetBotEntry < Label
-  background-color: alpha
-  text-offset: 2 0
+  height: 32
+  margin-bottom: 2
+  background-color: #20242bcc
+  text-offset: 8 0
+  font: verdana-11px-rounded
   focusable: true
 
+  $hover:
+    background-color: #303844dd
+
   $focus:
-    background-color: #00000055
+    background-color: #14506ddd
 
 TargetBotDualLabel < Panel
-  height: 18
-  margin-left: 3
-  margin-right: 4
+  height: 25
+  margin-left: 5
+  margin-right: 6
 
   Label
     id: left
-    anchors.top: parent.top
     anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
     text-auto-resize: true
+    font: verdana-11px-rounded
 
   Label
     id: right
-    anchors.top: parent.top
     anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
     text-auto-resize: true
+    font: verdana-11px-rounded
 
 TargetBotPanel < Panel
   layout:
@@ -14559,8 +14654,8 @@ TargetBotPanel < Panel
     fit-children: true
 
   HorizontalSeparator
-    margin-top: 2
-    margin-bottom: 5
+    margin-top: 4
+    margin-bottom: 7
 
   TargetBotDualLabel
     id: status
@@ -14573,24 +14668,30 @@ TargetBotPanel < Panel
 
   Panel
     id: listPanel
-    height: 60
+    height: 210
+    margin-top: 5
+    margin-bottom: 5
+    border-width: 1
+    border-color: #596573
 
     TextList
       id: list
       anchors.fill: parent
       vertical-scrollbar: listScrollbar
-      margin-right: 15
+      margin-right: 28
       focusable: false
       auto-focus: first
-      
+      background-color: #11151bdd
+
     VerticalScrollBar
       id: listScrollbar
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.right: parent.right
+      width: 26
       pixels-scroll: true
-      step: 10
-  
+      step: 64
+
   Panel
     id: editor
     visible: true
@@ -14600,8 +14701,8 @@ TargetBotPanel < Panel
 
     Panel
       id: buttons
-      height: 20
-      margin-top: 2
+      height: 36
+      margin-top: 4
 
       Button
         id: add
@@ -14609,7 +14710,8 @@ TargetBotPanel < Panel
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         text: Add
-        width: 56
+        width: 118
+        font: verdana-11px-rounded
 
       Button
         id: edit
@@ -14617,7 +14719,8 @@ TargetBotPanel < Panel
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         text: Edit
-        width: 56
+        width: 118
+        font: verdana-11px-rounded
 
       Button
         id: remove
@@ -14625,13 +14728,13 @@ TargetBotPanel < Panel
         anchors.bottom: parent.bottom
         anchors.right: parent.right
         text: Remove
-        width: 56
+        width: 118
+        font: verdana-11px-rounded
 
-    Button
+    BotButton
       id: attackConfig
-      height: 20
-      margin-top: 2
-      text: CONFIG
+      margin-top: 5
+      text: Targeting settings
 ]]
 FILES["targetbot/walking.lua"] = [[
 -- Smart Mage Run v9.5 - rejected-step watchdog
@@ -27685,11 +27788,21 @@ local function createTab(name)
   tabObjects[name] = tab
   tabBar:setOn(true)
 
-  if #tabBar.tabs >= 5 then
+  local function refreshTabTouchTargets()
+    local count = #tabBar.tabs
+    if count == 0 then return end
+
+    local available = math.max(300, tabBar:getWidth())
+    local tabWidth = math.max(72, math.floor((available - 4) / count))
     for _, tabButton in pairs(tabBar.tabs) do
-      tabButton:setFont('small-9px')
+      tabButton:setFont('verdana-11px-rounded')
+      tabButton:setHeight(34)
+      tabButton:setWidth(tabWidth)
     end
   end
+
+  refreshTabTouchTargets()
+  schedule(40, refreshTabTouchTargets)
 
   tabPanels[name] = tab.tabPanel.content
   return tabPanels[name]
@@ -27801,8 +27914,9 @@ toggleButton.onClick = toggleWindow
 -- Keep the floating window usable on both desktop and smaller mobile layouts.
 local rootWidth = root:getWidth()
 local rootHeight = root:getHeight()
-window:setWidth(math.min(430, math.max(240, rootWidth - 20)))
-window:setHeight(math.min(560, math.max(300, rootHeight - 40)))
+-- Landscape mobile: use more of the screen so controls do not need to be tiny.
+window:setWidth(math.min(560, math.max(380, rootWidth - 24)))
+window:setHeight(math.min(650, math.max(430, rootHeight - 24)))
 local windowWidth = window:getWidth()
 local windowHeight = window:getHeight()
 window:setPosition({
@@ -27986,7 +28100,22 @@ root.onGeometryChange = function(widget, oldRect, newRect)
   if previousRootGeometry then
     pcall(previousRootGeometry, widget, oldRect, newRect)
   end
-  schedule(50, placeToggleButton)
+  schedule(50, function()
+    placeToggleButton()
+    local w = root:getWidth()
+    local h = root:getHeight()
+    window:setWidth(math.min(560, math.max(380, w - 24)))
+    window:setHeight(math.min(650, math.max(430, h - 24)))
+    local count = #tabBar.tabs
+    if count > 0 then
+      local tabWidth = math.max(72, math.floor((math.max(300, tabBar:getWidth()) - 4) / count))
+      for _, tabButton in pairs(tabBar.tabs) do
+        tabButton:setHeight(34)
+        tabButton:setWidth(tabWidth)
+        tabButton:setFont('verdana-11px-rounded')
+      end
+    end
+  end)
 end
 
 -- Zenith Mobile is hosted entirely by its own floating runtime.
@@ -28010,8 +28139,8 @@ ZenithMobileUI = {
 FILES["vBot/zenith_mobile_ui.otui"] = [[
 ZenithMobileWindow < MainWindow
   !text: tr('Zenith Mobile')
-  size: 430 560
-  padding: 18
+  size: 540 640
+  padding: 14
   @onEscape: self:hide()
 
   TabBar
@@ -28019,7 +28148,7 @@ ZenithMobileWindow < MainWindow
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    height: 24
+    height: 36
 
   Panel
     id: zenithTabContent
@@ -28027,7 +28156,7 @@ ZenithMobileWindow < MainWindow
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: separator.top
-    margin-top: 5
+    margin-top: 7
     margin-bottom: 8
 
   HorizontalSeparator
@@ -28040,9 +28169,9 @@ ZenithMobileWindow < MainWindow
   ResizeBorder
     id: bottomResizeBorder
     anchors.fill: separator
-    height: 3
-    minimum: 300
-    maximum: 900
+    height: 5
+    minimum: 360
+    maximum: 1000
     margin-left: 3
     margin-right: 3
     background: #ffffff55
@@ -28050,11 +28179,11 @@ ZenithMobileWindow < MainWindow
   Button
     id: closeButton
     !text: tr('Close')
-    font: cipsoftFont
+    font: verdana-11px-rounded
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    size: 52 21
-    margin-right: 5
+    size: 92 32
+    margin-right: 4
 
 ZenithMobileToggleButton < UIWidget
   id: zenithMobileToggleButton
@@ -28073,7 +28202,7 @@ ZenithMobileToggleButton < UIWidget
     opacity: 1.0
 
   $pressed:
-    opacity: 0.88
+    opacity: 0.82
 ]]
 FILES["zFreeScripts/Spells/zAutoBuff.lua"] = [=[
 --[[
@@ -34612,29 +34741,35 @@ end
 ]=]
 SUPPORT_FILES["ui/basic.otui"] = [[
 BotButton < Button
-  height: 17
-  margin-top: 2
+  height: 32
+  margin-top: 4
+  font: verdana-11px-rounded
+  text-align: center
 
 BotSwitch < Button
-  margin-top: 2
-  height: 17
+  margin-top: 4
+  height: 32
+  font: verdana-11px-rounded
+  text-align: center
   image-color: green
   $!on:
     image-color: red
 
 SmallBotSwitch < Button
-  margin-top: 2
-  height: 15
+  margin-top: 3
+  height: 27
+  font: verdana-11px-rounded
   image-color: green
   $!on:
     image-color: red
 
 BotLabel < Label
-  margin-top: 2
-  height: 15
+  margin-top: 3
+  height: 22
   text-auto-resize: true
   text-align: center
   text-wrap: true
+  font: verdana-11px-rounded
 
 BotItem < Item
   virtual: true
@@ -34646,38 +34781,43 @@ BotTextEdit < TextEdit
   text-align: center
   multiline: false
   focusable: false
-  height: 20
+  height: 32
+  font: verdana-11px-rounded
 
 BotSeparator < HorizontalSeparator
-  margin-top: 5
-  margin-bottom: 3
+  margin-top: 8
+  margin-bottom: 6
 
 BotSmallScrollBar < SmallScrollBar
 
 BotPanel < Panel
-  margin-top: 1
+  margin-top: 2
+
   ScrollablePanel
     id: content
     anchors.fill: parent
-    margin-right: 8
-    margin-left: 1
-    margin-bottom: 5
+    margin-right: 30
+    margin-left: 3
+    margin-bottom: 6
     vertical-scrollbar: botPanelScroll
     layout:
       type: verticalBox
-    $mobile:
-      margin-right: 16
 
-  BotSmallScrollBar
+  VerticalScrollBar
     id: botPanelScroll
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.right: parent.right
+    width: 26
+    step: 56
+    pixels-scroll: true
 
 CaveBotLabel < Label
   background-color: alpha
-  text-offset: 2 0
+  text-offset: 5 0
   focusable: true
+  height: 28
+  font: verdana-11px-rounded
 
   $focus:
     background-color: #00000055
@@ -34685,6 +34825,7 @@ CaveBotLabel < Label
 SlotComboBoxPopupMenu < ComboBoxPopupMenu
 SlotComboBoxPopupMenuButton < ComboBoxPopupMenuButton
 SlotComboBox < ComboBox
+  height: 30
   @onSetup: |
     self:addOption("Head")
     self:addOption("Neck")
@@ -34701,9 +34842,10 @@ SlotComboBox < ComboBox
 SUPPORT_FILES["ui/config.otui"] = [[
 BotConfig < Panel
   id: botConfig
-  height: 45
-  margin-left: 2
-  margin-right: 2
+  height: 70
+  margin-left: 3
+  margin-right: 3
+  margin-bottom: 4
 
   ComboBox
     id: list
@@ -34713,50 +34855,54 @@ BotConfig < Panel
     &parentWidth: true
     anchors.top: parent.top
     anchors.left: parent.left
-    text-offset: 3 0
-    width: 130
+    text-offset: 5 0
+    width: 210
+    height: 31
+    font: verdana-11px-rounded
 
   Button
     id: switch
     anchors.top: prev.top
     anchors.left: prev.right
     anchors.right: parent.right
-    margin-left: 5
+    margin-left: 6
+    height: 31
+    font: verdana-11px-rounded
     $on:
       text: On
-      color: #00AA00
+      color: #00CC66
 
     $!on:
       text: Off
-      color: #FF0000
+      color: #FF5555
 
   Button
-    margin-top: 2
+    margin-top: 5
     id: add
-    anchors.top: prev.bottom
+    anchors.top: list.bottom
     anchors.left: parent.left
     text: Add
-    width: 56
-    height: 18
-    text-offet: 0 2
+    width: 100
+    height: 30
+    font: verdana-11px-rounded
 
   Button
     id: edit
     anchors.top: prev.top
     anchors.horizontalCenter: parent.horizontalCenter
     text: Edit
-    width: 56
-    height: 18
-    text-offet: 0 2
+    width: 100
+    height: 30
+    font: verdana-11px-rounded
 
   Button
     id: remove
     anchors.top: prev.top
     anchors.right: parent.right
     text: Remove
-    width: 56
-    height: 18
-    text-offet: 0 2
+    width: 100
+    height: 30
+    font: verdana-11px-rounded
 ]]
 SUPPORT_FILES["ui/container.otui"] = [[
 BotContainer < Panel
