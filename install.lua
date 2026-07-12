@@ -8,7 +8,7 @@ local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-12-mobile-touch-ui-v1"
+local VERSION = "2026-07-12-mobile-input-focus-fix"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -1171,7 +1171,8 @@ onTalk(function(name, level, mode, text, channelId, pos)
   if mode == 51 and text:find("Your account balance is") then
     balance = getFirstNumberInText(text)
   end
-end)]]
+end)
+]]
 FILES["cavebot/buy_supplies.lua"] = [[
 CaveBot.Extensions.BuySupplies = {}
 
@@ -1737,7 +1738,8 @@ CaveBot.Extensions.BuySupplies.setup = function()
     title = "Buy Supplies",
     description = "NPC Name, delay(in ms, optional)",
   })
-end]]
+end
+]]
 FILES["cavebot/cavebot.lua"] = [=[
 local cavebotMacro = nil
 local config = nil
@@ -2479,12 +2481,12 @@ CaveBotPanel < Panel
       auto-focus: first
       background-color: #11151bdd
 
-    VerticalScrollBar
+    ZenithVerticalScrollBar
       id: listScrollbar
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.right: parent.right
-      width: 27
+      width: 32
       pixels-scroll: true
       step: 68
 
@@ -2674,7 +2676,8 @@ CaveBot.Extensions.ClearTile.setup = function()
     description="tile position (x,y,z), doors/stand - optional",
     multiline=false
 })
-end]]
+end
+]]
 FILES["cavebot/config.lua"] = [[
 -- config for bot
 CaveBot.Config = {}
@@ -3079,7 +3082,7 @@ CaveBotLureConfigWindow < MainWindow
   padding: 20
   @onEscape: self:hide()
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: contentScroll
     anchors.top: parent.top
     anchors.right: parent.right
@@ -3161,7 +3164,7 @@ CaveBotConfigSliderValuePanel < Panel
     margin-right: 5
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll
     anchors.left: parent.left
     anchors.right: parent.right
@@ -3742,7 +3745,8 @@ CaveBot.Extensions.OpenDoors.setup = function()
     multiline=false,
     validation=[[\d{1,5},\d{1,5},\d{1,2}(?:,\d{1,5}$|$)]]
 })
-end]=]
+end
+]=]
 FILES["cavebot/editor.lua"] = [[
 CaveBot.Editor = {}
 CaveBot.Editor.Actions = {}
@@ -4644,7 +4648,8 @@ CaveBot.Extensions.LvlCheck.setup = function()
     description="level or range (10:100), label to leave, label to loop",
     multiline=false,
 })
-end]]
+end
+]]
 FILES["cavebot/extensions/dropItem_toPos.lua"] = [[
 function getPosByDir()
   local dirs = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 }}
@@ -4706,7 +4711,8 @@ CaveBot.Editor.registerAction("drop item", "drop item", {
     description="Drop item to position (x,y,z), itemid, retries(optional) ",
     multiline=false,
 })
-end]]
+end
+]]
 FILES["cavebot/imbuing.lua"] = [[
 -- imbuing window should be handled separatly
 -- reequiping should be handled separatly (ie. equipment manager)
@@ -4826,7 +4832,8 @@ CaveBot.Extensions.Imbuing.setup = function()
   title="Auto Imbuing",
   description="insert below item ids to be imbued, separated by comma\nor 'name' to load from file",
  })
-end]]
+end
+]]
 FILES["cavebot/inbox_withdraw.lua"] = [[
 CaveBot.Extensions.InWithdraw = {}
 
@@ -4918,7 +4925,8 @@ CaveBot.Extensions.InWithdraw.setup = function()
  	 title="Withdraw Items",
  	 description="insert item id and amount",
  	})
-end]]
+end
+]]
 FILES["cavebot/lure.lua"] = [[
 -- Lure extension for CaveBot
 -- v14.0: optional Mage Run carry of up to two extra survivors to the next waypoint.
@@ -6206,7 +6214,8 @@ CaveBot.Extensions.PosCheck.setup = function()
     description="label name, accepted dist from coordinates, x, y, z",
     multiline=false,
 })
-end]]
+end
+]]
 FILES["cavebot/recorder.lua"] = [[
 -- auto recording for cavebot
 CaveBot.Recorder = {}
@@ -7523,7 +7532,8 @@ CaveBot.Extensions.Travel.setup = function()
   title="Travel",
   description="NPC name, City name, delay in ms(default is 200ms)",
  })
-end]]
+end
+]]
 FILES["cavebot/walking.lua"] = [[
 -- walking
 local expectedDirs = {}
@@ -7776,7 +7786,8 @@ CaveBot.Extensions.Withdraw.setup = function()
   title="Withdraw Items",
   description="index/inbox, item id and amount",
  })
-end]]
+end
+]]
 FILES["storage/profile_1.json"] = [[
 {
   "manaTrain2": {
@@ -12777,7 +12788,7 @@ TargetBotCreatureEditorScrollBar < Panel
     anchors.top: parent.top
     text-align: center
     
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll
     anchors.left: parent.left
     anchors.right: parent.right
@@ -12865,12 +12876,12 @@ TargetBotCreatureEditorWindow < MainWindow
     anchors.left: parent.left
     text: Target name:
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: contentScroll
     anchors.top: name.bottom
     anchors.right: parent.right
     anchors.bottom: help.top
-    width: 26
+    width: 32
     step: 56
     pixels-scroll: true
     margin-right: 0
@@ -12996,7 +13007,8 @@ TargetBot.Creature.calculatePriority = function(creature, config, path)
   end
 
   return priority
-end]]
+end
+]]
 FILES["targetbot/looting.lua"] = [[
 TargetBot.Looting = {}
 TargetBot.Looting.list = {} -- list of containers to loot
@@ -13415,7 +13427,8 @@ TargetBotLootingPanel < Panel
       anchors.left: parent.left
       anchors.verticalCenter: prev.verticalCenter
       text: Min. capacity:
-      margin-left: 5]]
+      margin-left: 5
+]]
 FILES["targetbot/target.lua"] = [=[
 local targetbotMacro = nil
 local config = nil
@@ -14683,12 +14696,12 @@ TargetBotPanel < Panel
       auto-focus: first
       background-color: #11151bdd
 
-    VerticalScrollBar
+    ZenithVerticalScrollBar
       id: listScrollbar
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.right: parent.right
-      width: 26
+      width: 32
       pixels-scroll: true
       step: 64
 
@@ -16975,10 +16988,10 @@ UI.Separator()
 ]=]
 FILES["vBot/AttackBot.otui"] = [[
 AttackEntry < UIWidget
-  background-color: alpha
-  text-offset: 35 1
+  background-color: #20242bcc
+  text-offset: 44 1
   focusable: true
-  height: 16
+  height: 34
   font: verdana-11px-rounded
   text-align: left
 
@@ -16986,8 +16999,8 @@ AttackEntry < UIWidget
     id: enabled
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: 15
-    height: 15
+    width: 26
+    height: 26
     margin-top: 2
     margin-left: 3
 
@@ -16995,7 +17008,7 @@ AttackEntry < UIWidget
     id: id
     anchors.left: prev.right
     anchors.verticalCenter: parent.verticalCenter
-    size: 16 16
+    size: 28 28
     focusable: false
     visible: false
 
@@ -17003,7 +17016,7 @@ AttackEntry < UIWidget
     id: spell
     anchors.left: enabled.right
     anchors.verticalCenter: parent.verticalCenter
-    size: 12 12
+    size: 24 24
     margin-left: 1
     image-source: /images/game/dangerous
 
@@ -17015,18 +17028,18 @@ AttackEntry < UIWidget
     !text: tr('x')
     anchors.right: parent.right
     margin-right: 15
-    width: 15
-    height: 15
+    width: 30
+    height: 30
 
 AttackBotBotPanel < Panel
-  height: 38
+  height: 78
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('AttackBot')
 
   Button
@@ -17035,7 +17048,7 @@ AttackBotBotPanel < Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Setup
 
   Button
@@ -17045,7 +17058,7 @@ AttackBotBotPanel < Panel
     text: 1
     margin-right: 2
     margin-top: 4
-    size: 17 17
+    size: 34 32
 
   Button
     id: 2
@@ -17053,7 +17066,7 @@ AttackBotBotPanel < Panel
     anchors.left: prev.right
     text: 2
     margin-left: 4
-    size: 17 17
+    size: 34 32
     
   Button
     id: 3
@@ -17061,7 +17074,7 @@ AttackBotBotPanel < Panel
     anchors.left: prev.right
     text: 3
     margin-left: 4
-    size: 17 17
+    size: 34 32
 
   Button
     id: 4
@@ -17069,7 +17082,7 @@ AttackBotBotPanel < Panel
     anchors.left: prev.right
     text: 4
     margin-left: 4
-    size: 17 17 
+    size: 34 32 
     
   Button
     id: 5
@@ -17077,7 +17090,7 @@ AttackBotBotPanel < Panel
     anchors.left: prev.right
     text: 5
     margin-left: 4
-    size: 17 17
+    size: 34 32
     
   Label
     id: name
@@ -17086,7 +17099,7 @@ AttackBotBotPanel < Panel
     anchors.right: parent.right
     text-align: center
     margin-left: 4
-    height: 17
+    height: 32
     text: Profile #1
     background: #292A2A
 
@@ -17155,7 +17168,7 @@ AttackBotPanel < Panel
     size: 430 100
     vertical-scrollbar: entryListScrollBar
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: entryListScrollBar
     anchors.top: entryList.top
     anchors.bottom: entryList.bottom
@@ -17629,20 +17642,21 @@ AttackBotWindow < MainWindow
     anchors.verticalCenter: prev.verticalCenter
     size: 50 21
     font: cipsoftFont
-    text: Settings]]
+    text: Settings
+]]
 FILES["vBot/Conditions.lua"] = [=[
 setDefaultTab("HP")
 local panelName = "ConditionPanel"
 local ui = setupUI([[
 Panel
-  height: 19
+  height: 40
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('Conditions')
 
   Button
@@ -17651,7 +17665,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Setup
       
   ]])
@@ -18412,20 +18426,21 @@ ConditionsWindow < MainWindow
     anchors.bottom: parent.bottom
     size: 45 21
     margin-top: 15
-    margin-right: 5    ]]
+    margin-right: 5    
+]]
 FILES["vBot/Dropper.lua"] = [=[
 setDefaultTab("Tools")
 
 local ui = setupUI([[
 Panel
-  height: 19
+  height: 40
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('Dropper')
 
   Button
@@ -18434,7 +18449,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Edit
 ]])
 
@@ -18580,7 +18595,8 @@ macro(200, function()
 
 end)
 
-UI.Separator()]=]
+UI.Separator()
+]=]
 FILES["vBot/HealBot.lua"] = [=[
 local standBySpells = false
 local standByItems = false
@@ -18642,14 +18658,14 @@ setDefaultTab("HP")
 local healPanelName = "healbot"
 local ui = setupUI([[
 Panel
-  height: 38
+  height: 78
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('HealBot')
 
   Button
@@ -18658,7 +18674,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Setup
 
   Button
@@ -18668,7 +18684,7 @@ Panel
     text: 1
     margin-right: 2
     margin-top: 4
-    size: 17 17
+    size: 34 32
 
   Button
     id: 2
@@ -18676,7 +18692,7 @@ Panel
     anchors.left: prev.right
     text: 2
     margin-left: 4
-    size: 17 17
+    size: 34 32
     
   Button
     id: 3
@@ -18684,7 +18700,7 @@ Panel
     anchors.left: prev.right
     text: 3
     margin-left: 4
-    size: 17 17
+    size: 34 32
 
   Button
     id: 4
@@ -18692,7 +18708,7 @@ Panel
     anchors.left: prev.right
     text: 4
     margin-left: 4
-    size: 17 17 
+    size: 34 32 
     
   Button
     id: 5
@@ -18700,7 +18716,7 @@ Panel
     anchors.left: prev.right
     text: 5
     margin-left: 4
-    size: 17 17
+    size: 34 32
     
   Label
     id: name
@@ -18709,7 +18725,7 @@ Panel
     anchors.right: parent.right
     text-align: center
     margin-left: 4
-    height: 17
+    height: 32
     text: Profile #1
     background: #292A2A
 ]])
@@ -19527,18 +19543,18 @@ SpellConditionBox < ComboBox
     self:addOption("Equal To")
 
 SpellEntry < Label
-  background-color: alpha
-  text-offset: 18 1
+  background-color: #20242bcc
+  text-offset: 34 1
   focusable: true
-  height: 16
+  height: 34
   font: verdana-11px-rounded
 
   CheckBox
     id: enabled
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: 15
-    height: 15
+    width: 26
+    height: 26
     margin-top: 2
     margin-left: 3
 
@@ -19551,22 +19567,22 @@ SpellEntry < Label
     anchors.right: parent.right
     margin-right: 15
     text-offset: 1 0
-    width: 15
-    height: 15   
+    width: 30
+    height: 30   
 
 ItemEntry < Label
-  background-color: alpha
-  text-offset: 40 1
+  background-color: #20242bcc
+  text-offset: 66 1
   focusable: true
-  height: 16
+  height: 38
   font: verdana-11px-rounded
 
   CheckBox
     id: enabled
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: 15
-    height: 15
+    width: 26
+    height: 26
     margin-top: 2
     margin-left: 3
 
@@ -19575,7 +19591,7 @@ ItemEntry < Label
     anchors.left: prev.right
     margin-left: 3
     anchors.verticalCenter: parent.verticalCenter
-    size: 15 15
+    size: 30 30
     focusable: false
 
   $focus:
@@ -19587,8 +19603,8 @@ ItemEntry < Label
     anchors.right: parent.right
     margin-right: 15
     text-offset: 1 0
-    width: 15
-    height: 15               
+    width: 30
+    height: 30               
 
 SpellHealing < FlatPanel
   size: 490 130
@@ -19686,7 +19702,7 @@ SpellHealing < FlatPanel
     margin-top: 10
     vertical-scrollbar: spellListScrollBar
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: spellListScrollBar
     anchors.top: spellList.top
     anchors.bottom: spellList.bottom
@@ -19808,7 +19824,7 @@ ItemHealing < FlatPanel
     margin-left: 8
     vertical-scrollbar: itemListScrollBar
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: itemListScrollBar
     anchors.top: itemList.top
     anchors.bottom: itemList.bottom
@@ -20039,14 +20055,14 @@ local soundFiles = {
 
 local ui = setupUI([[
 Panel
-  height: 19
+  height: 40
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('Alarms')
 
   Button
@@ -20055,7 +20071,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Edit
 
 ]])
@@ -20392,7 +20408,8 @@ if true then
   end)
 end
 
-UI.Separator()]=]
+UI.Separator()
+]=]
 FILES["vBot/alarms.otui"] = [[
 AlarmCheckBox < Panel
   height: 20
@@ -20528,7 +20545,8 @@ AlarmsWindow < MainWindow
     anchors.bottom: parent.bottom
     size: 45 21
     margin-right: 5
-    @onClick: self:getParent():hide()]]
+    @onClick: self:getParent():hide()
+]]
 FILES["vBot/cavebot.lua"] = [=[
 -- Cavebot by otclient@otclient.ovh
 -- visit http://bot.otclient.ovh/
@@ -20775,7 +20793,8 @@ local backOffline = UI.Button("Offline", function(widget)
     storage.caveBot.backOffline = true
     print("[CaveBot] Going back to city on next supply check and going to label 'toOfflineTraining' on depositer action.")
 end, panel.buttons)
-backOffline:setTooltip("Go to label 'toOfflineTraining' after deposit.")]=]
+backOffline:setTooltip("Go to label 'toOfflineTraining' after deposit.")
+]=]
 FILES["vBot/configs.lua"] = [=[
 --[[ 
     Configs for modules
@@ -20873,7 +20892,8 @@ function vBotConfigSave(file)
   end
 
   g_resources.writeFileContents(configFile, result)
-end]=]
+end
+]=]
 FILES["vBot/core_settings.lua"] = [[
 setDefaultTab("Cave")
 
@@ -21018,7 +21038,7 @@ CoreSettingsScrollBar < Panel
     anchors.top: parent.top
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll
     anchors.left: parent.left
     anchors.right: parent.right
@@ -21087,7 +21107,7 @@ CoreBotSettingsWindow < MainWindow
     text-align: center
     text: < Options >
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: contentScroll
     anchors.top: prev.bottom
     anchors.right: parent.right
@@ -21434,7 +21454,8 @@ macro(5000, "Conjure Food", function()
   end
 end)
 
-UI.Separator()]]
+UI.Separator()
+]]
 FILES["vBot/equip.lua"] = [[
 -- config
 setDefaultTab("HP")
@@ -21475,20 +21496,21 @@ macro(250, function()
   end
 end)
 
-UI.Separator()]]
+UI.Separator()
+]]
 FILES["vBot/friend_healer.lua"] = [=[
 setDefaultTab("Hp")
 local panelName = "newHealer"
 local ui = setupUI([[
 Panel
-  height: 19
+  height: 40
 
   BotSwitch
     id: title
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
+    width: 190
     !text: tr('Friend Healer')
 
   Button
@@ -21497,7 +21519,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 17
+    height: 34
     text: Setup
       
 ]])
@@ -22079,7 +22101,7 @@ HealScroll < Panel
     anchors.top: parent.top
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll
     anchors.left: parent.left
     anchors.right: parent.right
@@ -22310,7 +22332,7 @@ PlayerList < Panel
     padding-top: 2
     vertical-scrollbar: listScrollBar
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: listScrollBar
     anchors.top: list.top
     anchors.bottom: list.bottom
@@ -23867,7 +23889,8 @@ WasteItems = {
     ["energy bomb rune"] = 3149,
     ["sudden death rune"] = 3155,
     ["paralyse rune"] = 3165
-}]]
+}
+]]
 FILES["vBot/main.lua"] = [[
 Global = {}
 Global.useIds = { 34847, 1764, 21051, 30823, 6264, 5282, 20453, 20454, 20474, 11708, 11705, 
@@ -23936,7 +23959,8 @@ UI.DualScrollPanel(storage.manaTrain2, function(widget, newParams)
   manatrainmacro2.setOn(storage.manaTrain2.on)
 end)
 
-UI.Separator()]]
+UI.Separator()
+]]
 FILES["vBot/new_cavebot_lib.lua"] = [=[
 CaveBot = {} -- global namespace
 
@@ -24455,7 +24479,8 @@ end
 -- @return void
 function CaveBot.Travel(destination)
     return CaveBot.Conversation("hi", destination, "yes")
-end]=]
+end
+]=]
 FILES["vBot/playerlist.lua"] = [=[
 --[[
   configuration for check players
@@ -24808,7 +24833,8 @@ onPlayerPositionChange(function(x,y)
     end)
   end
 end)
--- UI.Separator()]=]
+-- UI.Separator()
+]=]
 FILES["vBot/playerlist.otui"] = [[
 PlayerLabel < UIWidget
   background-color: alpha
@@ -24884,7 +24910,7 @@ tPanel < Panel
     anchors.top: parent.top
     vertical-scrollbar: listScrollBar
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: listScrollBar
     anchors.top: list.top
     anchors.bottom: list.bottom
@@ -24960,7 +24986,8 @@ PlayerListWindow < MainWindow
     size: 45 21
     margin-top: 15
     margin-right: 5
-    @onClick: self:getParent():hide()]]
+    @onClick: self:getParent():hide()
+]]
 FILES["vBot/quiver_manager.lua"] = [=[
 setDefaultTab("Tools")
 
@@ -25018,14 +25045,14 @@ config.ammoId = nil
 
 local mainPanel = setupUI([[
 Panel
-  height: 25
+  height: 42
 
   BotSwitch
     id: enabled
     anchors.top: parent.top
     anchors.left: parent.left
-    width: 125
-    height: 20
+    width: 190
+    height: 34
     text-align: center
     text: Quiver Manager
 
@@ -25035,7 +25062,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 4
-    height: 20
+    height: 34
     text: Setup
 
   HorizontalSeparator
@@ -25159,7 +25186,7 @@ QuiverManagerWindow < MainWindow
     text-align: center
     text: Min: 50
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: minSlider
     anchors.top: minLabel.bottom
     anchors.left: parent.left
@@ -25167,7 +25194,7 @@ QuiverManagerWindow < MainWindow
     margin-left: 10
     margin-right: 10
     margin-top: 2
-    height: 16
+    height: 30
 
   Label
     id: maxLabel
@@ -25179,7 +25206,7 @@ QuiverManagerWindow < MainWindow
     text-align: center
     text: Max: 200
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: maxSlider
     anchors.top: maxLabel.bottom
     anchors.left: parent.left
@@ -25187,7 +25214,7 @@ QuiverManagerWindow < MainWindow
     margin-left: 10
     margin-right: 10
     margin-top: 2
-    height: 16
+    height: 30
 
   Label
     id: status
@@ -26383,7 +26410,7 @@ SuppliesWindow < MainWindow
     anchors.bottom: bottomSep.top
     margin-bottom: 25
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: profilesScrollBar
     anchors.top: profiles.top
     anchors.bottom: profiles.bottom
@@ -26400,7 +26427,7 @@ SuppliesWindow < MainWindow
     font: cipsoftFont
     tooltip: Create new supplies profile.
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: itemsScrollBar
     anchors.top: items.top
     anchors.bottom: items.bottom
@@ -26451,7 +26478,8 @@ SuppliesWindow < MainWindow
     margin-right: 3
     text: -
     width: 50
-    tooltip: decrease all max supplies amount by average]]
+    tooltip: decrease all max supplies amount by average
+]]
 FILES["vBot/vlib.lua"] = [=[
 -- Author: Vithrax
 -- contains mostly basic function shortcuts and code shorteners
@@ -27686,10 +27714,10 @@ function findItemOnGroundInRange(id,range,position,ignoreBelow)
       if item:getId() == id then return item end
     end
   end
-end]=]
-FILES["vBot/zenith_mobile_ui.lua"] = [[
--- Zenith Mobile floating interface.
--- Redirects the legacy bot tab helpers to an independent floating window.
+end
+]=]
+FILES["vBot/zenith_mobile_ui.lua"] = [[-- Zenith Mobile floating interface.
+-- Touch-first standalone window with custom tabs and mobile-sized controls.
 
 local root = g_ui.getRootWidget()
 
@@ -27709,13 +27737,14 @@ window:hide()
 local toggleButton = g_ui.createWidget('ZenithMobileToggleButton', root)
 toggleButton.botWidget = true
 
-local tabBar = window.zenithTabs
+local tabStrip = window.zenithTabStrip
 local tabContent = window.zenithTabContent
-tabBar:setContentWidget(tabContent)
 
 local currentPanel = nil
+local activeTabName = nil
 local tabPanels = {}
-local tabObjects = {}
+local tabButtons = {}
+local tabOrder = {}
 
 local function normalizeTabName(name)
   name = tostring(name or 'Main')
@@ -27729,6 +27758,8 @@ local function normalizeTabName(name)
     return 'Target'
   elseif lowered == 'tools' then
     return 'Tools'
+  elseif lowered == 'wp+' or lowered == 'wp' then
+    return 'WP+'
   elseif lowered == 'main' then
     return 'Main'
   end
@@ -27736,8 +27767,113 @@ local function normalizeTabName(name)
   return name
 end
 
+local function safeClassName(widget)
+  local ok, value = pcall(function() return widget:getClassName() end)
+  if not ok or value == nil then return '' end
+  return tostring(value)
+end
+
+local function safeChildren(widget)
+  local ok, children = pcall(function() return widget:getChildren() end)
+  if not ok or type(children) ~= 'table' then return {} end
+  return children
+end
+
+local function safeSize(widget)
+  local okW, width = pcall(function() return widget:getWidth() end)
+  local okH, height = pcall(function() return widget:getHeight() end)
+  return okW and tonumber(width) or 0, okH and tonumber(height) or 0
+end
+
+local function isScrollBarClass(className)
+  return className:find('ScrollBar', 1, true) ~= nil
+end
+
+local function tuneTouchTree(widget)
+  if not widget then return end
+
+  local className = safeClassName(widget)
+  local parent = nil
+  pcall(function() parent = widget:getParent() end)
+  local parentClass = parent and safeClassName(parent) or ''
+  local width, height = safeSize(widget)
+
+  if isScrollBarClass(className) then
+    if height >= width then
+      if width < 30 then pcall(function() widget:setWidth(32) end) end
+      pcall(function() widget:setStep(math.max(tonumber(widget:getStep()) or 1, 48)) end)
+    else
+      if height < 28 then pcall(function() widget:setHeight(30) end) end
+    end
+  elseif className:find('UIButton', 1, true) and not isScrollBarClass(parentClass) then
+    if height > 0 and height < 30 then
+      pcall(function() widget:setHeight(32) end)
+    end
+    if width > 0 and width < 30 then
+      pcall(function() widget:setWidth(32) end)
+    end
+    pcall(function() widget:setFont('verdana-11px-rounded') end)
+  elseif className:find('UITextEdit', 1, true) then
+    -- Do not resize or restyle a text edit at runtime. On Android the native
+    -- keyboard changes the viewport and the client_textedit module keeps a
+    -- reference to this widget; mutating it can make the editor lose focus.
+  elseif className:find('UIComboBox', 1, true)
+      or className:find('UISpinBox', 1, true) then
+    if height > 0 and height < 30 then
+      pcall(function() widget:setHeight(32) end)
+    end
+    pcall(function() widget:setFont('verdana-11px-rounded') end)
+  elseif className:find('UICheckBox', 1, true) then
+    if height > 0 and height < 26 then pcall(function() widget:setHeight(28) end) end
+    if width > 0 and width < 26 then pcall(function() widget:setWidth(28) end) end
+  end
+
+  local children = safeChildren(widget)
+
+  -- Old vBot modules often wrap a 17px button row inside a 19px panel.
+  -- Widen the whole row before enlarging its children, avoiding overlap.
+  if className:find('UIPanel', 1, true) and height > 0 then
+    local hasAction = false
+    local hasHorizontalSlider = false
+    for _, child in ipairs(children) do
+      local childClass = safeClassName(child)
+      if childClass:find('UIButton', 1, true)
+          or childClass:find('UIComboBox', 1, true)
+          or childClass:find('UITextEdit', 1, true) then
+        hasAction = true
+      end
+      if isScrollBarClass(childClass) then
+        local childWidth, childHeight = safeSize(child)
+        if childWidth >= childHeight then
+          hasHorizontalSlider = true
+        end
+      end
+    end
+    if hasHorizontalSlider and height < 62 then
+      pcall(function() widget:setHeight(62) end)
+    elseif hasAction and height < 38 then
+      pcall(function() widget:setHeight(38) end)
+    end
+  end
+
+  for _, child in ipairs(children) do
+    tuneTouchTree(child)
+  end
+end
+
+local function scheduleTouchRefresh(widget)
+  if not widget then return end
+  schedule(20, function() pcall(tuneTouchTree, widget) end)
+end
+
+local function refreshAllTouchTargets()
+  for _, tabName in ipairs(tabOrder) do
+    local page = tabPanels[tabName]
+    if page then pcall(tuneTouchTree, page) end
+  end
+end
+
 local function updateToggleAppearance()
-  -- Red ZENITH opens the window; the silver CLOSE artwork closes it.
   toggleButton:setText('')
   toggleButton:setImageSource(window:isVisible() and CLOSE_BUTTON_IMAGE or OPEN_BUTTON_IMAGE)
   toggleButton:setImageColor('#ffffff')
@@ -27749,6 +27885,7 @@ local function showWindow()
   window:raise()
   window:focus()
   uiStorage.open = true
+  scheduleTouchRefresh(window)
   updateToggleAppearance()
 end
 
@@ -27766,6 +27903,26 @@ local function toggleWindow()
   end
 end
 
+local function refreshTabButtons()
+  local count = #tabOrder
+  if count == 0 then return end
+
+  local stripWidth = math.max(360, tabStrip:getWidth())
+  local gaps = math.max(0, count - 1) * 3
+  local tabWidth = math.max(78, math.floor((stripWidth - 6 - gaps) / count))
+
+  for _, name in ipairs(tabOrder) do
+    local button = tabButtons[name]
+    if button then
+      button:setHeight(36)
+      button:setWidth(tabWidth)
+      button:setFont('verdana-11px-rounded')
+    end
+  end
+end
+
+local selectTab
+
 local function createTab(name)
   name = normalizeTabName(name)
 
@@ -27773,59 +27930,57 @@ local function createTab(name)
     return tabPanels[name]
   end
 
-  local existing = tabBar:getTab(name)
-  if existing and existing.tabPanel and existing.tabPanel.content then
-    tabObjects[name] = existing
-    tabPanels[name] = existing.tabPanel.content
-    return tabPanels[name]
+  local page = g_ui.createWidget('ZenithTabPage', tabContent)
+  page.botWidget = true
+  page:setId('zenithMobile' .. name:gsub('[^%w]', '') .. 'Tab')
+  page:hide()
+
+  local button = g_ui.createWidget('ZenithTabButton', tabStrip)
+  button.botWidget = true
+  button:setId('zenithMobile' .. name:gsub('[^%w]', '') .. 'Button')
+  button:setText(name)
+  button:setOn(false)
+  button.onClick = function()
+    selectTab(name)
   end
 
-  local botPanel = g_ui.createWidget('BotPanel')
-  botPanel.botWidget = true
-  botPanel:setId('zenithMobile' .. name:gsub('[^%w]', '') .. 'Tab')
+  tabPanels[name] = page.content
+  tabButtons[name] = button
+  table.insert(tabOrder, name)
 
-  local tab = tabBar:addTab(name, botPanel)
-  tabObjects[name] = tab
-  tabBar:setOn(true)
+  refreshTabButtons()
+  schedule(40, refreshTabButtons)
 
-  local function refreshTabTouchTargets()
-    local count = #tabBar.tabs
-    if count == 0 then return end
-
-    local available = math.max(300, tabBar:getWidth())
-    local tabWidth = math.max(72, math.floor((available - 4) / count))
-    for _, tabButton in pairs(tabBar.tabs) do
-      tabButton:setFont('verdana-11px-rounded')
-      tabButton:setHeight(34)
-      tabButton:setWidth(tabWidth)
-    end
+  if not activeTabName then
+    activeTabName = name
+    page:show()
+    button:setOn(true)
   end
 
-  refreshTabTouchTargets()
-  schedule(40, refreshTabTouchTargets)
-
-  tabPanels[name] = tab.tabPanel.content
-  return tabPanels[name]
+  scheduleTouchRefresh(page)
+  return page.content
 end
 
-local function selectTab(name)
+selectTab = function(name)
   name = normalizeTabName(name)
-  local targetPanel = createTab(name)
-  local targetTab = tabObjects[name] or tabBar:getTab(name)
+  createTab(name)
 
-  if targetTab then
-    local selected = pcall(function()
-      tabBar:selectTab(targetTab)
-    end)
+  for _, tabName in ipairs(tabOrder) do
+    local pageContent = tabPanels[tabName]
+    local page = pageContent and pageContent:getParent() or nil
+    local button = tabButtons[tabName]
 
-    if not selected then
-      pcall(function()
-        targetTab:setOn(true)
-      end)
+    if page then
+      if tabName == name then page:show() else page:hide() end
     end
+    if button then button:setOn(tabName == name) end
   end
 
-  return targetPanel
+  activeTabName = name
+  currentPanel = tabPanels[name]
+  panel = currentPanel
+  scheduleTouchRefresh(currentPanel)
+  return currentPanel
 end
 
 -- Replace the bot's legacy tab routing with the floating Zenith window.
@@ -27845,6 +28000,7 @@ setupUI = function(otml, parent)
   parent = parent or currentPanel or panel or createTab('Main')
   local widget = g_ui.loadUIFromString(otml, parent)
   widget.botWidget = true
+  scheduleTouchRefresh(widget)
   return widget
 end
 
@@ -27852,6 +28008,7 @@ createWidget = function(name, parent)
   parent = parent or currentPanel or panel or createTab('Main')
   local widget = g_ui.createWidget(name, parent)
   widget.botWidget = true
+  scheduleTouchRefresh(widget)
   return widget
 end
 
@@ -27892,31 +28049,29 @@ addSeparator = function(id, parent)
   return widget
 end
 
--- Modern UI helpers also default to the floating tab currently selected by scripts.
 UI.createWidget = function(name, parent)
   parent = parent or currentPanel or panel or createTab('Main')
   local widget = g_ui.createWidget(name, parent)
   widget.botWidget = true
+  scheduleTouchRefresh(widget)
   return widget
 end
 
--- Make built-in helpers that depend on context.panel follow our window.
 local firstPanel = createTab('Cave')
 currentPanel = firstPanel
 panel = firstPanel
 mainTab = firstPanel
-tabs = tabBar
+tabs = tabStrip
+selectTab('Cave')
 
 window.closeButton.onClick = hideWindow
 window.onEscape = hideWindow
 toggleButton.onClick = toggleWindow
 
--- Keep the floating window usable on both desktop and smaller mobile layouts.
 local rootWidth = root:getWidth()
 local rootHeight = root:getHeight()
--- Landscape mobile: use more of the screen so controls do not need to be tiny.
-window:setWidth(math.min(560, math.max(380, rootWidth - 24)))
-window:setHeight(math.min(650, math.max(430, rootHeight - 24)))
+window:setWidth(math.min(580, math.max(400, rootWidth - 24)))
+window:setHeight(math.min(660, math.max(440, rootHeight - 24)))
 local windowWidth = window:getWidth()
 local windowHeight = window:getHeight()
 window:setPosition({
@@ -28095,26 +28250,53 @@ end
 
 retryTogglePlacement(30)
 
+local stableRootWidth = root:getWidth()
+local stableRootHeight = root:getHeight()
+local softKeyboardVisible = false
+
 local previousRootGeometry = root.onGeometryChange
 root.onGeometryChange = function(widget, oldRect, newRect)
   if previousRootGeometry then
     pcall(previousRootGeometry, widget, oldRect, newRect)
   end
-  schedule(50, function()
+
+  local w = newRect and tonumber(newRect.width) or root:getWidth()
+  local h = newRect and tonumber(newRect.height) or root:getHeight()
+  local widthDelta = math.abs(w - stableRootWidth)
+  local heightDelta = h - stableRootHeight
+
+  -- Android reduces the available height when the soft keyboard appears.
+  -- Ignore that temporary geometry change completely so the active input and
+  -- client_textedit window keep their focus.
+  if widthDelta < 24 and heightDelta < -100 then
+    softKeyboardVisible = true
+    return
+  end
+
+  -- Keyboard closed: keep the previous stable layout. There is no need to
+  -- rebuild or retune the bot controls just because the viewport was restored.
+  if softKeyboardVisible and widthDelta < 24 and h >= stableRootHeight - 40 then
+    softKeyboardVisible = false
+    return
+  end
+
+  -- Ignore tiny system-bar/inset changes. Only a real resize or orientation
+  -- change should reposition the floating interface.
+  if widthDelta < 24 and math.abs(heightDelta) < 80 then
+    return
+  end
+
+  stableRootWidth = w
+  stableRootHeight = h
+
+  schedule(80, function()
+    if softKeyboardVisible then return end
     placeToggleButton()
-    local w = root:getWidth()
-    local h = root:getHeight()
-    window:setWidth(math.min(560, math.max(380, w - 24)))
-    window:setHeight(math.min(650, math.max(430, h - 24)))
-    local count = #tabBar.tabs
-    if count > 0 then
-      local tabWidth = math.max(72, math.floor((math.max(300, tabBar:getWidth()) - 4) / count))
-      for _, tabButton in pairs(tabBar.tabs) do
-        tabButton:setHeight(34)
-        tabButton:setWidth(tabWidth)
-        tabButton:setFont('verdana-11px-rounded')
-      end
-    end
+    local currentWidth = root:getWidth()
+    local currentHeight = root:getHeight()
+    window:setWidth(math.min(580, math.max(400, currentWidth - 24)))
+    window:setHeight(math.min(660, math.max(440, currentHeight - 24)))
+    refreshTabButtons()
   end)
 end
 
@@ -28134,25 +28316,33 @@ ZenithMobileUI = {
   toggle = toggleWindow,
   getTab = createTab,
   selectTab = selectTab,
+  refreshTouch = refreshAllTouchTargets,
 }
 ]]
-FILES["vBot/zenith_mobile_ui.otui"] = [[
-ZenithMobileWindow < MainWindow
+FILES["vBot/zenith_mobile_ui.otui"] = [[ZenithMobileWindow < MainWindow
   !text: tr('Zenith Mobile')
-  size: 540 640
+  size: 560 650
   padding: 14
   @onEscape: self:hide()
 
-  TabBar
-    id: zenithTabs
+  Panel
+    id: zenithTabStrip
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    height: 36
+    height: 42
+    padding: 3
+    background-color: #11161ddd
+    border-width: 1
+    border-color: #485662
+
+    layout:
+      type: horizontalBox
+      fit-children: false
 
   Panel
     id: zenithTabContent
-    anchors.top: zenithTabs.bottom
+    anchors.top: zenithTabStrip.bottom
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: separator.top
@@ -28170,11 +28360,11 @@ ZenithMobileWindow < MainWindow
     id: bottomResizeBorder
     anchors.fill: separator
     height: 5
-    minimum: 360
+    minimum: 380
     maximum: 1000
     margin-left: 3
     margin-right: 3
-    background: #ffffff55
+    background: #ffffff44
 
   Button
     id: closeButton
@@ -28182,8 +28372,31 @@ ZenithMobileWindow < MainWindow
     font: verdana-11px-rounded
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    size: 92 32
+    size: 100 34
     margin-right: 4
+
+ZenithTabButton < Button
+  height: 36
+  margin-right: 3
+  font: verdana-11px-rounded
+  text-align: center
+  image-source: /images/ui/panel_flat
+  image-border: 5
+  image-color: #303741
+  color: #d8dee5
+
+  $hover:
+    image-color: #3b4652
+
+  $pressed:
+    image-color: #146b82
+
+  $on:
+    image-color: #176f88
+    color: #ffffff
+
+ZenithTabPage < BotPanel
+  anchors.fill: parent
 
 ZenithMobileToggleButton < UIWidget
   id: zenithMobileToggleButton
@@ -28229,15 +28442,15 @@ setDefaultTab("HP")
 
 local buffUi = setupUI([[
 Panel
-  height: 20
+  height: 40
 
   BotSwitch
     id: status
     anchors.top: parent.top
     anchors.left: parent.left
     text-align: center
-    width: 130
-    height: 18
+    width: 190
+    height: 34
     text: Auto Buff
 
   Button
@@ -28246,7 +28459,7 @@ Panel
     anchors.left: prev.right
     anchors.right: parent.right
     margin-left: 3
-    height: 18
+    height: 34
     text: Setup
   ]], parent)
 
@@ -28369,7 +28582,7 @@ spellListWindow < MainWindow
     height: 100
     vertical-scrollbar: AutoBuffVScroll
     
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: AutoBuffVScroll
     anchors.top: lstSpells.top
     anchors.bottom: lstSpells.bottom
@@ -28649,7 +28862,8 @@ if rootWidget then
   end)
 end
 
--- UI.Separator()]=]
+-- UI.Separator()
+]=]
 FILES["zzzGlobalEventCallbacks.lua"] = [[
 -- Check Last Balance
 storage.balance = storage.balance or 0
@@ -28699,7 +28913,8 @@ end)
 
 -- onMousePress(function(mousePos, mouseButton)
 --   warn("MousePress: ".. mouseButton)
--- end)]]
+-- end)
+]]
 
 local BINARY_FILES = {}
 BINARY_FILES["images/zenith_close.png"] = "89504e470d0a1a0a0000000d494844520000007e0000002908020000007cca0a9000001dee4944415478dadd7b69905dd7715e779f73b7b7cc9b7dc14eec8409820401c104b880040592921dd1a255a944aec85589a4fc76e5472aae547ec5552927954891fd2765d9565c95aac48a24cb52cc4814299a22298912442c831d180c960166e6edcbddce399d1fe7de3b0f5c40283f7d513578efd57bf79edba7fbebafbfee2b2ad51ab3999c9ef1fda0542a7fee9f7ca13a32d2eff50e3e7e64c7ae073bed76b95251a992d22122292522219210824830831024a52384908e1442dacf852021a514424a474a291d298410422091949299376fd9bae9816d513830c6200220122222028094d2f78352a9b275c74ead14304c4c4d074110c511222260a95c9e9a9935466fddb6637c62320c0733b373491c3133229210535333e56a554a67e3a62d5bb7ed180cfa8804c0c618441442202211b99ee7fbc1ccec9c10328e22bb5e4420222125e5875db9fd9fb2d74444f9d9a4104248479090420829a5745cd7ad8d8e22d2a75f7a796c7c627579d9f5bca9e99938893dcf17523a8e1b944ae8fba5eac848124742caa3c79e6fb79aeffeeced9dbbf78c4f4cbefbd3b74ae54a1004cc1c0e060cac950604668ea318d800a29472a436daeff75cc7d55a03003333b3528a0849486016521aadb4d65a6ba34d1c4793d333b76e2c2aa5004008e9f93e21da2fa4690ac08ee356aa23837e2f8e63c77182520911c3417f6c7ca2d36e9310956a552ba5942a95ca9d4e3b4d120030c6544746e2284a92c4185d2a978590dd4e5b6bc36c84908eeb0a2198394d127b21cff3ab2323ed56d3713dd775b5d6d6b2000808520800c0dc2dec5fad4da95c6a36ea88c4cc08488282524990d0460383e7fb523a8dfa8a31e6b75efadd73f3a74efdea57d291e54aa555af23916123854422dab1eb41cff3b76edf1145d14fde786dcbd66d33b3eb4e9e7877726aba5e5f3dfee26f57aa230b972ff607fd76abd96eb5a230ecf77b5a29cff7fbbdae74dc248e19180c33300320003323111b03771d08cc40683f47ebf008cc0c00f60f22dab7424aadd4f08f8594e572254962eb8ee31393e1a0dfeb768d31009ca6a9757c935fd4465e1cc7f6d288765dd955f265f2dada00100100800110c1feb36f30df024204745c87197cdf1ff4fb9eef8fd46a7e502a05a5a9995929e5e607b6dd5ebaf9eadf7daf52ada6497af4932f9c9f3f736efe54a55a95524ae98461bfdbee20227abe7fe4c9678252e98dd77eb861e3e699b9b9f77ef98bc9a9a94ebbfde8814f0441f0e31ffdc0f5bc66bdaeb5d64a1936d5ea0820763b6d22020044b2cb6766e94895aa200890088085905a6b4424420064e6344d559a22a2e3ba5288c2d10c301bb6f7aad2348e6366e3380e09696cbc68c36c00400811944a00184711222a959aa13db62000005a2b1b88424a60b0d88080f68a76936c8032b3ebba365e0150a994d930b3452a6befb53dcaf60f98cde8d8781c45613800000bbc95ea08111d7bfe53cb776effeced371dd72114479f3bfeee3b6f5d5fbc363139e907c18dc56b0c8c0040242a956a1c47d3b3739b1fd87afabd13aeeb02e0fe8387466aa3af7cef3bc61822dab8794bb3d1104495ea88e7f90b572e763a6d291d6b54eb190c90c471a55a35da68a3851008609801808832c706b04089886c0c0e7d8e80868df52d6b1121a5d19a99490804d0c618ad954ab5d6e3e393499af4ba1d6b6e633411b9ae676d8a4484688c49d30411a5e320a0314608618c29a2ac80912cf0380b3b444c92d842fc7024d9bb2421d918a5d4d4cc4c6d748c009bcd061105e5d2e2c2d5c9c9696df4a73ff3f2b5ab577efad61b6cd8719d83bff9c4d9d3279797efb031699a0000e54e1458fbb69bcd7ebfa7b53e70e8f1ed3b767df75bffd3f5bc2028b55b4d41a256abd9643b7ffabd76bb65efb380426666933926200080d67ad8ca6c7d89592b952609e6714e4248c79152dadf22a261562a4544a33500d05ac0a310c2f57ccff3dbed66afdb2122cff37dcf775cd7f37ceb95361b1a6300d1713d4054496ab32b3303221121915d76be076ced6b7230745d4f6b555c37fb320040b62a29e5d2cd1bd717174ae5b231667c724a9048e2384912a5d45fff8ffffed8c1430f3ff29890b2dd6cf57b5d1202805dcfb367c980c2debcd62a0c075a696374a3be7afedcfcae071f5ab9737b7c62e291c70e9e7aef44502a379b8d93bffa85362608cac618bb0e6b740040222261039932ae93bd35cc86d9de210961235d4a494214372ca52422bb319ee75b526431cdba9c0d7504908ee379bee3b87e50725c571bcdc6901044c48c1667ec7e13a2e3b80c9ca4090ab23f6763acc51111f27db50e6eff323302b8ae972489f59e620fec1a8cd686b954aea449f2eecfdf562a1544e7cf9e79f4c021cff31aabab8f3ef6899ffff4ad70303046db40d74a2160915d84f57a3f08e228aa54aa42ca46bdaeb5018473674e6ddabc65a4367aeecc292168d0ef954ae55eaf2ba590422aa586f33e200a21b45299c7597c47d4c664cb6536cc08608c46401222559927da6cab95525a01b38505366c982d6800221ba38d810c8e81f3446a83298923c7756d5e01602432662de00cb3941218b4d62444e6e4c0c0d6f4598066bb95434ff19681b3949681275bc7b2b1e8ba1e210541108603a5549cc4cbb76f1f3cf478afdb7def97ef0242a3becacceb376eee763b83419f882ce0c862c399d91863b46160242c97cb716df4ad377f7ce0d0e16d3b775dba704e4a1986a156a935630132d9ba116d5a731c278ca28c2000d875b3c9b65a3103a2066de942188644b110d2686d515e0809c0da68a514300b2133dec20c85b1d62849b60988a8944a93c4665466cdcc96a2589b6a004030da68a533d8192235cc6c8c2612437c8a0b66a39562631089b3fd624932cfb5a095d25a1b6640544aad2e2fefddb77f30e89f3ef9abd9b9f584190c68951aa3d1e63c80ccf40cd93e1b63b4d67629da986d3b77763bed73f3a70f1e3a2284b871fd1a22a44a11914d59d6298c31d5da88ef05cc26b7c7871c779384b51bcf720367f1cc6bd96f28fb7ef4492c4544c4f77ffe9107df63911fbd722e362a499276bb4590b103630cb351691a0425d7f3f63cb4d7f3829fbefdf733b3739bb63c70f3faa2311a00a228d2a92ab84666fa228a2d7d600636462b65b4e9f7fb5bb7efb87cf11c128d8cd4985990b0616b6359695d1ba9b9aed76eb70b8ab9e68df7776b1f61172e4c3b6ce67bbec60f5c1a3fb01efcc05bfeb01f7ec89911c11853a9544747c71af5bae338393d43638c9472746cecced292d67a7676fdf5c5ab5bb66eb7cc0300d234d516f4874d8f48837e3f4d5324eb746cd818635acd26002f5cb9344cad8410d2710a8827423ff05bad36330318f8ff39f8bedf7eec6bfeb8937fd4f9f9e3d6b646473b9df6e4e4a4ebba699abaaecb002444afdbe9b45bc5cf5cd703807eaf3b14a9399bca0013a52d0d6c51c3860dda6fa1d166e9d60d22f2fcc0ba8595595295a6498a84848488c0c0868788d73ffc8388b431caf23a6666365abb9e2f88ac47dbcc8f88cbcbb7859076c3944a9801b3dc0c004c1987f5bc2c67220080749cc1a0dfeb768590699268ad8cd6699aa6694a997646240800187f5de4fc8770584202b9e92d826badd958bc308828a5d3ac37d224b1a53533303321168164bd1e040922326cd06471d168ac1aa38590b94723e250694344881af4af01e9859262195b51e2e68a1b0c65ffa260e70fc99e59f95cd43ec3271cf6cd0f9ed6fee47d5779df618cb9bf0485240522169a95ad498bac29889224e9b45bb901b960ba436916808888b0c837aee756bd91d59595e2c6100190ee5e3de3af09349602c651241dc76a2683c1c068edb8aee3385aebc160307c334efeb5e13318637abd9048789e8b88711cab34f57cdfcad143dfe9398ee3388e311cc7a1568a84f03c0f00fafdbead6987fdc6d21822f27dffbeee85c8a646ca377e8db3e605b99072a436667380a5e2004048c36916d7527f260c619a24796e612b3631b301b05a0a1b03b60ec45fc3ee51144d4f4f1f3dfaccf61d3b46464618b851af5fba74e9c48913d717171fdeb7efd9678f59c9c518f63c6f7efeccff7de5efa4740a9ba669eafbfeb1e79edbbb77efd8d8381276da9d8b172fbcf6a3d7eaf5556b59adb5ebba2f7cea53fb1ede57a954b4d6ad76ebd6cd9b67e7e74f9f3ebd7efdfadffe479fb194dad696450d25a5ecf7fbdffcebffd5e9748a8dbc07eab001a4ac6eb076b7c56021cc1191313a17db9061c8d86ba647b0f192a91a462b86b5cdb4b606c860cb6ac26ba4f4beec1ec7f1a3fbf77fe10bbf4f24fa8341bbd3d15a4f4ecd6cd9b2f585173ff5a77ff22752ca4d9b360fc2d056b0a5526969e9b655728490969fcdcdcd7de9cbff727272aadbebb5db6dadf5e8e8e8534f1d7dfcf091bff8f3af9f3a79d2f33cd775bff8a52fed7e70cfea6abdde68587979f3e62d0fef7be4ea1ffd7b22b17ec3c6c2e2b689630d6298ebf5ba20526922a5736f7e8c1f40a7618dc86a188045e195ed34ac7d90038e6529cc59d56945c44c2ab2ed18296d899f01828d3263f03ec01e119324d9b66ddbe73fff7bb7ef2cc7717cfad4c99fffec9d248e376cdaf4f4d1631313938ee39c3e75f26bfff5abcf1c7bae52a9686d7ef2e61b972e9e6763ec15b4d6e54af99f7de1f719f0e2a54b572e5f7ee3f51f256972e0e0a147f71f2805fe3ffdfceffd69e3ab0b0b579f7ee6d9a9e99993274ffdfd1baf2f5cbdc2cc9b366d39faec31adb510b4b878f56b5ff92f4f3df3ccf4f42c229c3af9dec2d5ab44d4eff71edabb6fdbf61d7cbfe90b87544fab51e53a44a65919e4210802b05a88c8330de5d52c5b89e76e7514b25213c0762d90a88818b66d8dfb401c6616523cf5f4d146b3658c69d4ebafbdfa83faea4a188667cf9cfee52f7eeef91e33f7ba9d7a63d5e2bbe779bd6eb7beba22a463f53595a69ff8c421d7f35bad1633bff9c6ebababcbbd5eef9db7df6ab79ba9d2bd5effc8534f1151ad36daeb0d1ce9dcb871bdd56cb45bcd53274f5cba707e62628201c2c16079e50e21b9aee3795eafdf3f3b7f6a7171414ad9eb75d918adcdfd3893e1350920eba11059442f3e19b6a4fdbe18caf0d92ba594522911d9246063a7f892ed75649ab03159178904207e6cd58a885aebe9a9e95a6dd476fbae5d5b88e3c80fca41a912942ad71717575756b45280e0ba5ec6d780851488647560634c502acdcdad0fc3d0f7fde5e53b9d4edb71dc72a56a8cb975f3a6eb3a711c8f8f4f8c4f4e19c388e007de1ffcc1bf7af977fff1ee3d0f952b23efbcf3f677ffe6dbbd4e4748e9f941b13c95a600303d33f7afffcd1f4651f48dbffcb376ab699b3cf7f0244444605bc11686cafb2958e82b00ecba5e9e5d1109878b342b240009414816ee87f72a8733d65ae5fc4938ae9b37770ce07d797da552115258f8ea76bb5961a21522763b9d6ffcc59fc55164abb3f731cba2e7e70781e51e88d8eff5d334918e6b4974bfd7b3dee0386e29087afd1e1185619a38e9b14f1e7ffe85173a9dce891327befdad6ff6fb3ddf2f995ca48ca2f8f0e1c3470e3f6e98e7e7cf0efafd56b3e1b89e9327f68f7479630cb315b20aa3e50eaa0b7e29858f009990a052ad35af55b32033542f04c84c8c369a0c22d9bc61b3abc51fa5741c8542482222e1d866c2c71e8ee322091b31b685bd267cb3e9f77a00e07af76275b6df6f7f92aa94196cfe0700a55516884248292f5fbc70f8f011dff77bfd7ef3c2052944b9543af2c413bb76effeda57bfd26eb5708d98f1f8c464b55a8da2a8d96c0202227a9e7f3fd4de56f2d6ee96c658ab0a21892c99490d9b54a5397d170808b0961c87ba10b6b9234506f13907c836d9186696d2f13c5f4ac7f5bc8cf3dd5f4e32c6acf57808ef8e0910d2918e47243e2acc8968d80bb1e84666d2ef5d275cbc76f5ff7cff6ffbfd41a95c1e1b1d0d82208ca2f3e72f48290f1c3c18c751911b5dd7fdc99b6f7ee53fffa76f7feb7f0b298b26c97d9654b6aab782b99dab701cdb9e64602012b63d94712166abc617269385088ef934cc501ff5fd95824a53ab592aa5acce7d3fbc1e117bfd9e52ca464f1004c36d74d775cbe5b2d6badd6e7f9428614bad388a687494993dcfb374d39e3cef0b429224fd7e6f64a4b6b8b0f0577ff9f54d9b376fdabc65ddfa0de3e3e352ca7e7f502e57a5b4ed94ecb79d4efbf2a50b51142dddbad56eb54c2e03dc97948cb603aa03af9435a172235a9cb45e6e114610d9b4575451940389191e87402221e5705b322b138a20d08a90ee4bee6026a266a3d16c36ac5b4dcfcc5a15494a99a6e9837bf6fc873ffe8fcf7df2789a4454f44b8b021bc0f3bc7ffe2fbef8f0c30f2f2c5c95d2d15a8f8d8d79becfc04448446313e3b6206a361b2b2b2b478f3df787fff6dfc571fc8b777ff69d6f7df32fbffedf5e7fedd5ac30a462a2265bbc23a590b2dd6effd537fe5c4af9d2673f57abd5860c742f6aa995562a755d4f2b6532acce6a34b42973b8b1333491b2269f0120666de28ce12895264932dcefce651bcc7bf65967ea7ec433220a0783b3f3671cc789e3f8c1071fdcb87153afdbe9b43b8ee3ecdbf7c8e5cb57cececf6baddbed5631ba33e80f8c3183c1208aa24d9b36cfccce9d3b7b3655a93166667676e7aedd5138e8765a333333dbb76d4fd35408317ffab45669bbd5eef5fb073f71c8fa56afd7bd72f9729aa648d4eff5d234e975bb76fa0a11c230d44a85e1208ec2eac8c8f1e75f2895cb490e4af754ba19116dd19b596f88a1d86e94d22a49624bd0a594f9b6c3fbbb540860c10b0082a0c48607dcb3b62e9c718d18d9feb5d1787f8e2fa43cf5de7b5bb66cddb96b579aa65ffcf297df79fbed6ea77bf0e0c1d975ebe7e7cf9c3f37bff7e1479e78f2292185314629f599975e22fa1d2bf8757bbd7ebfbf74ebc6bb3f7be7c8134f4751f8d9cfbebc7efdba413f3cfcc41163c071dcb3f3a74f9d7a0f001cd74dd3f4f80b2f6eddb6f5c2850ba5a0f4e8fefd24a4566afecce98d9bb6bcf0e28ba552456b9d24fa89279f7ceae9a7321ea5cdfc99336ca1fa7ea5402a42240399e1fc648c948e10a9522ac39421ca9e914ba3ede45886eae1a03f393dd3eff7d6e82622e529486b2da5c36cf0be9b238898a4c977ffe6dbc79e3bbe73d72e3f083efbf2e71c2957eaab67e7cfbefa8357fafdded4f4f4fec71ebb7efd0600388e333232e238d2f681a3282641c6981fbffe9a4ad5fe0307b5e1977ee76521c4ad5b4bcd66ebf4a993affee095281cb89ebfb27ca7dbed2aadf73f76e0c9a78eb23177eedc59add7df7eebcdab572e3db477dffefd0756ebf52449a4742a95b2effbc618224c53d568343f98b73f146ed830640086ccec386e363545641b96699afa4150ae54daad665e4c61a67d418eec8ee34ecfccaeae2c4f4c4e492917af5d751c77dd868dbd5ea759afdbe1212b14db64c2cc8eeb64ad2c3633d3b3ad76fbfe64cb344dd2f5ebd7af5bbfc1f37ddb085b58b8d2eb761cc71d1d1bb7f9d0fa8e1d81b215b8ebbaabababb7976e7a7e2989a3c9c9a98d9b3697ca65448ca2f0d6cd1b37ae2f0280e797a474d224f67d7f6eddba915a2d084acc1c85e18d1b8b4bb76e12516d747c7272d2715c9b48eca490bd8a0deec56b0b6118fa41e9a3a80e338f8f8fdf5eba95f58b88b44a015048214870963a4d1c47eb376ed64add59bac5c00ffec6c32bcbb7932461c3dd6e3bf77a445e13426d350b523a73731bea2b2b815f4a92d8469314a41548294c5e6db3e138892a956ab7dbb9373e5a6e2a84bc79ebe6f5ebd786d557df2f09295badd6caf2ed7b1507ae474204a572bdd158befb9b8eeb398e6b9becc271c2303c7f6efe7d3f775d5f3a4e38185cbc70ee9e994938aef7510cd3968749126bad25493bf0c2244890948ed13a8923d7f3fc2048d374726a6ae9e64d24b412991d8fe5bb7bb360d38210420a8980cc20884ae572502aaddbb0414ac7f7fd46a3ee38eec2954bb609565431ed76bb56ab8d8e8dc1c731623b68383a36769782375c9ddf63f33863bb00501bad0dcf120102301672936578c3d39185dc918f9e4dde03cc796df876a8478f6b53274992341bf5b5691766ad75a55a5db77e431445e313935ae9c1a077c32c96cb1512c20e8364edd45c86c97ab36b836dcc240805d941f552b93c3a3a76f5f2a503871ebf7ce9e2d2cdeb73eb366472e890428d88cd4693a85d1479b9acc6c5284e36639cdd001bc3428842312fca2e22b4e32ef9dee05aad8df9a0f21082e54d15630c5b2aca776d7336299ca5cd9cea1963004188b5d85d1b85183a05b3191e745d2bbf8db16e5af03deb302b2bcb77966eeddef3d0ccecbaf74ebc3b3e31d9ed765dd7b5a82484b0b5607141592cb49819b62b26c2b3674e3556570ffee6e18be7cfdeb9bde4b9beeb79591f113281a9501aec1e503eb73dd411cb64e7bc4fc32404db51562118000ddb6e010013c9e20e11ed160200e43646405e2b176cd3866da59c4f050fc92c564f64c3365799bc5b0dc04482900c180026a4bb475038571f21bfaf212917584a391ca944e438aee3b8aee3f97e70eeec19663e74e4c99ffcf8474912cfcead335adb0948dbd52a5c8d865b568eebe40f4d88248ed9f0d3c78e2f5cbdbc7ce7f6864d5b94518ee320a151daf6c4d7faa2c0d694b9fa86c8b836549cab4b79bf06a4c8265b852d7308edf32a70572541d60f2c18a2ede60fcd47c65164499b5520984d5e326505f9b0725b30bf6caa12d0186b38017897f29e972fc675dd42c4b5f7454404548c9066653fa25229000b410c303d3d7bf9e2f966bd7ef8c9a34150d2dab8ae478280509080217528d3ebed433a6992da964d1094b66cdbfee433c7ce9cfad5eda55b3b77ef715d5710d56a63d56acdf5bc70d017f91494e52476a2a4901bb36ea3bd12af0d4fdb476198594a576b650737d760a7f8f99072693776982f1351180e2626a7a414f60c19fa71e6e945a39ccdd08062b6af9cb31afe9099f97c9384904a6b3bb8393c7f0908564a2144ab77456158ad8dfa41a9521d89a370dd868d1b373f70f9e2f9eb8b0bcf1e7f71d396072ad51136ec7bbe361a852898ab1df2966118aa34bd79637176dd860d1b36f6ba9ddbb76e0541398ac26a75a4d3692f5cb9f4f0a30756966f13d19ebdfba66666a3282cac66b12c49121ba49871d1ec80a1fc39dc55a77c2875b8fd5b44f170dfa6d80c6be2c1a0bf7ee3a6dd7b1ef2fd92101486036618367171c542ae2986b989841d88ce863886d26f1e10f9c32d26c3a13588c8875eed3781214dd3addb76ecdef3501c85a94ab76edf79f2c42fdaad666d6cac5aad954ae5f3f3a75bcdc6c38feeaf54475697ef0821944aed6985059c7eaf678c715d7765f9cea1c34f34eaabb76e5e4fd2e499e75eb87ae5527d65c571dc248957569699b9d96878bee7386eafd71b1ac460ad35513e366b32c434c65086bc500c4f17d5a3d6da2e456b3d3cba6c65a9c2d78c3176382e8de354a5db76ec0a8252bbddeaf77b52ca72a5d2eff7accb5b58b38aae52ca183dfcec8e1d6bd55a1740248448533bf08c459fcf3e58b2268d0eed7db119f6098b99b939445c5cb8d2acd7ed232e711ca5693ab76efdb3c75ffcd12bdf5f5d5ddefcc0d6bdfbf6bffacaf75dd78bc2304d932c413a8e93e402baebba7114f5fbbda3cf3d7fe5f2c5e5db4b428863cf7fbad7edd446477bfd9e6b07d5e3a8d3695b4f31c6388e635f5b0cb5fc8488002147490bdc19dfb0d9264962fb70a1945290b0948308013189e352a9bc73f76f2cdf59d24a5b9a5ca95480e181ed3ba6a66794527e5032460f7a3dfb4c44b952191b9f88a2c8f77dd77593384e55323139353d3ddba8af321b226197404248e9d8c04ad344a9b4542adb3108c8380222a1151a914848218810c9d2257b17f68935cff3e338eeb45a00501919915222c2f4ecdcba0d1b0f3e7ee48dd77e78ebc6f589a9e9279e3ef6c357fed60e4e87e1c076e08904562ad54138c8f9a218a9d5fabdeeb61dbb1e3d70e87bdff9a6526adfa38f55aa23f59595248d93383646876114f6fb7112d97b181d1bb7f594ad9273d7c6ac87953f9164136c1c474aeb5dbbf7d457575657573ccf93524286f5acb50e07033f081ed8b6dd73bd1bd717fbfd5eb95c765d3f8c0677966e4d4ecd10e1c4d4f4eaf21dd7f35bcd8656ca0f02fb90d76030189b182f952ac66821c4d4d44c9cc48b0b57a330b48f6ed967229048a5a9522991985bb73e55e9f585abe5724548594c7314c249215e1192bd2336a65caeb49a0dd7f3e3382a572a469b20088252c9f30329c5f8c4d4b5ab976f5c5fac56abcf7ef2c537df78addd6a08e1341babc5d4a5940e56476a56ba4324638c749c5aadd6e9b41fdafbc8d4ccecdb6fbe2e846c351b77f710b232c0f6ed6c0c0f3f02980778fef84061f81c4cc6c62776eeded3eff5ae5f5b68b79bc363bd1b366e5ebf71f3ca9ddb699a845168a7d77bddae317af396adf5faea9607b65d5fbcfadcf3bff5a9cf7cf6ab7ffc4717cf9ff53c8f8468351a8ee7466128a41c9f98741d5708a1b52142634ca7ddea763bd609acd2b279cbd6b1f1f156b379637141a50af307c28ac9f2b5c2247f7883998990d9924e6d91ca32f24274b3715f1b1d33c61c3d76fcfcd933776e2f954aa5db4b4bf6b456df46c4ff07cbb798c78472da160000000049454e44ae426082"
@@ -31817,7 +32032,7 @@ MainWindow
     text: Priority
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: priority
     anchors.left: prev.left
     anchors.right: prev.right
@@ -31837,7 +32052,7 @@ MainWindow
     text: Danger
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: danger
     anchors.left: prev.left
     anchors.right: prev.right
@@ -31857,7 +32072,7 @@ MainWindow
     text: Max distance to target
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: maxDistance
     anchors.left: prev.left
     anchors.right: prev.right
@@ -31877,7 +32092,7 @@ MainWindow
     text: Keep distance
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: distance
     anchors.left: prev.left
     anchors.right: prev.right
@@ -31897,7 +32112,7 @@ MainWindow
     text: Minimum Health
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: minHealth
     anchors.left: prev.left
     anchors.right: prev.right
@@ -31917,7 +32132,7 @@ MainWindow
     text: Maximum Health
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: maxHealth
     anchors.left: prev.left
     anchors.right: prev.right
@@ -32280,7 +32495,7 @@ Panel
     focusable: false
     auto-focus: first
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: listScrollbar
     anchors.top: prev.top
     anchors.bottom: prev.bottom
@@ -34026,7 +34241,7 @@ Panel
     focusable: false
     auto-focus: first
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: listScrollbar
     anchors.top: prev.top
     anchors.bottom: prev.bottom
@@ -34739,16 +34954,154 @@ Panel
   return functions
 end
 ]=]
-SUPPORT_FILES["ui/basic.otui"] = [[
+SUPPORT_FILES["ui/basic.otui"] = [[-- Zenith Mobile touch-first controls.
+-- These styles are imported after the client's native game_bot styles.
+
+ZenithVerticalScrollBarSlider < UIButton
+  id: sliderButton
+  anchors.centerIn: parent
+  size: 28 34
+  background-color: #536374
+  border-width: 1
+  border-color: #9aabba
+  focusable: false
+
+  $hover:
+    background-color: #64778a
+
+  $pressed:
+    background-color: #2d9bb8
+
+  $disabled:
+    background-color: #333a42
+    border-color: #59616a
+
+ZenithHorizontalScrollBarSlider < UIButton
+  id: sliderButton
+  anchors.centerIn: parent
+  size: 36 26
+  background-color: #536374
+  border-width: 1
+  border-color: #9aabba
+  focusable: false
+
+  $hover:
+    background-color: #64778a
+
+  $pressed:
+    background-color: #2d9bb8
+
+  $disabled:
+    background-color: #333a42
+    border-color: #59616a
+
+ZenithVerticalScrollBar < UIScrollBar
+  orientation: vertical
+  width: 32
+  height: 96
+  pixels-scroll: true
+  background-color: #10151bdd
+  border-width: 1
+  border-color: #52606d
+
+  UIButton
+    id: decrementButton
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 30
+    text: ^
+    text-align: center
+    font: verdana-11px-rounded
+    background-color: #2a3139
+    border-width: 1
+    border-color: #687684
+
+    $hover:
+      background-color: #3a4651
+
+    $pressed:
+      background-color: #156f86
+
+  UIButton
+    id: incrementButton
+    anchors.bottom: parent.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 30
+    text: v
+    text-align: center
+    font: verdana-11px-rounded
+    background-color: #2a3139
+    border-width: 1
+    border-color: #687684
+
+    $hover:
+      background-color: #3a4651
+
+    $pressed:
+      background-color: #156f86
+
+  ZenithVerticalScrollBarSlider
+
+ZenithHorizontalScrollBar < UIScrollBar
+  orientation: horizontal
+  height: 30
+  width: 96
+  pixels-scroll: true
+  background-color: #10151bdd
+  border-width: 1
+  border-color: #52606d
+
+  UIButton
+    id: decrementButton
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.bottom: parent.bottom
+    width: 30
+    text: <
+    text-align: center
+    font: verdana-11px-rounded
+    background-color: #2a3139
+    border-width: 1
+    border-color: #687684
+
+    $hover:
+      background-color: #3a4651
+
+    $pressed:
+      background-color: #156f86
+
+  UIButton
+    id: incrementButton
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    width: 30
+    text: >
+    text-align: center
+    font: verdana-11px-rounded
+    background-color: #2a3139
+    border-width: 1
+    border-color: #687684
+
+    $hover:
+      background-color: #3a4651
+
+    $pressed:
+      background-color: #156f86
+
+  ZenithHorizontalScrollBarSlider
+
 BotButton < Button
-  height: 32
-  margin-top: 4
+  height: 34
+  margin-top: 5
   font: verdana-11px-rounded
   text-align: center
 
 BotSwitch < Button
-  margin-top: 4
-  height: 32
+  margin-top: 5
+  height: 34
   font: verdana-11px-rounded
   text-align: center
   image-color: green
@@ -34756,16 +35109,17 @@ BotSwitch < Button
     image-color: red
 
 SmallBotSwitch < Button
-  margin-top: 3
-  height: 27
+  margin-top: 4
+  height: 32
   font: verdana-11px-rounded
+  text-align: center
   image-color: green
   $!on:
     image-color: red
 
 BotLabel < Label
-  margin-top: 3
-  height: 22
+  margin-top: 4
+  height: 26
   text-auto-resize: true
   text-align: center
   text-wrap: true
@@ -34781,14 +35135,15 @@ BotTextEdit < TextEdit
   text-align: center
   multiline: false
   focusable: false
-  height: 32
+  height: 34
   font: verdana-11px-rounded
 
 BotSeparator < HorizontalSeparator
-  margin-top: 8
-  margin-bottom: 6
+  margin-top: 10
+  margin-bottom: 8
 
-BotSmallScrollBar < SmallScrollBar
+BotSmallScrollBar < ZenithVerticalScrollBar
+  width: 30
 
 BotPanel < Panel
   margin-top: 2
@@ -34796,36 +35151,37 @@ BotPanel < Panel
   ScrollablePanel
     id: content
     anchors.fill: parent
-    margin-right: 30
-    margin-left: 3
-    margin-bottom: 6
+    margin-right: 36
+    margin-left: 4
+    margin-bottom: 7
     vertical-scrollbar: botPanelScroll
     layout:
       type: verticalBox
 
-  VerticalScrollBar
+  ZenithVerticalScrollBar
     id: botPanelScroll
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.right: parent.right
-    width: 26
-    step: 56
+    width: 32
+    step: 72
     pixels-scroll: true
 
 CaveBotLabel < Label
   background-color: alpha
-  text-offset: 5 0
+  text-offset: 7 0
   focusable: true
-  height: 28
+  height: 34
   font: verdana-11px-rounded
 
   $focus:
-    background-color: #00000055
+    background-color: #14506ddd
 
 SlotComboBoxPopupMenu < ComboBoxPopupMenu
 SlotComboBoxPopupMenuButton < ComboBoxPopupMenuButton
 SlotComboBox < ComboBox
-  height: 30
+  height: 34
+  font: verdana-11px-rounded
   @onSetup: |
     self:addOption("Head")
     self:addOption("Neck")
@@ -34839,13 +35195,12 @@ SlotComboBox < ComboBox
     self:addOption("Ammo")
     self:addOption("Purse")
 ]]
-SUPPORT_FILES["ui/config.otui"] = [[
-BotConfig < Panel
+SUPPORT_FILES["ui/config.otui"] = [[BotConfig < Panel
   id: botConfig
-  height: 70
-  margin-left: 3
-  margin-right: 3
-  margin-bottom: 4
+  height: 78
+  margin-left: 4
+  margin-right: 4
+  margin-bottom: 6
 
   ComboBox
     id: list
@@ -34855,9 +35210,9 @@ BotConfig < Panel
     &parentWidth: true
     anchors.top: parent.top
     anchors.left: parent.left
-    text-offset: 5 0
-    width: 210
-    height: 31
+    text-offset: 7 0
+    width: 230
+    height: 34
     font: verdana-11px-rounded
 
   Button
@@ -34865,8 +35220,8 @@ BotConfig < Panel
     anchors.top: prev.top
     anchors.left: prev.right
     anchors.right: parent.right
-    margin-left: 6
-    height: 31
+    margin-left: 7
+    height: 34
     font: verdana-11px-rounded
     $on:
       text: On
@@ -34877,13 +35232,13 @@ BotConfig < Panel
       color: #FF5555
 
   Button
-    margin-top: 5
     id: add
     anchors.top: list.bottom
     anchors.left: parent.left
+    margin-top: 6
     text: Add
-    width: 100
-    height: 30
+    width: 112
+    height: 34
     font: verdana-11px-rounded
 
   Button
@@ -34891,8 +35246,8 @@ BotConfig < Panel
     anchors.top: prev.top
     anchors.horizontalCenter: parent.horizontalCenter
     text: Edit
-    width: 100
-    height: 30
+    width: 112
+    height: 34
     font: verdana-11px-rounded
 
   Button
@@ -34900,8 +35255,8 @@ BotConfig < Panel
     anchors.top: prev.top
     anchors.right: parent.right
     text: Remove
-    width: 100
-    height: 30
+    width: 112
+    height: 34
     font: verdana-11px-rounded
 ]]
 SUPPORT_FILES["ui/container.otui"] = [[
@@ -34987,10 +35342,9 @@ BotIcon < UIWidget
     text-auto-resize: true
     phantom: true
 ]]
-SUPPORT_FILES["ui/panels.otui"] = [[
-DualScrollPanel < Panel
-  height: 51
-  margin-top: 3
+SUPPORT_FILES["ui/panels.otui"] = [[DualScrollPanel < Panel
+  height: 106
+  margin-top: 6
 
   SmallBotSwitch
     id: title
@@ -34999,24 +35353,24 @@ DualScrollPanel < Panel
     anchors.top: parent.top
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll1
     anchors.left: title.left
     anchors.right: title.horizontalCenter
     anchors.top: title.bottom
-    margin-right: 2
-    margin-top: 2
+    margin-right: 3
+    margin-top: 4
     minimum: 0
     maximum: 100
     step: 1
     &disableScroll: true
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll2
     anchors.left: title.horizontalCenter
     anchors.right: title.right
     anchors.top: prev.top
-    margin-left: 2
+    margin-left: 3
     minimum: 0
     maximum: 100
     step: 1
@@ -35027,115 +35381,122 @@ DualScrollPanel < Panel
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: scroll1.bottom
-    margin-top: 3
+    margin-top: 5
     margin-left: 2
-    margin-right: 1
+    margin-right: 2
 
 SingleScrollItemPanel < Panel
-  height: 45
-  margin-top: 2
+  height: 78
+  margin-top: 5
 
   BotItem
     id: item
     anchors.left: parent.left
-    anchors.top: prev.bottom
+    anchors.top: parent.top
     margin-top: 3
+    size: 36 36
 
   SmallBotSwitch
     id: title
     anchors.left: prev.right
     anchors.right: parent.right
     anchors.top: prev.top
-    margin-left: 2
+    margin-left: 4
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll
     anchors.left: title.left
     anchors.right: title.right
     anchors.top: title.bottom
-    margin-top: 2
+    margin-top: 4
     minimum: 0
     maximum: 100
     step: 1
     &disableScroll: true
 
 DualScrollItemPanel < Panel
-  height: 33
-  margin-top: 3
+  height: 78
+  margin-top: 5
 
   BotItem
     id: item
     anchors.left: parent.left
-    anchors.top: prev.bottom
+    anchors.top: parent.top
     margin-top: 3
+    size: 36 36
 
   SmallBotSwitch
     id: title
     anchors.left: prev.right
     anchors.right: parent.right
     anchors.top: prev.top
-    margin-left: 2
+    margin-left: 4
     text-align: center
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll1
     anchors.left: title.left
     anchors.right: title.horizontalCenter
     anchors.top: title.bottom
-    margin-top: 2
-    margin-right: 2
+    margin-top: 4
+    margin-right: 3
     minimum: 0
     maximum: 100
     step: 1
     &disableScroll: true
 
-  HorizontalScrollBar
+  ZenithHorizontalScrollBar
     id: scroll2
     anchors.left: title.horizontalCenter
     anchors.right: title.right
     anchors.top: prev.top
-    margin-left: 2
+    margin-left: 3
     minimum: 0
     maximum: 100
     step: 1
     &disableScroll: true
 
 ItemsRow < Panel
-  height: 33
-  margin-top: 2
+  height: 40
+  margin-top: 4
 
   BotItem
     id: item1
     anchors.top: parent.top
     anchors.left: parent.left
+    size: 36 36
 
   BotItem
     id: item2
     anchors.top: prev.top
     anchors.left: prev.right
-    margin-left: 2
+    margin-left: 4
+    size: 36 36
 
   BotItem
     id: item3
     anchors.top: prev.top
     anchors.left: prev.right
-    margin-left: 2
+    margin-left: 4
+    size: 36 36
 
   BotItem
     id: item4
     anchors.top: prev.top
     anchors.left: prev.right
-    margin-left: 2
+    margin-left: 4
+    size: 36 36
 
   BotItem
     id: item5
     anchors.top: prev.top
     anchors.left: prev.right
-    margin-left: 2
+    margin-left: 4
+    size: 36 36
 
 ItemsPanel < Panel
-  height: 55
+  height: 80
 
   SmallBotSwitch
     id: title
@@ -35149,14 +35510,17 @@ ItemsPanel < Panel
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.top: prev.bottom
+    margin-top: 4
 
 ItemAndButtonPanel < Panel
-  height: 40
+  height: 44
+  margin-top: 4
 
   BotItem
     id: item
     anchors.left: parent.left
-    anchors.top: parent.top
+    anchors.verticalCenter: parent.verticalCenter
+    size: 36 36
 
   BotSwitch
     id: title
@@ -35164,16 +35528,19 @@ ItemAndButtonPanel < Panel
     anchors.right: parent.right
     anchors.verticalCenter: prev.verticalCenter
     text-align: center
-    margin-left: 2
+    margin-left: 4
     margin-top: 0
 
 ItemAndSlotPanel < Panel
-  height: 40
+  height: 76
+  margin-top: 5
 
   BotItem
     id: item
     anchors.left: parent.left
     anchors.top: parent.top
+    margin-top: 2
+    size: 36 36
 
   SmallBotSwitch
     id: title
@@ -35181,7 +35548,7 @@ ItemAndSlotPanel < Panel
     anchors.right: parent.right
     anchors.top: prev.top
     text-align: center
-    margin-left: 2
+    margin-left: 4
     margin-top: 0
 
   SlotComboBox
@@ -35189,25 +35556,27 @@ ItemAndSlotPanel < Panel
     anchors.left: prev.left
     anchors.right: prev.right
     anchors.top: prev.bottom
-    margin-top: 2
-    height: 20
+    margin-top: 4
+    height: 34
     &disableScroll: true
 
 TwoItemsAndSlotPanel < Panel
-  height: 35
-  margin-top: 4
+  height: 78
+  margin-top: 5
 
   BotItem
     id: item1
     anchors.left: parent.left
     anchors.top: parent.top
-    margin-top: 1
+    margin-top: 2
+    size: 36 36
 
   BotItem
     id: item2
     anchors.left: prev.right
     anchors.top: prev.top
-    margin-left: 1
+    margin-left: 3
+    size: 36 36
 
   SmallBotSwitch
     id: title
@@ -35215,7 +35584,7 @@ TwoItemsAndSlotPanel < Panel
     anchors.right: parent.right
     anchors.top: parent.top
     text-align: center
-    margin-left: 2
+    margin-left: 4
     margin-top: 0
 
   SlotComboBox
@@ -35223,13 +35592,13 @@ TwoItemsAndSlotPanel < Panel
     anchors.left: prev.left
     anchors.right: prev.right
     anchors.top: prev.bottom
-    margin-top: 2
-    height: 20
+    margin-top: 4
+    height: 34
     &disableScroll: true
 
 DualLabelPanel < Panel
-  height: 20
-  padding: 1
+  height: 30
+  padding: 2
 
   Label
     id: left
@@ -35239,24 +35608,24 @@ DualLabelPanel < Panel
     text-align: left
     text-wrap: true
     text-auto-resize: true
-    margin-left: 3
+    margin-left: 5
     font: verdana-11px-rounded
 
   Label
     id: right
     anchors.right: parent.right
     anchors.left: prev.right
-    margin-left: 2
+    margin-left: 3
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     text-align: right
     text-auto-resize: true
-    margin-right: 3
+    margin-right: 5
     font: verdana-11px-rounded
 
 LabelAndTextEditPanel < Panel
-  height: 20
-  padding: 1
+  height: 38
+  padding: 2
 
   Label
     id: left
@@ -35266,28 +35635,30 @@ LabelAndTextEditPanel < Panel
     anchors.right: parent.horizontalCenter
     text-align: center
     text-wrap: true
-    margin-right: 2
+    margin-right: 3
+    font: verdana-11px-rounded
 
   BotTextEdit
     id: right
     anchors.left: prev.right
-    margin-left: 3
+    margin-left: 4
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.right: parent.right
 
 SwitchAndButtonPanel < Panel
-  height: 20
-  padding: 1
+  height: 40
+  padding: 2
 
   Button
     id: right
     anchors.top: parent.top
-    margin-top: 2
     anchors.bottom: parent.bottom
     anchors.right: parent.right
+    width: 120
     text-auto-resize: true
     text-align: center
+    font: verdana-11px-rounded
 
   BotSwitch
     id: left
@@ -35295,7 +35666,8 @@ SwitchAndButtonPanel < Panel
     anchors.bottom: parent.bottom
     anchors.left: parent.left
     anchors.right: prev.left
-    margin-right: 3
+    margin-right: 4
+    margin-top: 0
     text-align: center
 ]]
 
@@ -35673,12 +36045,9 @@ local function prepareCompatibility()
 end
 
 local function importExecutorStyles()
+  -- Import the client's originals first and the Zenith touch theme last.
+  -- The previous order let the APK's tiny desktop styles overwrite our mobile sizes.
   local styles = {
-    Runtime.supportRoot .. "/ui/basic.otui",
-    Runtime.supportRoot .. "/ui/panels.otui",
-    Runtime.supportRoot .. "/ui/config.otui",
-    Runtime.supportRoot .. "/ui/icons.otui",
-    Runtime.supportRoot .. "/ui/container.otui",
     "/game_bot/ui/basic.otui",
     "/game_bot/ui/panels.otui",
     "/game_bot/ui/config.otui",
@@ -35689,6 +36058,11 @@ local function importExecutorStyles()
     "/modules/game_bot/ui/config.otui",
     "/modules/game_bot/ui/icons.otui",
     "/modules/game_bot/ui/container.otui",
+    Runtime.supportRoot .. "/ui/basic.otui",
+    Runtime.supportRoot .. "/ui/panels.otui",
+    Runtime.supportRoot .. "/ui/config.otui",
+    Runtime.supportRoot .. "/ui/icons.otui",
+    Runtime.supportRoot .. "/ui/container.otui",
   }
 
   for _, path in ipairs(styles) do
