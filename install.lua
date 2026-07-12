@@ -8,7 +8,7 @@ local RUNTIME_FILE = RUNTIME_DIR .. "/runtime.lua"
 local SUPPORT_ROOT = RUNTIME_DIR .. "/game_bot"
 local MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.txt"
 local OLD_MANIFEST_FILE = BOT_ROOT .. "/.zenith_managed.json"
-local VERSION = "2026-07-10-mobile-runtime-button-fit"
+local VERSION = "2026-07-12-start-end-lure-only"
 
 local PROTECTED_PREFIXES = {
   "storage/",
@@ -93,6 +93,15 @@ Ele mantém somente:
 
 Esta versao nao usa a janela lateral nem o `refresh()` do modulo `game_bot`.
 O instalador cria um runtime proprio, conecta os callbacks do jogo, agenda as macros e abre apenas a janela flutuante do Zenith Mobile.
+
+
+## Ajustes mobile de CaveBot
+
+- Start Lure e End Lure carregam sempre.
+- Rush/Stand Lure foi removido completamente.
+- O editor de ações foi movido para a aba `WP+`.
+- A lista de waypoints ficou maior, com linhas legíveis e status da ação atual.
+- A visualização no mapa usa marcadores curtos para evitar texto sobreposto.
 ]]
 FILES["_Loader.lua"] = [[
 -- Zenith Mobile loader.
@@ -326,9 +335,57 @@ local function pathfinder()
   return true
 end
 
--- it adds an action widget to list
+-- Readable mobile labels for the waypoint list.
+local actionDisplayNames = {
+  ["gotolabel"] = "GO LABEL",
+  ["checkcontainers"] = "CHECK BP",
+  ["usewith"] = "USE WITH",
+  ["npcsay"] = "NPC SAY",
+  ["opendoors"] = "OPEN DOORS",
+  ["supplycheck"] = "SUPPLY CHECK",
+  ["buy supplies"] = "BUY SUPPLIES",
+  ["sell all"] = "SELL ALL",
+  ["stow all"] = "STOW ALL",
+  ["clear tile"] = "CLEAR TILE",
+  ["drop item"] = "DROP ITEM",
+  ["poscheck"] = "POS CHECK",
+  ["lvlcheck"] = "LEVEL CHECK",
+  ["inwithdraw"] = "INBOX",
+  ["startlure"] = "START LURE",
+  ["endlure"] = "END LURE",
+  ["exani hur"] = "EXANI HUR",
+}
+
+local function compactActionValue(value)
+  local firstLine = tostring(value or ""):match("([^\n\r]*)") or ""
+  firstLine = firstLine:gsub("^%s+", ""):gsub("%s+$", "")
+  if #firstLine > 48 then
+    firstLine = firstLine:sub(1, 45) .. "..."
+  end
+  return firstLine
+end
+
 CaveBot.getActionDisplayText = function(index, action, value)
-  return "#" .. index .. " - " .. action .. ":" .. value:split("\n")[1]
+  local name = actionDisplayNames[action] or tostring(action or ""):upper()
+  local summary = compactActionValue(value)
+  if summary == "" then
+    return string.format("%02d  %s", index, name)
+  end
+  return string.format("%02d  %s  |  %s", index, name, summary)
+end
+
+CaveBot.updateWaypointListInfo = function()
+  if not CaveBot.actionList or not CaveBot.waypointListInfo then return end
+
+  local count = CaveBot.actionList:getChildCount()
+  local focused = CaveBot.actionList:getFocusedChild()
+  if focused then
+    local index = CaveBot.actionList:getChildIndex(focused)
+    local name = actionDisplayNames[focused.action] or tostring(focused.action or ""):upper()
+    CaveBot.waypointListInfo:setText(index .. "/" .. count .. " - " .. name)
+  else
+    CaveBot.waypointListInfo:setText(count .. (count == 1 and " action" or " actions"))
+  end
 end
 
 CaveBot.refreshActionListNumbers = function()
@@ -336,8 +393,10 @@ CaveBot.refreshActionListNumbers = function()
   for index, child in ipairs(CaveBot.actionList:getChildren()) do
     if child.action and child.value then
       child:setText(CaveBot.getActionDisplayText(index, child.action, child.value))
+      child:setTooltip(tostring(child.action):upper() .. "\n" .. tostring(child.value))
     end
   end
+  CaveBot.updateWaypointListInfo()
 end
 
 CaveBot.addAction = function(action, value, focus)
@@ -1719,6 +1778,7 @@ if cavebotCompat.loadMainUi then
 
   ui.list = ui.listPanel.list -- shortcut
   CaveBot.actionList = ui.list
+  CaveBot.waypointListInfo = ui.listHeader and ui.listHeader.listInfo or nil
 
   if cavebotCompat.setupEditor and CaveBot.Editor then
     CaveBot.Editor.setup()
@@ -1799,6 +1859,9 @@ cavebotMacro = macro(20, function()
     nextAction = 1
   end
   ui.list:focusChild(ui.list:getChildByIndex(nextAction))
+  if CaveBot.updateWaypointListInfo then
+    CaveBot.updateWaypointListInfo()
+  end
 end)
 
 -- config, its callback is called immediately, data can be nil
@@ -1864,6 +1927,19 @@ end
 local waypointMarkColor = "#00CCFF"
 local shownMapWaypoints = {}
 
+local waypointMapNames = {
+  ["goto"] = "G",
+  ["stand"] = "S",
+  ["startlure"] = "SL",
+  ["endlure"] = "EL",
+  ["use"] = "U",
+  ["usewith"] = "UW",
+  ["opendoors"] = "D",
+  ["cleartile"] = "CT",
+  ["drop item"] = "DI",
+  ["supplycheck"] = "SC",
+}
+
 local function waypointKey(pos)
   return pos.x .. "," .. pos.y .. "," .. pos.z
 end
@@ -1919,21 +1995,33 @@ CaveBot.refreshMapWaypoints = function()
     if pos and pos.z == posz() then
       local key = waypointKey(pos)
       if not mapWaypoints[key] then
-        mapWaypoints[key] = {pos=pos, labels={}}
+        mapWaypoints[key] = {pos=pos, labels={}, color=waypointMarkColor}
       end
-      table.insert(mapWaypoints[key].labels, "#" .. index .. " " .. child.action)
+
+      local shortName = waypointMapNames[child.action] or tostring(child.action):sub(1, 2):upper()
+      table.insert(mapWaypoints[key].labels, index .. ":" .. shortName)
+
+      local actionData = CaveBot.Actions and CaveBot.Actions[child.action]
+      if actionData and actionData.color then
+        mapWaypoints[key].color = actionData.color
+      end
+
+      if ui.list:getFocusedChild() == child then
+        mapWaypoints[key].color = "#FFD54A"
+        mapWaypoints[key].labels[#mapWaypoints[key].labels] = ">" .. mapWaypoints[key].labels[#mapWaypoints[key].labels]
+      end
     end
   end
 
   for key, data in pairs(mapWaypoints) do
     local tile = g_map.getTile(data.pos)
     if tile then
-      local text = table.concat(data.labels, "\n")
+      local text = table.concat(data.labels, " / ")
       tile:setText(text)
 
       local thing = tile:getTopUseThing() or tile:getTopThing()
       if thing then
-        thing:setMarked(waypointMarkColor)
+        thing:setMarked(data.color or waypointMarkColor)
       end
 
       shownMapWaypoints[key] = {pos=data.pos, text=text}
@@ -1958,13 +2046,8 @@ if ui then
 
   -- ui callbacks
   ui.showEditor.onClick = function()
-    if not CaveBot.Editor then return end
-    if ui.showEditor:isOn() then
-      CaveBot.Editor.hide()
-      ui.showEditor:setOn(false)
-    else
+    if CaveBot.Editor then
       CaveBot.Editor.show()
-      ui.showEditor:setOn(true)
     end
   end
 
@@ -2277,14 +2360,19 @@ CaveBotList = function()
   return ui.list
 end
 ]=]
-FILES["cavebot/cavebot.otui"] = [[
-CaveBotAction < Label
-  background-color: alpha
-  text-offset: 2 0
+FILES["cavebot/cavebot.otui"] = [[CaveBotAction < Label
+  height: 23
+  margin-bottom: 1
+  background-color: #20242bcc
+  text-offset: 6 0
+  font: verdana-11px-rounded
   focusable: true
 
+  $hover:
+    background-color: #303844dd
+
   $focus:
-    background-color: #00000055
+    background-color: #14506ddd
 
 
 CaveBotPanel < Panel
@@ -2295,51 +2383,74 @@ CaveBotPanel < Panel
   BotSwitch
     id: autoRecording
     text: Auto Recording
-    margin-bottom: 2      
+    margin-bottom: 2
 
   HorizontalSeparator
     margin-top: 2
-    margin-bottom: 1
-    
+    margin-bottom: 3
+
+  Panel
+    id: listHeader
+    height: 22
+    margin-bottom: 2
+    background-color: #171b21dd
+
+    Label
+      id: listTitle
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      margin-left: 6
+      text: WAYPOINTS
+      font: verdana-11px-rounded
+      color: #9dd1ce
+
+    Label
+      id: listInfo
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      margin-right: 6
+      text: 0 actions
+      font: verdana-11px-rounded
+      color: #c8cdd5
+
   Panel
     id: listPanel
-    height: 130
-    margin-top: 2
+    height: 270
+    margin-top: 1
+    margin-bottom: 3
+    border-width: 1
+    border-color: #4a535f
 
     TextList
       id: list
       anchors.fill: parent
       vertical-scrollbar: listScrollbar
-      margin-right: 15
+      margin-right: 17
       focusable: false
       auto-focus: first
-      background-color: #585860
-      
+      background-color: #11151bdd
+
     VerticalScrollBar
       id: listScrollbar
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       anchors.right: parent.right
       pixels-scroll: true
-      step: 10  
-    
-  BotSwitch
+      step: 23
+
+  BotButton
     id: showEditor
-    margin-top: 2
-    
-    $on:
-      text: Hide waypoints editor
-      
-    $!on:
-      text: Show waypoints editor
+    text: Open waypoint editor
+    height: 22
+    margin-top: 3
 
   BotSwitch
     id: showConfig
     margin-top: 2
-    
+
     $on:
       text: Hide config
-      
+
     $!on:
       text: Show config
 
@@ -3813,9 +3924,20 @@ CaveBot.Editor.registerAction = function(action, text, params)
 end
 
 CaveBot.Editor.setup = function()
-  CaveBot.Editor.ui = UI.createWidget("CaveBotEditorPanel")
+  -- Keep the waypoint list visible in the Cave tab. On mobile the large action
+  -- grid lives in its own compact tab instead of pushing the list off-screen.
+  local editorParent = addTab and addTab("WP+") or nil
+  CaveBot.Editor.ui = UI.createWidget("CaveBotEditorPanel", editorParent)
   local ui = CaveBot.Editor.ui
   local registerAction = CaveBot.Editor.registerAction
+
+  if ui.backToWaypoints then
+    ui.backToWaypoints.onClick = function()
+      if ZenithMobileUI and ZenithMobileUI.selectTab then
+        ZenithMobileUI.selectTab("Cave")
+      end
+    end
+  end
 
   registerAction("move up", function()
     local action = CaveBot.actionList:getFocusedChild()
@@ -3963,12 +4085,21 @@ CaveBot.Editor.setup = function()
 end
 
 CaveBot.Editor.show = function()
-  CaveBot.Editor.ui:show()
+  if CaveBot.Editor.ui then
+    CaveBot.Editor.ui:show()
+  end
+  if ZenithMobileUI and ZenithMobileUI.selectTab then
+    ZenithMobileUI.selectTab("WP+")
+  end
 end
 
 
 CaveBot.Editor.hide = function()
-  CaveBot.Editor.ui:hide()
+  if ZenithMobileUI and ZenithMobileUI.selectTab then
+    ZenithMobileUI.selectTab("Cave")
+  elseif CaveBot.Editor.ui then
+    CaveBot.Editor.ui:hide()
+  end
 end
 
 CaveBot.Editor.edit = function(action, value, callback) -- callback = function(action, value)
@@ -3995,6 +4126,9 @@ end
 ]]
 FILES["cavebot/editor.otui"] = [[
 CaveBotEditorButton < Button
+  height: 24
+  font: verdana-11px-rounded
+  text-align: center
 
 CaveBotDirectionButton < Button
   width: 44
@@ -4235,36 +4369,47 @@ CaveBotStowAllWindow < MainWindow
 
 CaveBotEditorPanel < Panel
   id: cavebotEditor
-  visible: false
-  width: 176
+  visible: true
+  width: 360
   layout:
     type: verticalBox
     fit-children: true
-  
+
+  BotButton
+    id: backToWaypoints
+    text: Back to waypoint list
+    height: 24
+    margin-bottom: 4
+
   Label
     id: pos
+    height: 20
     text-align: center
     text: -
-    
+    font: verdana-11px-rounded
+    color: #9dd1ce
+    background-color: #20242bcc
+
   Panel
     id: buttons
-    margin-top: 2
-    width: 173
+    margin-top: 4
+    width: 358
     layout:
       type: grid
-      cell-size: 86 20
+      cell-size: 118 24
       cell-spacing: 1
-      num-columns: 2
+      num-columns: 3
       fit-children: true
 
   Label
-    text: Double click on action from action list to edit it
+    text: Tap an action to add it after the selected waypoint. Double tap a waypoint in the Cave tab to edit it.
     text-align: center
     text-auto-resize: true
     text-wrap: true
-    margin-top: 3
-    margin-left: 2
-    margin-right: 2
+    margin-top: 5
+    margin-left: 3
+    margin-right: 3
+    color: #b8bec8
 ]]
 FILES["cavebot/example_functions.lua"] = [=[
 CaveBot.Editor.ExampleFunctions = {}
@@ -6917,193 +7062,6 @@ CaveBot.Extensions.SellAll.setup = function()
   )
 end
 ]]
-FILES["cavebot/stand_lure.lua"] = [=[
-CaveBot.Extensions.StandLure = {}
-local enable = nil
-
-local function modPos(dir)
-    local y = 0
-    local x = 0
-
-    if dir == 0 then
-        y = -1
-    elseif dir == 1 then
-        x = 1
-    elseif dir == 2 then
-        y = 1
-    elseif dir == 3 then
-        x = -1
-    elseif dir == 4 then
-        y = -1
-        x = 1
-    elseif dir == 5 then
-        y = 1
-        x = 1
-    elseif dir == 6 then
-        y = 1
-        x = -1
-    elseif dir == 7 then
-        y = -1
-        x = -1
-    end
-
-    return {x, y}
-end
-local function reset(delay)
-    if type(Supplies.hasEnough()) == 'table' then
-        return
-    end
-    delay = delay or 0
-    CaveBot.delay(delay)
-    if delay == nil then
-        enable = nil
-    end
-end
-
-local resetRetries = false
-CaveBot.Extensions.StandLure.setup = function()
-    CaveBot.registerAction(
-        "rushlure",
-        "#FF0090",
-        function(value, retries)
-            local nextPos = nil
-            local data = string.split(value, ",")
-            if not data[1] then
-                warn("Invalid cavebot lure action value. It should be position (x,y,z), delay(ms) is: " .. value)
-                return false
-            end
-
-            if type(Supplies.hasEnough()) == 'table' then -- do not execute if no supplies
-                return false
-            end
-
-            local pos = {x = tonumber(data[1]), y = tonumber(data[2]), z = tonumber(data[3])}
-
-            local delayTime = data[4] and tonumber(data[4]) or 1000
-            if not data[5] then
-                enable = nil
-            elseif data[5] == "yes" then
-                enable = true
-            else
-                enable = false
-            end
-
-            delay(100)
-
-            if retries > 50 and not resetRetries then
-                reset()
-                warn("[Rush Lure] Too many tries, can't reach position")
-                return false  -- can't stand on tile
-            end
-
-            if resetRetries then
-                resetRetries = false
-            end
-
-            if distanceFromPlayer(pos) > 30 then
-                reset()
-                return false -- not reachable
-            end
-
-            local playerPos = player:getPosition()
-            local pathWithoutMonsters = findPath(playerPos, pos, 30, { ignoreFields = true, ignoreNonPathable = true, ignoreCreatures = true, precision = 0})
-            local pathWithMonsters = findPath(playerPos, pos, maxDist, { ignoreFields = true, ignoreNonPathable = true, ignoreCreatures = false, precision = 0 })
-
-            if not pathWithoutMonsters then
-                reset()
-                warn("[Rush Lure] No possible path to reach position, skipping.")
-                return false -- spot is unreachable 
-            elseif pathWithoutMonsters and not pathWithMonsters then
-              local foundMonster = false
-              for i, dir in ipairs(pathWithoutMonsters) do
-                local dirs = modPos(dir)
-                nextPos = nextPos or playerPos
-                nextPos.x = nextPos.x + dirs[1]
-                nextPos.y = nextPos.y + dirs[2]
-
-            
-                local tile = g_map.getTile(nextPos)
-                if tile then
-                    if tile:hasCreature() then
-                        local creature = tile:getCreatures()[1]
-                        local hppc = creature:getHealthPercent()
-                        if creature:isMonster() and (hppc and hppc > 0) and (oldTibia or creature:getType() < 3) then
-                            -- real blocking creature can not meet those conditions - ie. it could be player, so just in case check if the next creature is reachable
-                            local path = findPath(playerPos, creature:getPosition(), 7, { ignoreNonPathable = true, precision = 1 }) 
-                            if path then
-                                creature:setMarked('#00FF00')
-                                if g_game.getAttackingCreature() ~= creature then
-                                  attack(creature)
-                                end
-                                g_game.setChaseMode(1)
-                                resetRetries = true -- reset retries, we are trying to unclog the cavebot
-                                delay(100)
-                                return "retry"
-                            end
-                        end
-                    end
-                end
-              end
-          
-              if not g_game.getAttackingCreature() then
-                reset()
-                warn("[Rush Lure] No path, no blocking monster, skipping.")
-                return false -- no other way
-              end
-            end
-
-            -- reaching position, delay targetbot in process
-            if not CaveBot.MatchPosition(pos, 0) then
-                TargetBot.delay(300)
-                CaveBot.walkTo(pos, 30, { ignoreCreatures = false, ignoreFields = true, ignoreNonPathable = true, precision = 0})
-                delay(100)
-                resetRetries = true
-                return "retry"
-            end
-
-            TargetBot.setOn()
-            reset(delayTime)
-            return true
-        end
-    )
-
-    CaveBot.Editor.registerAction(
-        "rushlure",
-        "rush lure",
-        {
-            value = function()
-                return posx() .. "," .. posy() .. "," .. posz() .. ",1000"
-            end,
-            title = "Stand Lure",
-            description = "Run to position(x,y,z), delay(ms), targetbot on/off (yes/no)",
-            multiline = false,
-            validation = [[\d{1,5},\d{1,5},\d{1,2},\d{1,5}(?:,(yes|no)$|$)]]
-        }
-    )
-end
-
-local next = false
-schedule(5, function() -- delay because cavebot.lua is loaded after this file
-    connect(CaveBotList(), {
-        onChildFocusChange = function(widget, newChild, oldChild)
-
-        if oldChild and oldChild.action == "rushlure" then
-            next = true
-            return
-        end
-
-        if next then
-            if enable then
-                TargetBot.setOn()
-            elseif enable == false then
-                TargetBot.setOff()
-            end
-            
-            enable = nil -- reset
-            next = false
-        end
-    end})
-end)]=]
 FILES["cavebot/supply_check.lua"] = [=[
 CaveBot.Extensions.SupplyCheck = {}
 
@@ -20620,16 +20578,13 @@ loadCavebotModule("/cavebot/doors.lua")
 loadCavebotModule("/cavebot/pos_check.lua")
 loadCavebotModule("/cavebot/withdraw.lua")
 loadCavebotModule("/cavebot/inbox_withdraw.lua")
-if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
-  dofile("/cavebot/lure.lua")
-end
+-- Lure is a core Zenith Mobile feature. It must always be available on mobile,
+-- independently of the old desktop compatibility/safe-mode flags.
+dofile("/cavebot/lure.lua")
 loadCavebotModule("/cavebot/bank.lua")
 loadCavebotModule("/cavebot/clear_tile.lua")
 loadCavebotModule("/cavebot/tasker.lua")
 loadCavebotModule("/cavebot/imbuing.lua")
-if not cavebotCompat.safeMode or cavebotCompat.enableSensitiveModules then
-  dofile("/cavebot/stand_lure.lua")
-end
 -- main cavebot file, must be last
 loadCavebotModule("/cavebot/cavebot.lua")
 
@@ -27657,6 +27612,7 @@ tabBar:setContentWidget(tabContent)
 
 local currentPanel = nil
 local tabPanels = {}
+local tabObjects = {}
 
 local function normalizeTabName(name)
   name = tostring(name or 'Main')
@@ -27716,6 +27672,7 @@ local function createTab(name)
 
   local existing = tabBar:getTab(name)
   if existing and existing.tabPanel and existing.tabPanel.content then
+    tabObjects[name] = existing
     tabPanels[name] = existing.tabPanel.content
     return tabPanels[name]
   end
@@ -27725,6 +27682,7 @@ local function createTab(name)
   botPanel:setId('zenithMobile' .. name:gsub('[^%w]', '') .. 'Tab')
 
   local tab = tabBar:addTab(name, botPanel)
+  tabObjects[name] = tab
   tabBar:setOn(true)
 
   if #tabBar.tabs >= 5 then
@@ -27735,6 +27693,26 @@ local function createTab(name)
 
   tabPanels[name] = tab.tabPanel.content
   return tabPanels[name]
+end
+
+local function selectTab(name)
+  name = normalizeTabName(name)
+  local targetPanel = createTab(name)
+  local targetTab = tabObjects[name] or tabBar:getTab(name)
+
+  if targetTab then
+    local selected = pcall(function()
+      tabBar:selectTab(targetTab)
+    end)
+
+    if not selected then
+      pcall(function()
+        targetTab:setOn(true)
+      end)
+    end
+  end
+
+  return targetPanel
 end
 
 -- Replace the bot's legacy tab routing with the floating Zenith window.
@@ -28026,6 +28004,7 @@ ZenithMobileUI = {
   hide = hideWindow,
   toggle = toggleWindow,
   getTab = createTab,
+  selectTab = selectTab,
 }
 ]]
 FILES["vBot/zenith_mobile_ui.otui"] = [[
@@ -35776,6 +35755,46 @@ local function removeOldManagedFiles()
   end
 end
 
+local function removeRetiredCavebotActions()
+  local configsPath = BOT_ROOT .. "/cavebot_configs"
+  if not g_resources.directoryExists(configsPath) then return 0 end
+
+  local updated = 0
+  local files = g_resources.listDirectoryFiles(configsPath, false, false) or {}
+  for _, fileName in ipairs(files) do
+    if type(fileName) == "string" and fileName:lower():sub(-4) == ".cfg" then
+      local fullPath = fileName:sub(1, 1) == "/" and fileName or (configsPath .. "/" .. fileName)
+      if g_resources.fileExists(fullPath) then
+        local original = g_resources.readFileContents(fullPath) or ""
+        local normalized = original:gsub("\r\n", "\n"):gsub("\r", "\n")
+        local kept = {}
+        local changed = false
+
+        for line in (normalized .. "\n"):gmatch("(.-)\n") do
+          if line:lower():match("^%s*rushlure%s*:") then
+            changed = true
+          else
+            kept[#kept + 1] = line
+          end
+        end
+
+        if changed then
+          while #kept > 0 and kept[#kept] == "" do
+            table.remove(kept)
+          end
+          local cleaned = table.concat(kept, "\n")
+          if cleaned ~= "" then cleaned = cleaned .. "\n" end
+          g_resources.deleteFile(fullPath)
+          g_resources.writeFileContents(fullPath, cleaned)
+          updated = updated + 1
+        end
+      end
+    end
+  end
+
+  return updated
+end
+
 local function stopOldRuntime()
   local runtime = rawget(_G, "ZenithMobileRuntime")
   if runtime and runtime.stop then pcall(function() runtime.stop(true) end) end
@@ -35877,4 +35896,10 @@ local ok, written, preserved, supportWritten = pcall(installFiles)
 if not ok then log("Falha na instalacao: " .. tostring(written)); return end
 log(tostring(written) .. " arquivos do Zenith gravados; " .. tostring(preserved) .. " configuracoes preservadas.")
 log(tostring(supportWritten) .. " arquivos do game_bot incorporados ao runtime.")
+local cleanupOk, cleanedProfiles = pcall(removeRetiredCavebotActions)
+if cleanupOk and cleanedProfiles > 0 then
+  log(tostring(cleanedProfiles) .. " perfil(is) limpo(s): Rush/Stand Lure removido.")
+elseif not cleanupOk then
+  log("Aviso ao limpar Rush/Stand Lure dos perfis: " .. tostring(cleanedProfiles))
+end
 startRuntime()
